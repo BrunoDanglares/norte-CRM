@@ -1,0 +1,271 @@
+Boa escolha — antes de crescer a base de clientes, o produto precisa estar seguro. Vou gerar um prompt de auditoria completa baseado no código que já li:
+
+Prompt — Auditoria Completa de Segurança
+Realize uma auditoria completa de segurança no ChatBanana e aplique
+todas as correções encontradas. Analise cada item abaixo e corrija
+o que estiver vulnerável.
+
+═══════════════════════════════════════════════════════════
+ITEM 1 — HMAC: webhook Meta aceita requisições sem secret
+═══════════════════════════════════════════════════════════
+
+No arquivo server/routes/webhook-meta.ts, na função verifyMetaSignature:
+
+PROBLEMA ATUAL:
+- Se META_APP_SECRET e WHATSAPP_APP_SECRET não estiverem definidos,
+  a função chama next() e aceita qualquer payload
+- Se o header x-hub-signature-256 não vier, também aceita
+
+CORREÇÃO:
+Substitua a função verifyMetaSignature pela versão abaixo:
+
+function verifyMetaSignature(req: Request, res: Response, next: NextFunction) {
+  const rawBody = (req as any).rawBody as Buffer | undefined;
+  const signature = req.headers["x-hub-signature-256"] as string;
+
+  const secrets = [
+    process.env.META_APP_SECRET,
+    process.env.WHATSAPP_APP_SECRET,
+  ].filter(Boolean) as string[];
+
+  // Se não há secrets configurados, logar aviso mas permitir
+  // (ambiente de dev sem secrets definidos)
+  if (secrets.length === 0) {
+    if (process.env.NODE_ENV === "production") {
+      console.error("[Meta Webhook] CRITICAL: No META_APP_SECRET defined in production!");
+      return res.sendStatus(500);
+    }
+    console.warn("[Meta Webhook] WARNING: No secret configured — skipping signature check (dev mode)");
+    return next();
+  }
+
+  // Em produção com secrets, signature é obrigatória
+  if (!signature) {
+    console.warn("[Meta Webhook] Rejected: missing x-hub-signature-256 header");
+    return res.sendStatus(401);
+  }
+
+  if (!rawBody) {
+    console.warn("[Meta Webhook] Rejected: rawBody not available");
+    return res.sendStatus(400);
+  }
+
+  for (const secret of secrets) {
+    const expected = "sha256=" + crypto
+      .createHmac("sha256", secret)
+      .update(rawBody)
+      .digest("hex");
+    try {
+      if (
+        signature.length === expected.length &&
+        crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))
+      ) {
+        return next();
+      }
+    } catch {}
+  }
+
+  console.warn("[Meta Webhook] Rejected: invalid signature");
+  return res.sendStatus(403);
+}
+
+═══════════════════════════════════════════════════════════
+ITEM 2 — RATE LIMITING nas rotas de API
+═══════════════════════════════════════════════════════════
+
+Instale o pacote express-rate-limit:
+npm install express-rate-limit
+
+No arquivo server/index.ts, após os imports existentes, adicione:
+
+import rateLimit from "express-rate-limit";
+
+Adicione os seguintes limitadores ANTES do app.use(express.json()):
+
+// Rate limit geral para todas as rotas /api
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutos
+  max: 500,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Muitas requisições. Tente novamente em 15 minutos." },
+  skip: (req) => req.path.startsWith("/api/webhook") || req.path.startsWith("/api/instagram"),
+});
+
+// Rate limit mais restrito para login (anti-brute force)
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutos
+  max: 10, // máximo 10 tentativas de login por IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Muitas tentativas de login. Tente novamente em 15 minutos." },
+});
+
+// Rate limit para envio de mensagens (anti-spam)
+const messageLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minuto
+  max: 60, // 60 mensagens por minuto por IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Limite de envio atingido. Aguarde 1 minuto." },
+});
+
+app.use("/api", apiLimiter);
+app.use("/api/auth/login", authLimiter);
+app.use("/api/messages", messageLimiter);
+
+═══════════════════════════════════════════════════════════
+ITEM 3 — CORS: configuração explícita e restritiva
+═══════════════════════════════════════════════════════════
+
+Instale cors se não estiver instalado:
+npm install cors
+npm install --save-dev @types/cors
+
+No server/index.ts, adicione o import:
+import cors from "cors";
+
+Adicione ANTES de qualquer app.use(), logo após criar o app:
+
+const allowedOrigins = [
+  "https://chatbanana.com.br",
+  "https://www.chatbanana.com.br",
+  "https://app.chatbanana.com.br",
+];
+
+if (process.env.NODE_ENV !== "production") {
+  allowedOrigins.push("http://localhost:5000");
+  allowedOrigins.push("http://localhost:3000");
+  allowedOrigins.push(/\.replit\.dev$/);
+  allowedOrigins.push(/\.repl\.co$/);
+}
+
+app.use(cors({
+  origin: (origin, callback) => {
+    // Permitir requests sem origin (mobile apps, Postman, webhooks)
+    if (!origin) return callback(null, true);
+    
+    const allowed = allowedOrigins.some(o => 
+      typeof o === "string" ? o === origin : o.test(origin)
+    );
+    
+    if (allowed) {
+      callback(null, true);
+    } else {
+      console.warn(`[CORS] Blocked origin: ${origin}`);
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+}));
+
+═══════════════════════════════════════════════════════════
+ITEM 4 — HEADERS DE SEGURANÇA HTTP
+═══════════════════════════════════════════════════════════
+
+Instale helmet:
+npm install helmet
+
+No server/index.ts, adicione import:
+import helmet from "helmet";
+
+Adicione após o cors, antes do express.json():
+
+app.use(helmet({
+  contentSecurityPolicy: false, // Desabilitado pois o frontend React precisa de flexibilidade
+  crossOriginEmbedderPolicy: false,
+  hsts: {
+    maxAge: 31536000,
+    includeSubDomains: true,
+    preload: true,
+  },
+}));
+
+═══════════════════════════════════════════════════════════
+ITEM 5 — VALIDAÇÃO DE INPUT nas rotas de criação
+═══════════════════════════════════════════════════════════
+
+No arquivo server/routes/protocols.ts (ou onde estão as rotas de protocolos),
+localize a rota POST /api/protocols.
+
+Adicione validação de input antes de chamar criarProtocolo:
+
+const { titulo, categoria, prioridade } = req.body;
+
+// Validações básicas
+if (!titulo || typeof titulo !== "string" || titulo.trim().length === 0) {
+  return res.status(400).json({ error: "Título é obrigatório" });
+}
+if (titulo.length > 200) {
+  return res.status(400).json({ error: "Título muito longo (máx 200 caracteres)" });
+}
+
+const categoriasValidas = ["suporte_tecnico", "financeiro", "comercial", "geral"];
+if (categoria && !categoriasValidas.includes(categoria)) {
+  return res.status(400).json({ error: "Categoria inválida" });
+}
+
+const prioridadesValidas = ["urgente", "alta", "media", "baixa"];
+if (prioridade && !prioridadesValidas.includes(prioridade)) {
+  return res.status(400).json({ error: "Prioridade inválida" });
+}
+
+═══════════════════════════════════════════════════════════
+ITEM 6 — VARIÁVEL JWT_SECRET: força mínima
+═══════════════════════════════════════════════════════════
+
+No server/index.ts, localize o bloco:
+
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  console.error("[FATAL] JWT_SECRET environment variable is not set.");
+  process.exit(1);
+}
+
+Substitua por:
+
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  console.error("[FATAL] JWT_SECRET environment variable is not set. Server cannot start securely.");
+  process.exit(1);
+}
+if (JWT_SECRET.length < 32) {
+  console.error("[FATAL] JWT_SECRET is too short. Use at least 32 characters for security.");
+  process.exit(1);
+}
+
+═══════════════════════════════════════════════════════════
+ITEM 7 — SANITIZAÇÃO: remover dados sensíveis das respostas
+═══════════════════════════════════════════════════════════
+
+No arquivo server/routes/auth.ts (ou onde está o login),
+verifique se o endpoint de login retorna o campo `password` no objeto user.
+
+Se sim, adicione antes de retornar o usuário:
+
+const { password: _pwd, inviteToken: _token, gcalRefreshToken: _gcal, ...safeUser } = user;
+return res.json({ user: safeUser, token });
+
+Isso garante que password hash, tokens de convite e refresh tokens
+do Google Calendar NUNCA saem para o frontend.
+
+Verifique também GET /api/users e GET /api/usuarios — aplicar o mesmo
+omit de campos sensíveis em todas as respostas que retornam dados de usuário.
+
+═══════════════════════════════════════════════════════════
+VERIFICAÇÃO FINAL
+═══════════════════════════════════════════════════════════
+
+Após aplicar todas as correções, confirme:
+
+1. npm install rodou sem erros (express-rate-limit, cors, helmet)
+2. Servidor iniciou sem erros no boot
+3. Testar GET /api/conversations — deve retornar 200 com token válido
+4. Testar GET /api/conversations sem token — deve retornar 401
+5. Verificar nos logs do boot que os middlewares estão registrados
+6. Buscar por "password" nos payloads de resposta de /api/auth/login
+   — não deve aparecer o hash
+
+Liste todos os arquivos modificados e qualquer erro encontrado.

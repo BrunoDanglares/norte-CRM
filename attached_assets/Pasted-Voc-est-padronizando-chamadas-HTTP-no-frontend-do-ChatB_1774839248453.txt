@@ -1,0 +1,54 @@
+Você está padronizando chamadas HTTP no frontend do ChatBanana.
+
+PROBLEMA: Quatro arquivos do frontend usam fetch() direto com injeção manual de token Bearer em vez do utilitário centralizado apiRequest (ou apiFetch). Isso significa que tokens expirados não redirecionam para login, erros 401 não são tratados automaticamente, e o padrão de auth fica inconsistente.
+
+ARQUIVOS A CORRIGIR:
+- client/src/pages/perfil.tsx (linhas 188, 242, 453, 756)
+- client/src/pages/automacoes.tsx (linhas 110, 135, 147)
+- client/src/components/automacoes/FlowCanvas.tsx (linhas 1238, 1251, 2201, 2266)
+- client/src/pages/isp-config.tsx (linhas 12, 140)
+
+TAREFA: Substituir todos os fetch() raw por apiRequest de @/lib/queryClient.
+
+PADRÃO DE SUBSTITUIÇÃO:
+
+```typescript
+// ANTES (padrão problemático):
+const token = localStorage.getItem("token");
+const res = await fetch("/api/alguma-rota", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${token}`,
+  },
+  body: JSON.stringify(payload),
+});
+
+// DEPOIS (padrão correto):
+import { apiRequest } from "@/lib/queryClient";
+
+const res = await apiRequest("POST", "/api/alguma-rota", payload);
+```
+
+Para chamadas GET:
+```typescript
+// ANTES:
+const res = await fetch("/api/alguma-rota", {
+  headers: { Authorization: `Bearer ${token}` },
+});
+
+// DEPOIS:
+const res = await apiRequest("GET", "/api/alguma-rota");
+```
+
+INSTRUÇÕES ESPECÍFICAS:
+
+1. Para isp-config.tsx: há um apiFetch definido LOCALMENTE no arquivo (linha 12). Remova essa definição local e substitua por import de @/lib/queryClient.
+
+2. Para FlowCanvas.tsx: o arquivo é grande — localize cada fetch() pelo número de linha indicado e substitua um por um. Não tente refatorar nada além dos fetch() nessa passagem.
+
+3. Para cada arquivo: após substituir os fetch(), remova qualquer variável `token` que tenha ficado sem uso (ex: `const token = localStorage.getItem("token")`).
+
+4. Se apiRequest não existir em @/lib/queryClient, verifique se o nome correto é apiFetch ou useApiRequest e use o nome correto consistente com o resto do projeto.
+
+VALIDAÇÃO: Após as alterações, grep por `fetch("/api` e `fetch('/api` em client/src deve retornar zero resultados nos 4 arquivos corrigidos.

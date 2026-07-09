@@ -1,0 +1,81 @@
+Implemente as seguintes mudanças para corrigir o fluxo de identificação 
+de clientes no ERP. Siga esta ordem exata:
+
+─────────────────────────────────────────
+MUDANÇA 1 — server/services/n8nErpService.ts
+─────────────────────────────────────────
+No case 'enrichmentCompleto' (ou função enrichmentCompleto()):
+
+Substitua a lógica atual por:
+
+1. Se params.cpf existe e não está vazio:
+   - Chama provider.searchAllContractsByCPF(params.cpf)
+   - Se retornar 0 contratos: retorna { found: false, identificado: false, cpf_nao_encontrado: true }
+   - Se retornar 1 contrato: retorna o contrato normalmente com { found: true, identificado: true, contratos: [contrato], contrato_selecionado: contrato }
+   - Se retornar 2+ contratos: retorna { found: true, identificado: true, multiplos_contratos: true, contratos: [...lista completa com contratoId, endereco, plano, status de cada um], contrato_selecionado: null }
+
+2. Se params.cpf NÃO existe ou está vazio:
+   - NÃO busca por telefone
+   - Retorna { found: false, identificado: false, aguardando_cpf: true }
+
+3. Se params.contrato_id existe (cliente já escolheu o contrato):
+   - Busca os contratos por CPF (params.cpf obrigatório junto)
+   - Filtra o contrato com o contrato_id informado
+   - Retorna esse contrato como contrato_selecionado
+
+─────────────────────────────────────────
+MUDANÇA 2 — server/routes/n8n.ts
+─────────────────────────────────────────
+No case 'enrichmentCompleto':
+
+- Aceitar params.cpf como parâmetro principal
+- Aceitar params.contrato_id como parâmetro opcional
+- Remover obrigatoriedade de params.telefone
+- Passar { cpf: params.cpf, contrato_id: params.contrato_id, telefone: params.telefone } para o service
+
+─────────────────────────────────────────
+MUDANÇA 3 — server/services/isp-provider.interface.ts
+─────────────────────────────────────────
+- Tornar searchAllContractsByCPF obrigatório (remover o ?)
+- Adicionar campo contratos?: ContractInfo[] na interface ERPEnrichment
+- Adicionar campo multiplos_contratos?: boolean na interface ERPEnrichment
+- Adicionar campo aguardando_cpf?: boolean na interface ERPEnrichment
+- Adicionar campo contrato_selecionado?: ContractInfo | null na interface ERPEnrichment
+
+─────────────────────────────────────────
+MUDANÇA 4 — server/services/ixc-adapter.ts
+─────────────────────────────────────────
+Verificar se searchAllContractsByCPF está implementado no IXC.
+Se não estiver, implementar seguindo o mesmo padrão do SGP:
+- Endpoint IXC para busca por CPF: GET com qtype=cliente&query=cpf_cnpj&oper==&valor={cpf}
+- Mapear retorno para o mesmo formato de ContractInfo do SGP
+
+─────────────────────────────────────────
+APÓS IMPLEMENTAR — TESTE
+─────────────────────────────────────────
+Rode este curl para testar:
+
+curl -X POST http://localhost:5000/api/n8n/erp \
+  -H "Content-Type: application/json" \
+  -H "x-n8n-token: chatbanana-n8n-2026" \
+  -d '{
+    "workspace_id": "e6215875-c1aa-4dda-b249-17f8cf100490",
+    "action": "enrichmentCompleto",
+    "params": { "cpf": "00000000000" }
+  }'
+
+Teste também sem CPF:
+curl -X POST http://localhost:5000/api/n8n/erp \
+  -H "Content-Type: application/json" \
+  -H "x-n8n-token: chatbanana-n8n-2026" \
+  -d '{
+    "workspace_id": "e6215875-c1aa-4dda-b249-17f8cf100490",
+    "action": "enrichmentCompleto",
+    "params": {}
+  }'
+
+Confirme:
+1. Sem CPF → retorna aguardando_cpf: true
+2. CPF não encontrado → retorna cpf_nao_encontrado: true  
+3. CPF com 1 contrato → retorna contrato_selecionado com dados completos
+4. CPF com múltiplos contratos → retorna multiplos_contratos: true com lista de endereços

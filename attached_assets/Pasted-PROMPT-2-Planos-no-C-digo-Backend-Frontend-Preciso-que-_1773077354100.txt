@@ -1,0 +1,57 @@
+PROMPT 2 — Planos no Código (Backend + Frontend)
+Preciso que os planos do SaaS CRM sejam integrados no backend e no frontend.
+
+---
+
+BACKEND:
+
+1. Crie as rotas GET /api/planos:
+- Retorna todos os planos ativos ordenados por preco ASC
+- Enterprise (preco null) vem por último
+- Formato: { ok: true, data: [ { id, nome, slug, preco, limite_usuarios, descricao } ] }
+
+2. Crie constante de fallback no código (caso o banco não tenha os planos ainda):
+const PLANOS = [
+  { slug:'starter',      nome:'Starter',      preco:197, limite_usuarios:3,    descricao:'Ideal para autônomos e microempresas' },
+  { slug:'professional', nome:'Professional', preco:297, limite_usuarios:6,    descricao:'Para pequenas equipes em crescimento' },
+  { slug:'business',     nome:'Business',     preco:397, limite_usuarios:10,   descricao:'Para times estruturados' },
+  { slug:'enterprise',   nome:'Enterprise',   preco:null,limite_usuarios:null, descricao:'Sob consulta' },
+];
+
+3. No endpoint POST /api/usuarios/invite (já existente),
+   adicione a validação de limite usando os planos:
+   - Busque o plano do workspace atual
+   - Conte usuários com status ACTIVE ou INVITED
+   - Se atingiu o limite, retorne:
+     { error: 'Limite de usuários atingido', plano_atual: 'Starter', limite: 3, upgrade_para: 'Professional' }
+   - Status HTTP: 403
+
+---
+
+FRONTEND:
+
+No componente Usuarios.jsx, localize o indicador de limite de usuários
+(o texto "X de Y usuários usados" com a barra de progresso) e ajuste para:
+
+1. Buscar o plano atual do workspace via GET /api/planos
+   ou usar a constante PLANOS como fallback
+
+2. Exibir o nome do plano atual ao lado do indicador:
+   "2 de 3 usuários · Plano Starter"
+
+3. Cores da barra de progresso:
+   - Verde:     uso < 70%
+   - Amarelo:   uso entre 70% e 90%
+   - Vermelho:  uso >= 90%
+
+4. Quando atingir 100% do limite:
+   - Botão "Convidar Usuário" fica desabilitado (opacity 0.5, cursor not-allowed)
+   - Aparece banner amarelo abaixo do header:
+     "⚠️ Limite de usuários atingido. Faça upgrade do seu plano para adicionar mais membros."
+   - Banner tem botão "Ver Planos" que redireciona para a página de Billing (/billing)
+
+5. No modal de convite, se o limite estiver a 1 usuário do máximo,
+   mostre aviso discreto: "Após este convite, você atingirá o limite do plano Starter."
+
+Não altere nenhuma outra parte da UI.
+Use os dados reais da API se disponíveis, fallback para a constante PLANOS se falhar.

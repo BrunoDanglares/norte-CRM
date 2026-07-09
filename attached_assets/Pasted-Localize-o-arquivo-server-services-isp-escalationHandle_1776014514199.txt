@@ -1,0 +1,100 @@
+Localize o arquivo server/services/isp/escalationHandler.ts.
+
+PASSO 1 — Adicione a função assignTeamByAgent no final do arquivo, antes dos exports existentes:
+
+const SITUATION_TEAM_MAP: Record<string, string> = {
+  F1: 'Financeiro', F2: 'Financeiro', F3: 'Financeiro', F4: 'Financeiro',
+  F5: 'Financeiro', F6: 'Financeiro', F7: 'Financeiro', F8: 'Financeiro',
+  F9: 'Financeiro', F10: 'Financeiro',
+  S1: 'Suporte Técnico', S2: 'Suporte Técnico', S3: 'Suporte Técnico',
+  S4: 'Suporte Técnico', S5: 'Suporte Técnico', S6: 'Suporte Técnico',
+  S7: 'Suporte Técnico', S8: 'Suporte Técnico', S9: 'Suporte Técnico',
+  S10: 'Suporte Técnico', S11: 'Suporte Técnico', S12: 'Suporte Técnico',
+  S13: 'Suporte Técnico',
+  C1: 'Comercial', C2: 'Comercial', C3: 'Comercial', C4: 'Comercial',
+  C5: 'Comercial', C6: 'Comercial', C7: 'Comercial', C8: 'Comercial',
+  C9: 'Comercial', C10: 'Comercial',
+};
+
+export async function assignTeamByAgent(
+  conversationId: number,
+  workspaceId: string,
+  situation: string
+): Promise<void> {
+  const teamName = SITUATION_TEAM_MAP[situation];
+  if (!teamName) return;
+
+  try {
+    // Busca o team_id real pelo nome da equipe no workspace
+    const team = await db
+      .select({ id: teams.id })
+      .from(teams)
+      .where(and(eq(teams.workspaceId, workspaceId), eq(teams.nome, teamName)))
+      .limit(1);
+
+    if (!team.length) return;
+
+    const teamId = team[0].id;
+
+    // Verifica se já está atribuída à mesma equipe (evita update e broadcast desnecessários)
+    const current = await db
+      .select({ assignedTeamId: conversations.assignedTeamId })
+      .from(conversations)
+      .where(eq(conversations.id, conversationId))
+      .limit(1);
+
+    if (current[0]?.assignedTeamId === teamId) return;
+
+    // Atualiza assigned_team_id e pipeline
+    await db
+      .update(conversations)
+      .set({ assignedTeamId: teamId, pipeline: teamName, updatedAt: new Date() })
+      .where(eq(conversations.id, conversationId));
+
+    // Importa broadcastToWorkspace dinamicamente (padrão já usado no arquivo)
+    const { broadcastToWorkspace } = await import('../index');
+    broadcastToWorkspace(workspaceId, 'conversation_updated', {
+      conversationId,
+      assigned_team_id: teamId,
+      team_name: teamName,
+      pipeline: teamName,
+    });
+  } catch (err) {
+    console.error('[assignTeamByAgent]', err);
+  }
+}
+
+IMPORTANTE: Use os mesmos imports de db, tables (teams, conversations) e
+operadores (eq, and) que já existem no arquivo. Não adicione novos imports
+que ainda não estejam presentes — só adapte para o padrão Drizzle do projeto.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+PASSO 2 — Chame assignTeamByAgent nos 3 agentes.
+
+Localize os seguintes arquivos:
+- server/services/isp/financeiroAgent.ts
+- server/services/isp/suporteAgent.ts
+- server/services/isp/cancelamentoAgent.ts (ou comercialAgent.ts)
+
+Em cada arquivo, adicione o import no topo:
+import { assignTeamByAgent } from './escalationHandler';
+
+Depois, localize a função detectSituation() ou o ponto onde a variável
+de situação (ex: 'F3', 'S2', 'C1') é definida pela primeira vez no fluxo
+principal do agente.
+
+Imediatamente após essa detecção, adicione (de forma não-bloqueante):
+
+assignTeamByAgent(conversationId, workspaceId, situacaoDetectada).catch(console.error);
+
+Não use await — a atribuição é fire-and-forget para não bloquear a resposta ao cliente.
+Passe os valores de conversationId e workspaceId que já existem no contexto de cada agente.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Confirme:
+1. A função assignTeamByAgent foi adicionada e exportada no escalationHandler.ts
+2. O import foi adicionado nos 3 arquivos de agente
+3. A chamada fire-and-forget foi inserida após a detecção de situação em cada agente
+4. Nenhum erro de TypeScript ou runtime

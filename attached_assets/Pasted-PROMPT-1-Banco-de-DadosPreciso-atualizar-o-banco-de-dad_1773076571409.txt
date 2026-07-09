@@ -1,0 +1,56 @@
+PROMPT 1 — Banco de DadosPreciso atualizar o banco de dados para suportar o módulo completo de Usuários de um SaaS CRM multi-tenant.
+
+1. ATUALIZAR tabela `users` — adicione as colunas que ainda não existem:
+- cargo: TEXT, opcional
+- telefone: TEXT, opcional
+- avatar_url: TEXT, opcional
+- status: TEXT, default 'ACTIVE' — valores: 'ACTIVE', 'INACTIVE', 'INVITED'
+- online: BOOLEAN, default false
+- meta_mensal: INTEGER, default 0
+- ultimo_acesso: TIMESTAMP, opcional
+- workspace_id: UUID, opcional (para multi-tenant futuro)
+- invited_by: UUID, opcional — referencia users.id
+- invite_token: TEXT, opcional — token único do convite
+- invite_expires_at: TIMESTAMP, opcional
+
+2. CRIAR tabela `teams`:
+- id: UUID, primary key, gerado automaticamente
+- nome: TEXT, obrigatório
+- descricao: TEXT, opcional
+- workspace_id: UUID, opcional
+- leader_id: UUID, opcional — referencia users.id
+- created_at: TIMESTAMP, default NOW()
+- updated_at: TIMESTAMP, default NOW()
+
+3. CRIAR tabela `team_members`:
+- team_id: UUID, referencia teams.id ON DELETE CASCADE
+- user_id: UUID, referencia users.id ON DELETE CASCADE
+- joined_at: TIMESTAMP, default NOW()
+- PRIMARY KEY (team_id, user_id)
+
+4. CRIAR tabela `permissions`:
+- id: UUID, primary key, gerado automaticamente
+- workspace_id: UUID, opcional
+- role: TEXT, obrigatório — valores: 'admin', 'manager', 'agent'
+- can_view_all_leads: BOOLEAN, default false
+- can_edit_others_leads: BOOLEAN, default false
+- can_view_reports: BOOLEAN, default false
+- can_manage_connections: BOOLEAN, default false
+- can_manage_automations: BOOLEAN, default false
+- can_export_data: BOOLEAN, default false
+- can_invite_users: BOOLEAN, default false
+- updated_at: TIMESTAMP, default NOW()
+
+5. POPULAR tabela permissions com os defaults de cada role:
+- admin: todos os campos true
+- manager: can_view_reports true, can_view_all_leads true, o resto false
+- agent: todos false
+
+6. CRIAR índices:
+- users(status), users(invite_token), users(online)
+- team_members(user_id), team_members(team_id)
+- permissions(role)
+
+Se usar Prisma, atualize schema.prisma e rode a migration.
+Se usar SQL puro, execute os comandos diretamente.
+Confirme ao final todas as tabelas criadas e colunas adicionadas.

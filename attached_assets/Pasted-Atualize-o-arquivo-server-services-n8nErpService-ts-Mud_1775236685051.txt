@@ -1,0 +1,83 @@
+Atualize o arquivo server/services/n8nErpService.ts.
+
+Mude o método liberarCliente para usar o desbloqueio
+de confiança nativo de cada ERP, passando prazo de 48h.
+O ERP controla a re-suspensão automaticamente.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SUBSTITUIR o método liberarCliente existente por:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  async liberarCliente(workspaceId: string, params: {
+    id_cliente:   string;
+    id_contrato?: string;
+    horas?:       number; // default 48
+  }): Promise<ERPActionResult> {
+
+    const config = await this.getISPConfig(workspaceId);
+    if (!config) throw new Error('Config ISP não encontrada');
+
+    const horas = params.horas ?? 48;
+
+    try {
+      if (config.provider === 'sgp') {
+        // SGP: Desbloqueio de Confiança nativo
+        // SGP controla a re-suspensão automaticamente após as horas informadas
+        const { makeSGPRequest } = await import('./ispAdapterFactory');
+        const result = await makeSGPRequest(config, 'desbloqueioConfianca', {
+          id_contrato: params.id_contrato ?? params.id_cliente,
+          horas:       String(horas),
+        });
+        return {
+          success: true,
+          message: `Cliente liberado por ${horas}h via SGP (desbloqueio de confiança nativo)`,
+          data:    result,
+        };
+
+      } else {
+        // IXC Soft: Desbloqueio Financeiro com data de expiração
+        // IXC re-suspende automaticamente na data/hora informada
+        const expiracao = new Date(Date.now() + horas * 60 * 60 * 1000);
+        const dataExpiracao = expiracao
+          .toLocaleString('sv-SE', { timeZone: 'America/Sao_Paulo' })
+          .replace('T', ' ');
+
+        const { makeIXCRequest } = await import('./ispAdapterFactory');
+        const result = await makeIXCRequest(config, 'desbloqueio_financeiro', {
+          acao:            'desbloquear',
+          id_cliente:      params.id_cliente,
+          data_expiracao:  dataExpiracao,
+        });
+        return {
+          success: true,
+          message: `Cliente liberado até ${dataExpiracao} via IXC (desbloqueio nativo)`,
+          data:    result,
+        };
+      }
+    } catch (err: any) {
+      return {
+        success: false,
+        message: err.message ?? 'Erro ao liberar cliente',
+      };
+    }
+  }
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+IMPORTANTE: adapte os nomes makeSGPRequest e makeIXCRequest
+para os métodos reais que os adapters do projeto já expõem.
+A lógica é: chamar o endpoint nativo de cada ERP com o prazo.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+O que acontece com o Cron 48h no N8N
+Com o ERP controlando tudo, o cron fica muito mais simples. Ele não precisa mais checar pagamento nem suspender — o ERP já fez isso.
+O cron pode ser mantido só para notificações WhatsApp:
+Cron (a cada hora)
+    ↓
+Supabase: busca promessas que expiraram nas últimas 2h
+    ↓
+Para cada uma → POST /api/n8n/send
+  "Seu prazo de 48h expirou. 
+   Se precisar de ajuda para regularizar, estamos aqui!"
+    ↓
+Supabase: marca como notified

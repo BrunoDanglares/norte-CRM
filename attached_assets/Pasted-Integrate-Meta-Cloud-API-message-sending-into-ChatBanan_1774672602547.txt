@@ -1,0 +1,196 @@
+Integrate Meta Cloud API message sending into ChatBanana's existing message sending infrastructure, and add channel selection logic so each workspace routes messages through either Z-API or Meta Cloud API.
+
+## Context
+- ChatBanana currently sends messages via Z-API
+- After this change, the platform checks which channel the workspace uses and routes accordingly
+- The automation engine sends messages — we need it to use the right channel per workspace
+- Add a message sending abstraction layer (channel router)
+
+## File to create: server/services/channel-router.ts
+
+This is the single point of entry for ALL outbound WhatsApp messages in ChatBanana.
+```typescript
+export interface SendMessageParams {
+  workspaceId: string;
+  to: string;                     // phone number
+  type: 'text' | 'image' | 'audio' | 'document' | 'video' | 'template';
+  content?: string;               // text body
+  mediaUrl?: string;              // for media messages
+  mediaCaption?: string;
+  filename?: string;              // for documents
+  templateName?: string;          // for template messages
+  templateLanguage?: string;
+  templateComponents?: any[];
+  replyToMessageId?: string;      // quote a message
+  conversationId?: number;        // for logging
+}
+
+export interface SendMessageResult {
+  success: boolean;
+  messageId?: string;             // platform message ID (wamid or z-api id)
+  channel: 'zapi' | 'meta';
+  error?: string;
+}
+
+export async function sendMessage(params: SendMessageParams): Promise<SendMessageResult> {
+  const { workspaceId } = params;
+  
+  // 1. Check if workspace has active Meta Cloud API connection
+  const metaConnection = await db.query.whatsapp_official_connections.findFirst({
+    where: and(
+      eq(whatsapp_official_connections.workspace_id, workspaceId),
+      eq(whatsapp_official_connections.status, 'active')
+    )
+  });
+  
+  if (metaConnection) {
+    return sendViaMetaCloudAPI(params, metaConnection);
+  }
+  
+  // 2. Fallback to Z-API
+  return sendViaZAPI(params, workspaceId);
+}
+
+async function sendViaMetaCloudAPI(params: SendMessageParams, connection: SelectWhatsappOfficialConnection): Promise<SendMessageResult> {
+  try {
+    const { phoneNumberId, access_token } = connection;
+    let messageId: string;
+    
+    switch (params.type) {
+      case 'text':
+        const result = await metaWhatsApp.sendTextMessage({
+          phoneNumberId,
+          accessToken: access_token,
+          to: params.to,
+          text: params.content || '',
+          replyToMessageId: params.replyToMessageId
+        });
+        messageId = result.messageId;
+        break;
+        
+      case 'image':
+      case 'audio':
+      case 'document':
+      case 'video':
+        const mediaResult = await metaWhatsApp.sendMediaMessage({
+          phoneNumberId,
+          accessToken: access_token,
+          to: params.to,
+          type: params.type,
+          mediaUrl: params.mediaUrl!,
+          caption: params.mediaCaption,
+          filename: params.filename
+        });
+        messageId = mediaResult.messageId;
+        break;
+        
+      case 'template':
+        const tplResult = await metaWhatsApp.sendTemplateMessage({
+          phoneNumberId,
+          accessToken: access_token,
+          to: params.to,
+          templateName: params.templateName!,
+          language: params.templateLanguage || 'pt_BR',
+          components: params.templateComponents || []
+        });
+        messageId = tplResult.messageId;
+        break;
+        
+      default:
+        throw new Error(`Unsupported message type: ${params.type}`);
+    }
+    
+    // Update last_used_at
+    await db.update(whatsapp_official_connections)
+      .set({ last_used_at: new Date() })
+      .where(eq(whatsapp_official_connections.id, connection.id));
+    
+    return { success: true, messageId, channel: 'meta' };
+    
+  } catch (err: any) {
+    console.error('[ChannelRouter] Meta send failed:', err.message);
+    return { success: false, error: err.message, channel: 'meta' };
+  }
+}
+
+async function sendViaZAPI(params: SendMessageParams, workspaceId: string): Promise<SendMessageResult> {
+  // Keep ALL existing Z-API sending logic here, extracted from wherever it currently lives
+  // This ensures backward compatibility for all workspaces not yet on Meta API
+  try {
+    // Use existing Z-API send logic (copy from current implementation)
+    // Return { success: true, messageId: zapiMessageId, channel: 'zapi' }
+  } catch (err: any) {
+    return { success: false, error: err.message, channel: 'zapi' };
+  }
+}
+```
+
+## Update automation engine
+
+In the automation engine (server/services/automation-engine.ts or similar), find ALL places where WhatsApp messages are sent (likely in the 'send_message' node handler and similar).
+
+Replace direct Z-API calls with:
+```typescript
+import { sendMessage } from './channel-router';
+
+// Instead of: await zapiClient.sendText(phone, text)
+// Use:
+const result = await sendMessage({
+  workspaceId: context.workspaceId,
+  to: context.customerPhone,
+  type: 'text',
+  content: resolvedMessage,
+  conversationId: context.conversationId
+});
+
+if (!result.success) {
+  console.error('[AutomationEngine] Message send failed:', result.error);
+}
+```
+
+## Update existing message sending routes
+
+In any routes that directly call Z-API (e.g. POST /api/conversations/:id/messages for manual agent replies):
+- Replace direct Z-API call with: await sendMessage({ workspaceId, to, type, content })
+- The channel router will automatically use Meta if configured, Z-API otherwise
+
+## Add send_template node to automation engine
+
+In the node execution switch, add:
+```typescript
+case 'send_template': {
+  const templateName = node.config.template_name;
+  const templateComponents = buildTemplateComponents(node.config.variables, context.variables);
+  
+  await sendMessage({
+    workspaceId: context.workspaceId,
+    to: context.customerPhone,
+    type: 'template',
+    templateName,
+    templateLanguage: node.config.language || 'pt_BR',
+    templateComponents,
+    conversationId: context.conversationId
+  });
+  break;
+}
+```
+
+## Helper: buildTemplateComponents
+```typescript
+function buildTemplateComponents(variableConfig: Record<string, string>, contextVars: Record<string, any>) {
+  // variableConfig: { "1": "{{nome}}", "2": "{{valor}}" }
+  // Resolves placeholders from context and builds Meta's components array
+  const bodyParams = Object.entries(variableConfig).map(([_, tpl]) => ({
+    type: 'text',
+    text: tpl.replace(/\{\{(\w+)\}\}/g, (_, k) => contextVars[k] ?? '')
+  }));
+  
+  return [{ type: 'body', parameters: bodyParams }];
+}
+```
+
+## After implementing
+Run the application and verify:
+1. A workspace with no Meta connection still sends via Z-API (no regression)
+2. POST /api/whatsapp-official/test returns success for a connected workspace
+3. Console shows "[ChannelRouter] Sending via meta" or "[ChannelRouter] Sending via zapi"

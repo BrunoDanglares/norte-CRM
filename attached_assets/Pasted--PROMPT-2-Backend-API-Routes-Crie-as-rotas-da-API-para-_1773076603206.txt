@@ -1,0 +1,107 @@
+⚙️ PROMPT 2 — Backend (API Routes)Crie as rotas da API para o módulo de Usuários de um SaaS CRM.
+Todas as rotas exigem autenticação JWT via middleware auth já existente.
+Use o cliente de banco já configurado no projeto.
+
+ROTAS DE USUÁRIOS:
+
+GET /api/usuarios
+- Lista todos os usuários
+- Inclui: id, nome, email, cargo, telefone, avatar_url, role, status, online, meta_mensal, ultimo_acesso, invited_by
+- Inclui campo calculado `equipes`: array com nomes das equipes do usuário
+- Inclui campo calculado `performance`: { leads_mes: N, conversas_mes: N, meta_mensal: N }
+- leads_mes = quantidade de leads criados ou atribuídos ao usuário no mês atual
+- conversas_mes = quantidade de conversas atendidas no mês atual
+- Resposta: { ok: true, data: [...] }
+
+GET /api/usuarios/:id
+- Retorna um usuário com todos os campos acima
+- Resposta: { ok: true, data: { ...usuario, equipes, performance } }
+
+POST /api/usuarios/invite
+- Cria um convite e simula envio de e-mail
+- Body: { email, role, equipe_id (opcional), meta_mensal (opcional) }
+- Validações: email válido, role é 'manager' ou 'agent', limite do plano não atingido
+- Gera invite_token único (uuid), define invite_expires_at = NOW() + 48 horas
+- Cria usuário com status 'INVITED', nome = email, senha vazia
+- Simula envio de e-mail logando no console: "Email enviado para X com token Y"
+- Resposta: { ok: true, data: { id, email, invite_token, expires_at } }
+
+POST /api/usuarios/aceitar-convite
+- Endpoint público (sem auth JWT) — chamado quando convidado clica no link
+- Body: { invite_token, nome, senha, cargo (opcional), telefone (opcional) }
+- Valida: token existe, não expirou, status ainda é 'INVITED'
+- Atualiza: nome, senha (hash bcrypt), cargo, telefone, status = 'ACTIVE'
+- Limpa: invite_token = null, invite_expires_at = null
+- Retorna JWT de acesso para login automático
+- Resposta: { ok: true, data: { token, user } }
+
+PUT /api/usuarios/:id
+- Atualiza dados do usuário
+- Aceita: nome, cargo, telefone, avatar_url, role, meta_mensal
+- Não permite alterar email nem senha por esta rota
+- Resposta: { ok: true, data: usuarioAtualizado }
+
+PATCH /api/usuarios/:id/status
+- Ativa ou desativa usuário
+- Body: { status: 'ACTIVE' ou 'INACTIVE' }
+- Se INACTIVE: atualiza leads do usuário para congelados
+  (adicione campo `congelado: true` nos leads onde owner_id = usuario.id)
+- Se ACTIVE: descongela os leads do usuário
+  (atualiza leads onde owner_id = usuario.id para congelado = false)
+- Resposta: { ok: true, data: { id, status }, leads_afetados: N }
+
+PATCH /api/usuarios/:id/online
+- Alterna status online/offline do usuário
+- Body: { online: true ou false }
+- Atualiza ultimo_acesso se online = true
+- Resposta: { ok: true, data: { id, online } }
+
+DELETE /api/usuarios/:id
+- Só permite excluir usuários com status INACTIVE
+- Se status for ACTIVE, retorna erro 400: "Desative o usuário antes de excluir"
+- Resposta: { ok: true, message: 'Usuário removido' }
+
+ROTAS DE EQUIPES:
+
+GET /api/equipes
+- Lista todas as equipes com membros
+- Inclui: id, nome, descricao, leader, members (array de usuários simplificados)
+- Resposta: { ok: true, data: [...] }
+
+POST /api/equipes
+- Cria nova equipe
+- Body: { nome, descricao (opcional), leader_id (opcional) }
+- Resposta: { ok: true, data: equipeCreated }
+
+PUT /api/equipes/:id
+- Atualiza nome, descricao, leader_id
+- Resposta: { ok: true, data: equipeUpdated }
+
+POST /api/equipes/:id/membros
+- Adiciona usuário à equipe
+- Body: { user_id }
+- Resposta: { ok: true, message: 'Membro adicionado' }
+
+DELETE /api/equipes/:id/membros/:userId
+- Remove usuário da equipe
+- Resposta: { ok: true, message: 'Membro removido' }
+
+DELETE /api/equipes/:id
+- Exclui a equipe (não exclui os usuários, só a equipe)
+- Resposta: { ok: true, message: 'Equipe removida' }
+
+ROTAS DE PERMISSÕES:
+
+GET /api/permissoes
+- Retorna matrix de permissões dos 3 roles: admin, manager, agent
+- Resposta: { ok: true, data: { admin: {...}, manager: {...}, agent: {...} } }
+
+PUT /api/permissoes/:role
+- Atualiza permissões de um role
+- Body: { can_view_all_leads, can_edit_others_leads, can_view_reports, can_manage_connections, can_manage_automations, can_export_data, can_invite_users }
+- Resposta: { ok: true, data: permissoesAtualizadas }
+
+Registre todos os routers no arquivo principal:
+- /api/usuarios
+- /api/equipes
+- /api/permissoes

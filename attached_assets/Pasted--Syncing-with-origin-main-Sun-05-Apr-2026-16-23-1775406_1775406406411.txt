@@ -1,0 +1,243 @@
+##########################################
+### Syncing with origin/main
+### Sun, 05 Apr 2026 16:23:36 GMT
+##########################################
+
+Commit: Critical fixes: revert N8N duplicate responses, fix orquestrador CPF comments, add session column migration, reject corporate company names 
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 232B done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/node:20-alpine
+#2 DONE 0.8s
+
+#3 [internal] load .dockerignore
+#3 transferring context: 2B done
+#3 DONE 0.0s
+
+#4 [1/6] FROM docker.io/library/node:20-alpine@sha256:f598378b5240225e6beab68fa9f356db1fb8efe55173e6d4d8153113bb8f333c
+#4 resolve docker.io/library/node:20-alpine@sha256:f598378b5240225e6beab68fa9f356db1fb8efe55173e6d4d8153113bb8f333c 0.0s done
+#4 DONE 0.0s
+
+#5 [2/6] WORKDIR /app
+#5 CACHED
+
+#6 [internal] load build context
+#6 transferring context: 2.68MB 0.3s done
+#6 DONE 0.3s
+
+#7 [3/6] COPY package*.json ./
+#7 DONE 0.1s
+
+#8 [4/6] RUN npm install
+#8 5.138 npm warn deprecated rimraf@2.7.1: Rimraf versions prior to v4 are no longer supported
+#8 6.771 npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+#8 7.504 npm warn deprecated fstream@1.0.12: This package is no longer supported.
+#8 9.898 npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+#8 10.04 npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+#8 10.18 npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+#8 15.24 npm warn deprecated fluent-ffmpeg@2.1.3: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+#8 37.68 
+#8 37.68 added 812 packages, and audited 813 packages in 37s
+#8 37.69 
+#8 37.69 112 packages are looking for funding
+#8 37.69   run `npm fund` for details
+#8 37.69 
+#8 37.69 1 high severity vulnerability
+#8 37.69 
+#8 37.69 To address all issues, run:
+#8 37.69   npm audit fix
+#8 37.69 
+#8 37.69 Run `npm audit` for details.
+#8 37.69 npm notice
+#8 37.69 npm notice New major version of npm available! 10.8.2 -> 11.12.1
+#8 37.69 npm notice Changelog: https://github.com/npm/cli/releases/tag/v11.12.1
+#8 37.69 npm notice To update run: npm install -g npm@11.12.1
+#8 37.69 npm notice
+#8 DONE 38.3s
+
+#9 [5/6] COPY . .
+#9 DONE 1.8s
+
+#10 [6/6] RUN npm run build
+#10 0.303 
+#10 0.303 > rest-express@1.0.0 build
+#10 0.303 > tsx script/build.ts
+#10 0.303 
+#10 1.516 building client...
+#10 1.622 vite v7.3.0 building client environment for production...
+#10 2.637 transforming...
+#10 2.799 Browserslist: browsers data (caniuse-lite) is 6 months old. Please run:
+#10 2.799   npx update-browserslist-db@latest
+#10 2.799   Why you should do it regularly: https://github.com/browserslist/update-db#readme
+#10 5.810 
+#10 5.810 A PostCSS plugin did not pass the `from` option to `postcss.parse`. This may cause imported assets to be incorrectly transformed. If you've recently added a PostCSS plugin that raised this warning, please contact the package author to fix the issue.
+#10 12.01 ✓ 1848 modules transformed.
+#10 12.64 rendering chunks...
+#10 13.26 computing gzip size...
+#10 13.33 ../dist/public/index.html                                               3.21 kB │ gzip:   1.21 kB
+#10 13.33 ../dist/public/assets/n8n-color_1773111228299-CwXizsmZ.png              4.73 kB
+#10 13.33 ../dist/public/assets/icone_1774233101372-CggLvtbb.png                 18.14 kB
+#10 13.33 ../dist/public/assets/my-project-pa_black_1774233095725-BOc63qnv.png   43.87 kB
+#10 13.33 ../dist/public/assets/index-9aEkn4q6.css                              136.48 kB │ gzip:  22.48 kB
+#10 13.33 ../dist/public/assets/check-x-_s-Bqu.js                                 0.12 kB │ gzip:   0.13 kB
+#10 13.33 ../dist/public/assets/chevron-up-Dm7yoYJG.js                            0.12 kB │ gzip:   0.14 kB
+#10 13.33 ../dist/public/assets/chevron-down-C2NLOLKP.js                          0.12 kB │ gzip:   0.14 kB
+#10 13.33 ../dist/public/assets/chevron-left-CNG8F3Yc.js                          0.13 kB │ gzip:   0.14 kB
+#10 13.33 ../dist/public/assets/chevron-right-xylDqdM3.js                         0.13 kB │ gzip:   0.14 kB
+#10 13.33 ../dist/public/assets/plus-R7FBv9cy.js                                  0.15 kB │ gzip:   0.15 kB
+#10 13.33 ../dist/public/assets/arrow-right-DZTOdE-J.js                           0.16 kB │ gzip:   0.16 kB
+#10 13.33 ../dist/public/assets/arrow-left-C9IJNMHI.js                            0.16 kB │ gzip:   0.16 kB
+#10 13.33 ../dist/public/assets/search-DLxEydBh.js                                0.16 kB │ gzip:   0.16 kB
+#10 13.33 ../dist/public/assets/ban-CYu2109-.js                                   0.17 kB │ gzip:   0.16 kB
+#10 13.33 ../dist/public/assets/skeleton-D72TmffS.js                              0.17 kB │ gzip:   0.16 kB
+#10 13.33 ../dist/public/assets/clock-Bt1uDo79.js                                 0.18 kB │ gzip:   0.17 kB
+#10 13.33 ../dist/public/assets/circle-check-big-CrIjSS1g.js                      0.18 kB │ gzip:   0.18 kB
+#10 13.33 ../dist/public/assets/megaphone-Bh_cZvlh.js                             0.19 kB │ gzip:   0.18 kB
+#10 13.33 ../dist/public/assets/user-DAXocC28.js                                  0.19 kB │ gzip:   0.18 kB
+#10 13.33 ../dist/public/assets/smartphone-BejUSOkX.js                            0.19 kB │ gzip:   0.18 kB
+#10 13.33 ../dist/public/assets/info-CYp2AOMQ.js                                  0.20 kB │ gzip:   0.17 kB
+#10 13.33 ../dist/public/assets/circle-x-DvqckOXH.js                              0.20 kB │ gzip:   0.17 kB
+#10 13.33 ../dist/public/assets/trending-up-BD20pAOs.js                           0.20 kB │ gzip:   0.18 kB
+#10 13.33 ../dist/public/assets/toggle-left-BXoqpSlx.js                           0.20 kB │ gzip:   0.18 kB
+#10 13.33 ../dist/public/assets/lock-CZtK4XnP.js                                  0.20 kB │ gzip:   0.19 kB
+#10 13.33 ../dist/public/assets/toggle-right-GVIRZqG6.js                          0.20 kB │ gzip:   0.18 kB
+#10 13.33 ../dist/public/assets/star-CnT8RvBr.js                                  0.21 kB │ gzip:   0.18 kB
+#10 13.33 ../dist/public/assets/mail-DqIx8u3h.js                                  0.21 kB │ gzip:   0.20 kB
+#10 13.33 ../dist/public/assets/dollar-sign-DF0Jevau.js                           0.22 kB │ gzip:   0.19 kB
+#10 13.33 ../dist/public/assets/briefcase-D42ztgTG.js                             0.22 kB │ gzip:   0.19 kB
+#10 13.33 ../dist/public/assets/paperclip-osuy7im_.js                             0.22 kB │ gzip:   0.19 kB
+#10 13.33 ../dist/public/assets/copy-BeeY9k1V.js                                  0.23 kB │ gzip:   0.20 kB
+#10 13.33 ../dist/public/assets/index-BgLSdXff.js                                 0.23 kB │ gzip:   0.17 kB
+#10 13.33 ../dist/public/assets/timer-qaplQcP6.js                                 0.24 kB │ gzip:   0.19 kB
+#10 13.33 ../dist/public/assets/globe-CWxpDWKx.js                                 0.24 kB │ gzip:   0.19 kB
+#10 13.33 ../dist/public/assets/test-tube-D4R3ysxc.js                             0.25 kB │ gzip:   0.19 kB
+#10 13.33 ../dist/public/assets/camera-eqvJ95SB.js                                0.25 kB │ gzip:   0.21 kB
+#10 13.33 ../dist/public/assets/circle-alert-C86VX-A7.js                          0.25 kB │ gzip:   0.18 kB
+#10 13.33 ../dist/public/assets/external-link-DRHoi7eQ.js                         0.25 kB │ gzip:   0.20 kB
+#10 13.33 ../dist/public/assets/chart-column-DM9MAwqG.js                          0.25 kB │ gzip:   0.19 kB
+#10 13.33 ../dist/public/assets/link-BwfrYT5c.js                                  0.25 kB │ gzip:   0.19 kB
+#10 13.33 ../dist/public/assets/calendar-B0XIu8eX.js                              0.25 kB │ gzip:   0.20 kB
+#10 13.33 ../dist/public/assets/upload-D3uIIWlY.js                                0.25 kB │ gzip:   0.21 kB
+#10 13.33 ../dist/public/assets/plug-DRMgf7It.js                                  0.26 kB │ gzip:   0.19 kB
+#10 13.33 ../dist/public/assets/monitor-BC1N8I4r.js                               0.26 kB │ gzip:   0.20 kB
+#10 13.33 ../dist/public/assets/download-Bj8cm4hH.js                              0.26 kB │ gzip:   0.22 kB
+#10 13.33 ../dist/public/assets/key-HZ7WkHpX.js                                   0.26 kB │ gzip:   0.22 kB
+#10 13.33 ../dist/public/assets/triangle-alert-zMvQ0v71.js                        0.26 kB │ gzip:   0.21 kB
+#10 13.33 ../dist/public/assets/workflow-D8SIRcvO.js                              0.26 kB │ gzip:   0.20 kB
+#10 13.33 ../dist/public/assets/shield-D43nQx6V.js                                0.27 kB │ gzip:   0.22 kB
+#10 13.33 ../dist/public/assets/pencil-BJKjtF0e.js                                0.27 kB │ gzip:   0.22 kB
+#10 13.33 ../dist/public/assets/book-open-CLD8pNmk.js                             0.28 kB │ gzip:   0.20 kB
+#10 13.33 ../dist/public/assets/wifi-y6HUSaGc.js                                  0.28 kB │ gzip:   0.20 kB
+#10 13.33 ../dist/public/assets/wallet-BjreTrSv.js                                0.28 kB │ gzip:   0.20 kB
+#10 13.33 ../dist/public/assets/shopping-cart-DMyLew_f.js                         0.28 kB │ gzip:   0.23 kB
+#10 13.33 ../dist/public/assets/send-BSBu1bPt.js                                  0.29 kB │ gzip:   0.23 kB
+#10 13.33 ../dist/public/assets/play-B3L-oyIy.js                                  0.29 kB │ gzip:   0.21 kB
+#10 13.33 ../dist/public/assets/hash-CHv7DCLJ.js                                  0.29 kB │ gzip:   0.19 kB
+#10 13.33 ../dist/public/assets/clipboard-check-2gcW3l0P.js                       0.30 kB │ gzip:   0.23 kB
+#10 13.33 ../dist/public/assets/badge-check-BwBZIieh.js                           0.31 kB │ gzip:   0.21 kB
+#10 13.33 ../dist/public/assets/shield-check-ClsaZ69M.js                          0.32 kB │ gzip:   0.24 kB
+#10 13.33 ../dist/public/assets/refresh-cw-9Q2IpjNO.js                            0.32 kB │ gzip:   0.23 kB
+#10 13.33 ../dist/public/assets/tag-DZ74AkLE.js                                   0.32 kB │ gzip:   0.25 kB
+#10 13.33 ../dist/public/assets/save-BVKzL1Mc.js                                  0.32 kB │ gzip:   0.23 kB
+#10 13.33 ../dist/public/assets/constants-CDi5VZAS.js                             0.33 kB │ gzip:   0.23 kB
+#10 13.33 ../dist/public/assets/file-text-DgBa-8Qx.js                             0.33 kB │ gzip:   0.21 kB
+#10 13.33 ../dist/public/assets/contact-BCyhFKFp.js                               0.33 kB │ gzip:   0.24 kB
+#10 13.33 ../dist/public/assets/trash-2-VruIwkLP.js                               0.35 kB │ gzip:   0.24 kB
+#10 13.33 ../dist/public/assets/image-plus-CIE09Liz.js                            0.36 kB │ gzip:   0.25 kB
+#10 13.33 ../dist/public/assets/layers-DAZoZNHf.js                                0.36 kB │ gzip:   0.24 kB
+#10 13.33 ../dist/public/assets/grip-vertical-v4hDVBwQ.js                         0.36 kB │ gzip:   0.19 kB
+#10 13.33 ../dist/public/assets/phone-Dzp-e3LI.js                                 0.39 kB │ gzip:   0.25 kB
+#10 13.33 ../dist/public/assets/minus-BfMj21g5.js                                 0.42 kB │ gzip:   0.28 kB
+#10 13.33 ../dist/public/assets/eye-off-DQk1WMBn.js                               0.43 kB │ gzip:   0.27 kB
+#10 13.33 ../dist/public/assets/building-2-By_McYhN.js                            0.44 kB │ gzip:   0.25 kB
+#10 13.33 ../dist/public/assets/wrench-Dnu1PgFQ.js                                0.44 kB │ gzip:   0.29 kB
+#10 13.33 ../dist/public/assets/rocket-GrEYhzrE.js                                0.45 kB │ gzip:   0.30 kB
+#10 13.33 ../dist/public/assets/user-check-Frlz8bqm.js                            0.48 kB │ gzip:   0.32 kB
+#10 13.33 ../dist/public/assets/textarea-CHg-TJwO.js                              0.50 kB │ gzip:   0.33 kB
+#10 13.33 ../dist/public/assets/sparkles-Gy6uJ6nA.js                              0.51 kB │ gzip:   0.30 kB
+#10 13.33 ../dist/public/assets/label-OTK_q8wb.js                                 0.53 kB │ gzip:   0.36 kB
+#10 13.33 ../dist/public/assets/input-Bu2luCPh.js                                 0.58 kB │ gzip:   0.35 kB
+#10 13.33 ../dist/public/assets/video-D0tJsbax.js                                 0.62 kB │ gzip:   0.37 kB
+#10 13.33 ../dist/public/assets/mouse-pointer-click-Bnh9Ve4Q.js                   0.63 kB │ gzip:   0.38 kB
+#10 13.33 ../dist/public/assets/not-found-BAfN-7kK.js                             0.67 kB │ gzip:   0.38 kB
+#10 13.33 ../dist/public/assets/empty-state-vFY_MuRY.js                           0.68 kB │ gzip:   0.39 kB
+#10 13.33 ../dist/public/assets/settings-D8-mMogM.js                              0.72 kB │ gzip:   0.34 kB
+#10 13.33 ../dist/public/assets/badge-CNKq4xx0.js                                 0.73 kB │ gzip:   0.40 kB
+#10 13.33 ../dist/public/assets/card-DZnSNTO3.js                                  1.01 kB │ gzip:   0.37 kB
+#10 13.33 ../dist/public/assets/brand-icons-FxOLeb58.js                           1.24 kB │ gzip:   0.45 kB
+#10 13.33 ../dist/public/assets/useMutation-D9FhT-gH.js                           1.99 kB │ gzip:   0.86 kB
+#10 13.33 ../dist/public/assets/message-input-B6MKN86s.js                         2.28 kB │ gzip:   1.10 kB
+#10 13.33 ../dist/public/assets/avatar-_wZFDpjP.js                                2.34 kB │ gzip:   1.07 kB
+#10 13.33 ../dist/public/assets/switch-lAoMXgNF.js                                2.37 kB │ gzip:   1.20 kB
+#10 13.33 ../dist/public/assets/table-DKQw3Rss.js                                 2.50 kB │ gzip:   0.98 kB
+#10 13.33 ../dist/public/assets/login-YILy3r1O.js                                 2.90 kB │ gzip:   1.23 kB
+#10 13.33 ../dist/public/assets/checkbox-BrE0tqzT.js                              3.49 kB │ gzip:   1.69 kB
+#10 13.33 ../dist/public/assets/popover-NscQ03dQ.js                               5.24 kB │ gzip:   1.89 kB
+#10 13.33 ../dist/public/assets/gestao-conversas-BkTpjgKy.js                      5.25 kB │ gzip:   2.16 kB
+#10 13.33 ../dist/public/assets/dialog-DrfibfWe.js                                6.76 kB │ gzip:   2.55 kB
+#10 13.33 ../dist/public/assets/date-time-picker-BNFMoGqz.js                      7.41 kB │ gzip:   2.49 kB
+#10 13.33 ../dist/public/assets/aceitar-convite-By992dRb.js                       7.75 kB │ gzip:   2.44 kB
+#10 13.33 ../dist/public/assets/isp-prompts-s9Zxvt0Z.js                           8.56 kB │ gzip:   2.95 kB
+#10 13.33 ../dist/public/assets/workspace-PfFIbzy8.js                            10.98 kB │ gzip:   3.44 kB
+#10 13.33 ../dist/public/assets/configuracoes-XvRldAB_.js                        11.81 kB │ gzip:   3.27 kB
+#10 13.33 ../dist/public/assets/isp-config-gZoEXHZ1.js                           12.76 kB │ gzip:   3.62 kB
+#10 13.33 ../dist/public/assets/register-BNQFbvY6.js                             12.96 kB │ gzip:   3.58 kB
+#10 13.34 ../dist/public/assets/suporte-DdZWtB9s.js                              14.00 kB │ gzip:   4.60 kB
+#10 13.34 ../dist/public/assets/disparos-programados-P_2hC-iG.js                 14.01 kB │ gzip:   4.40 kB
+#10 13.34 ../dist/public/assets/index-CHaCDCj_.js                                16.35 kB │ gzip:   6.16 kB
+#10 13.34 ../dist/public/assets/respostas-rapidas-CH3_1Oyw.js                    18.45 kB │ gzip:   5.56 kB
+#10 13.34 ../dist/public/assets/billing-BorIfuQp.js                              19.62 kB │ gzip:   6.16 kB
+#10 13.34 ../dist/public/assets/select-CCiM7s26.js                               20.97 kB │ gzip:   7.28 kB
+#10 13.34 ../dist/public/assets/dropdown-menu-Dm1_GLRd.js                        23.94 kB │ gzip:   7.03 kB
+#10 13.34 ../dist/public/assets/protocolos-CbwOTxpI.js                           24.04 kB │ gzip:   6.16 kB
+#10 13.34 ../dist/public/assets/pipeline-azbJS3qf.js                             24.56 kB │ gzip:   7.56 kB
+#10 13.34 ../dist/public/assets/browser-DobEbPAl.js                              25.78 kB │ gzip:  10.13 kB
+#10 13.34 ../dist/public/assets/whatsapp-oficial-DLGHHtkG.js                     26.21 kB │ gzip:   7.25 kB
+#10 13.34 ../dist/public/assets/campanhas-CapK536U.js                            27.70 kB │ gzip:   7.55 kB
+#10 13.34 ../dist/public/assets/dashboard-Mkd5iKS0.js                            30.58 kB │ gzip:   7.96 kB
+#10 13.34 ../dist/public/assets/super-admin-CXPBbuCr.js                          30.88 kB │ gzip:   7.16 kB
+#10 13.34 ../dist/public/assets/lead-profile-dialog-nsXzBy1R.js                  33.52 kB │ gzip:   9.50 kB
+#10 13.34 ../dist/public/assets/landing-DoXUG4p9.js                              47.55 kB │ gzip:  11.65 kB
+#10 13.34 ../dist/public/assets/perfil-DJVcnJ5J.js                               47.93 kB │ gzip:  12.70 kB
+#10 13.34 ../dist/public/assets/usuarios-CBIqgLzN.js                             49.92 kB │ gzip:   9.00 kB
+#10 13.34 ../dist/public/assets/InstaProspect-4DQLdABb.js                        56.48 kB │ gzip:  13.28 kB
+#10 13.34 
+#10 13.34 (!) Some chunks are larger than 500 kB after minification. Consider:
+#10 13.34 - Using dynamic import() to code-split the application
+#10 13.34 - Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+#10 13.34 - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+#10 13.34 ../dist/public/assets/conexoes-DrAOhPwY.js                             59.72 kB │ gzip:  14.80 kB
+#10 13.34 ../dist/public/assets/leads-DIcJxyHA.js                                68.82 kB │ gzip:  16.87 kB
+#10 13.34 ../dist/public/assets/integracoes-Bb5_wiVy.js                          73.15 kB │ gzip:  16.08 kB
+#10 13.34 ../dist/public/assets/inbox-DuHS_74g.js                               107.98 kB │ gzip:  28.17 kB
+#10 13.34 ../dist/public/assets/automacoes-DTD7a8pT.js                          230.23 kB │ gzip:  57.04 kB
+#10 13.34 ../dist/public/assets/index-xXpCoh4H.js                               322.44 kB │ gzip: 107.60 kB
+#10 13.34 ../dist/public/assets/module-tIVWKzfU.js                              510.10 kB │ gzip: 110.61 kB
+#10 13.34 ✓ built in 11.41s
+#10 13.34 building server...
+#10 14.21 
+#10 14.21   dist/index.cjs  2.4mb ⚠️
+#10 14.21 
+#10 14.21 ⚡ Done in 853ms
+#10 DONE 14.4s
+
+#11 exporting to image
+#11 exporting layers
+#11 exporting layers 83.1s done
+#11 exporting manifest sha256:afa8852a92f3c70164e09af935fdded64e3dcd1decc5c4e92d26f1aa67461d10 done
+#11 exporting config sha256:a4606b7cb78705f72dea44db3f4116576230929aa3e92a32a664cf60954b8f19 0.0s done
+#11 exporting attestation manifest sha256:c00f3af61cfd1d17164c5bc503c97455944cb2f9473f901601f5affe19d90ead
+#11 exporting attestation manifest sha256:c00f3af61cfd1d17164c5bc503c97455944cb2f9473f901601f5affe19d90ead 0.4s done
+#11 exporting manifest list sha256:afb81fd7d5e5d978335268dc62548170398742f7c17b91d1c3fc539c3a4fcb46
+#11 exporting manifest list sha256:afb81fd7d5e5d978335268dc62548170398742f7c17b91d1c3fc539c3a4fcb46 0.0s done
+#11 naming to docker.io/easypanel/chatbanana/chatbanana:latest done
+#11 unpacking to docker.io/easypanel/chatbanana/chatbanana:latest
+#11 unpacking to docker.io/easypanel/chatbanana/chatbanana:latest 29.3s done
+#11 DONE 112.9s
+##########################################
+### Success
+### Sun, 05 Apr 2026 16:26:27 GMT
+##########################################

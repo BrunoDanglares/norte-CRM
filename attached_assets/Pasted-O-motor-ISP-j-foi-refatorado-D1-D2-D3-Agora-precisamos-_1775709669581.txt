@@ -1,0 +1,131 @@
+O motor ISP já foi refatorado (D1/D2/D3). Agora precisamos garantir
+que todos os agentes tratem corretamente os três tipos de input:
+botão interativo, texto livre e áudio transcrito.
+
+Não reescreva nada do que já existe — apenas adicione e ajuste
+os pontos indicados abaixo.
+
+══ PASSO 1 — Detectar input_type no ponto de entrada ══
+
+Em server/services/ispAgentEngine.ts, localize a função principal
+que recebe a mensagem (processMessage ou equivalente).
+
+Logo após receber a mensagem e ANTES de montar o contexto,
+adicione:
+
+  type InputType = 'button' | 'audio' | 'text';
+
+  function detectarInputType(msg: any): InputType {
+    if (msg.type === 'interactive') return 'button';
+    if (msg.type === 'audio')       return 'audio';
+    return 'text';
+  }
+
+  const inputType = detectarInputType(mensagemRecebida);
+
+  const inputMeta = {
+    input_type: inputType,
+    input_original: mensagemRecebida.body ?? mensagemRecebida.buttonId ?? '',
+    input_transcribed: inputType === 'audio'
+      ? (mensagemRecebida.transcricao ?? mensagemRecebida.content ?? '')
+      : '',
+  };
+
+Adicione inputMeta ao objeto de contexto que é serializado em
+contextString e injetado via {{context}} nos prompts.
+
+══ PASSO 2 — Garantir que áudio usa a transcrição como conteúdo ══
+
+Ainda no ispAgentEngine.ts, localize onde o conteúdo da mensagem
+é extraído para processamento (a string que vai para o orquestrador
+e para os agentes como "texto do cliente").
+
+Aplique:
+
+  const textoEfetivo =
+    inputType === 'audio'
+      ? (mensagemRecebida.transcricao ?? mensagemRecebida.content ?? '')
+      : inputType === 'button'
+      ? (mensagemRecebida.buttonId ?? mensagemRecebida.body ?? '')
+      : (mensagemRecebida.body ?? mensagemRecebida.content ?? '');
+
+Use textoEfetivo em todos os pontos onde antes usava apenas
+mensagemRecebida.body ou mensagemRecebida.content para:
+  - classificação de intent no orquestrador
+  - matching de keywords (FINANCIAL_ABSOLUTE_REGEX etc.)
+  - histórico de turns (conversation_turns)
+
+══ PASSO 3 — Atualizar os prompts no banco com bloco híbrido ══
+
+Execute um UPDATE na tabela ai_prompt_templates para os 7 prompts
+existentes (agente_financeiro, agente_suporte_tecnico_v2,
+agente_vendas, agente_cancelamento, agente_incidente_regional,
+agente_orquestrador, cliente_nao_encontrado).
+
+Para cada um, CONCATENE ao final do system_prompt atual
+(sem substituir o conteúdo já existente) o seguinte bloco:
+
+---
+CANAL E FORMATO:
+- O cliente pode interagir via botão, texto ou áudio.
+  O campo input_type no contexto indica qual foi usado.
+- Se input_type = 'button': o cliente selecionou uma opção
+  de menu. Não trate como mensagem nova — confirme a seleção
+  e prossiga diretamente para a ação correspondente.
+- Se input_type = 'audio': a mensagem foi transcrita do áudio
+  do cliente. Pode conter linguagem informal, hesitações ou
+  imprecisões. Responda à intenção, não à literalidade.
+- Se input_type = 'text': mensagem digitada normalmente.
+
+REGRAS DE RESPOSTA PARA WHATSAPP:
+- Nunca liste opções numeradas ou com letras (1., 2., a), b)).
+  Os menus interativos são enviados pelo sistema separadamente.
+- Máximo 3 parágrafos por resposta. Prefira 1–2 linhas cada.
+- Use *negrito* apenas para valores financeiros ou termos chave.
+- Nunca confirme uma ação que o sistema ainda não executou.
+---
+
+Use UPDATE ... WHERE name = '<nome>' para cada um dos 7.
+NÃO sobrescreva o campo system_prompt inteiro — use concatenação:
+  system_prompt = system_prompt || E'\n\n' || '<bloco acima>'
+
+══ PASSO 4 — Ajustar resposta do humanoAgent para canal ══
+
+Em server/services/agents/humanoAgent.ts, na mensagem fixa de
+transferência que é enviada ao cliente, garanta que ela NÃO use
+botões — apenas texto simples, pois o cliente pode estar em
+qualquer canal.
+
+Se o canal for WhatsApp Meta (verificar pelo campo channel ou
+provider da conversa), use sendTextMessage em vez de sendButtons
+para a mensagem de transferência. Botões nessa hora confundem
+porque o cliente está sendo passado para um humano.
+
+══ PASSO 5 — Log do input_type por turn ══
+
+Na tabela conversation_turns (ou onde os turns são salvos),
+verifique se já existe coluna metadata JSONB. Se sim, salve:
+  metadata: { input_type: inputType }
+junto com cada turn registrado.
+
+Se não existir a coluna, adicione via migration:
+  ALTER TABLE conversation_turns
+    ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}';
+
+Isso permite futuramente filtrar turnos por tipo de input
+e medir quantos atendimentos vêm de áudio vs texto vs botão.
+
+══ TESTE FINAL ══
+
+Simule três interações distintas com o bot da ConexãoNet:
+1. Clique no botão [💰 Financeiro] do menu de departamentos
+2. Digite "quero ver meu boleto"
+3. Envie um áudio dizendo "oi eu quero saber do meu boleto"
+   (use um áudio real ou simule com transcricao: "oi eu quero
+   saber do meu boleto" no payload de teste)
+
+Para cada um, verifique nos logs:
+  - input_type está correto
+  - textoEfetivo está correto
+  - a IA não enviou lista numerada na resposta
+  - a resposta tem no máximo 3 parágrafos curtos

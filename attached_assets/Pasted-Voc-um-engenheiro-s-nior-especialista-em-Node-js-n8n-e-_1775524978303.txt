@@ -1,0 +1,164 @@
+Você é um engenheiro sênior especialista em Node.js, n8n e UX conversacional para WhatsApp.
+
+CONTEXTO:
+Existe um node no n8n responsável por gerar resposta híbrida:
+
+* texto da IA
+* botões interativos
+
+O código atual já está FUNCIONANDO em produção.
+
+IMPORTANTE:
+
+* NÃO pode haver breaking changes
+* NÃO pode remover campos existentes
+* NÃO pode alterar nomes atuais
+* Apenas EXTENDER com melhorias
+
+---
+
+OBJETIVO:
+
+Tornar a resposta híbrida:
+
+* mais segura
+* mais inteligente
+* mais controlada
+* pronta para escala SaaS
+
+---
+
+IMPLEMENTAÇÕES OBRIGATÓRIAS:
+
+1. NORMALIZAÇÃO DA RESPOSTA DA IA
+
+Criar variável:
+
+const respostaIA = ...
+
+Garantir:
+
+* sempre string
+* aplicar trim()
+* fallback se vazio:
+
+"Me explica melhor pra eu te ajudar 😉"
+
+---
+
+2. CONTROLE DE TAMANHO
+
+Limitar resposta:
+
+* máximo 500 caracteres
+
+---
+
+3. PROTEÇÃO DE INTENT
+
+Garantir:
+
+* intent sempre uppercase
+* fallback seguro: "DEFAULT"
+
+---
+
+4. LIMITAR BOTÕES
+
+Garantir:
+
+* máximo 3 opções principais
+* evitar excesso de botões
+
+---
+
+5. CONTROLE DE EXIBIÇÃO DE BOTÕES
+
+Adicionar lógica:
+
+* Se respostaIA for longa → mostrar botões
+* Se respostaIA resolver claramente → pode ocultar botões
+
+Criar campo:
+
+mostrar_botoes: boolean
+
+---
+
+6. IDENTIFICAÇÃO DA RESPOSTA
+
+Adicionar:
+
+tipo_resposta: "hibrido"
+
+---
+
+7. METADADOS (IMPORTANTE)
+
+Adicionar:
+
+meta: {
+intent,
+origem: "ia",
+timestamp: new Date().toISOString()
+}
+
+---
+
+8. CONTROLE DE CONTEXTO
+
+Adicionar suporte a:
+
+* ambiguidade
+* mudou_intencao
+
+Se ambiguidade = true:
+
+* forçar uso de botões
+
+---
+
+9. NÃO ALTERAR CAMPOS EXISTENTES
+
+Preservar:
+
+* texto
+* opcoes
+* usar_lista
+
+---
+
+10. ESTRUTURA FINAL (REFERÊNCIA)
+
+{
+...dados existentes,
+texto,
+opcoes,
+usar_lista,
+
+mostrar_botoes,
+tipo_resposta,
+
+meta
+}
+
+---
+
+IMPORTANTE:
+
+Se houver dúvida:
+
+* NÃO simplificar
+* NÃO refatorar estrutura existente
+* NÃO remover campos
+
+Apenas EXTENDER com segurança
+
+---
+
+RESULTADO ESPERADO:
+
+* melhor UX
+* maior conversão
+* menos erro de fluxo
+* sistema pronto para escala

@@ -1,0 +1,124 @@
+PROMPT 2 — FrontendPreciso integrar a página perfil.tsx com a API real do backend.
+A página tem 971 linhas com 6 abas já implementadas visualmente.
+NÃO altere o layout, estilos ou estrutura visual existente.
+Substitua apenas os dados mock pela API real.
+
+CONTEXTO:
+- Existe objeto mock `currentUser` hardcoded (linha ~57) — substituir
+- Usuário autenticado disponível em localStorage("flowcrm_user")
+  e via GET /api/auth/me
+- Usar apiFetch (já configurado no projeto) para todas as chamadas
+
+---
+
+PASSO 1 — Carregar dados reais ao montar o componente
+
+Substitua o objeto `currentUser` hardcoded por um estado React:
+const [user, setUser] = useState<any>(null);
+const [loading, setLoading] = useState(true);
+
+No useEffect ao montar:
+- Chame GET /api/perfil/me
+- Popule o estado `user` com o retorno
+- Se falhar, use os dados do localStorage("flowcrm_user") como fallback
+- Atualize todas as referências a `currentUser` para usar `user`
+- Mostre skeleton/loading enquanto carrega
+
+---
+
+PASSO 2 — Aba Perfil (dados gerais)
+
+Localize o formulário da aba Perfil com os campos:
+nome, email, telefone, cargo, empresa, website, bio,
+linkedin, twitter, instagram, github
+
+- Popule cada campo com os dados reais do estado `user`
+- Email deve aparecer preenchido mas como campo readonly
+  (não pode ser alterado — mostre tooltip: "O email não pode ser alterado")
+- Ao clicar "Salvar alterações":
+  Chame PUT /api/perfil/me com todos os campos editáveis
+  Atualize o estado `user` com o retorno
+  Mostre notificação de sucesso: "✅ Perfil atualizado com sucesso"
+  Em caso de erro, mostre a mensagem de erro retornada pela API
+
+---
+
+PASSO 3 — Avatar
+
+Localize o botão "Alterar foto" na aba Perfil.
+Substitua o comportamento atual (que não faz nada) por:
+- Abre um mini modal com campo de URL da imagem
+- Campo: "URL da foto" com placeholder "https://..."
+- Botão "Salvar foto" → POST /api/perfil/avatar com { avatarUrl }
+- Atualiza o avatar exibido na página imediatamente após sucesso
+- Mostra notificação: "✅ Foto atualizada"
+
+---
+
+PASSO 4 — Aba Segurança (alterar senha)
+
+Localize o formulário de alterar senha com campos:
+senhaAtual, novaSenha, confirmarSenha
+
+- Ao clicar "Alterar senha":
+  Valide no frontend: novaSenha === confirmarSenha
+  Se não coincidem: mostre erro inline "As senhas não coincidem"
+  Se novaSenha.length < 6: mostre erro "Mínimo 6 caracteres"
+  Chame POST /api/perfil/alterar-senha com { senhaAtual, novaSenha, confirmarSenha }
+  Se sucesso: limpe os campos e mostre "✅ Senha alterada com sucesso"
+  Se erro 401: mostre "❌ Senha atual incorreta" no campo senhaAtual
+  Se outro erro: mostre a mensagem retornada pela API
+
+---
+
+PASSO 5 — Aba Aparência
+
+Localize o seletor de tema (Escuro/Claro/Sistema).
+- Popule com o valor real de user.tema
+- Ao mudar a seleção:
+  Chame PUT /api/perfil/me com { tema: novoValor }
+  Mostre notificação discreta: "✅ Tema salvo"
+
+---
+
+PASSO 6 — Aba Notificações
+
+Localize os switches de notificação.
+- Popule cada switch com os valores reais:
+  notif_novos_leads, notif_mensagens, notif_tarefas,
+  notif_relatorios, notif_email
+- Ao mudar qualquer switch:
+  Chame PUT /api/perfil/me com o campo alterado
+  Mostre feedback visual discreto (sem modal — apenas mudança de cor)
+
+---
+
+PASSO 7 — Aba Meus Dados (excluir conta)
+
+Localize o botão de excluir/desativar conta.
+- Ao clicar, abra modal de confirmação com:
+  - Aviso: "Esta ação desativará sua conta permanentemente."
+  - Campo senha para confirmar
+  - Botão vermelho "Confirmar exclusão"
+- Ao confirmar: DELETE /api/perfil/conta com { senha }
+- Se sucesso: chame authService.logout() para deslogar e redirecionar
+- Se erro: mostre mensagem de erro no modal
+
+---
+
+PASSO 8 — Atualizar dados do usuário no header/topbar
+
+Após salvar qualquer alteração no perfil:
+- Atualize localStorage("flowcrm_user") com os novos dados
+- Se o topbar/sidebar exibe nome ou avatar do usuário,
+  certifique-se que atualiza também (via evento, contexto ou re-read do localStorage)
+
+---
+
+Confirme ao final:
+- Dados reais carregados do backend
+- Todos os formulários salvando via API
+- Alterar senha funcionando com validações
+- Avatar atualizando via URL
+- Notificações e tema salvando em tempo real
+- Excluir conta com confirmação por senha

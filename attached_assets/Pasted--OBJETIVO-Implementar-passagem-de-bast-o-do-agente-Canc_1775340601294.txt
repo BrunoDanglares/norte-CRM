@@ -1,0 +1,78 @@
+## OBJETIVO
+Implementar passagem de bastão do agente Cancelamento para o Comercial
+quando o cliente aceitar uma proposta de upgrade ou plano melhor durante
+a tentativa de retenção.
+
+## CONTEXTO
+O agente Cancelamento (Marcela) já tenta reter com ofertas específicas:
+- Preço alto → explore plano menor disponível
+- Concorrência → peça a proposta e tente igualar
+Quando o cliente aceita uma dessas propostas, precisa ser transferido
+para o Comercial (Ana Carolina) com contexto completo.
+
+## PASSO 1 — DIAGNÓSTICO
+Verificar em server/services/ispAgentEngine.ts:
+- Como funciona a transição entre agentes hoje
+- Se existe algum mecanismo de "passagem de contexto" entre agentes
+- Como o intent CANCELAMENTO é tratado atualmente
+
+## PASSO 2 — SINAL DE TRANSFERÊNCIA
+Adicionar no prompt do agente_cancelamento a instrução de sinal:
+Quando o cliente aceitar uma proposta comercial, o agente deve
+incluir na resposta a tag: TRANSFERIR_COMERCIAL
+
+Exemplo de resposta do agente:
+"Ótimo! Vou te conectar com nossa equipe comercial agora. TRANSFERIR_COMERCIAL"
+
+## PASSO 3 — DETECÇÃO NA ENGINE
+Em server/services/ispAgentEngine.ts, após receber a resposta
+do agente_cancelamento, verificar se contém TRANSFERIR_COMERCIAL:
+
+if (agentResponse.includes('TRANSFERIR_COMERCIAL')) {
+  // Remove a tag da mensagem antes de enviar ao cliente
+  const cleanMessage = agentResponse.replace('TRANSFERIR_COMERCIAL', '').trim();
+  
+  // Salva na sessão que veio do cancelamento
+  session.contexto_anterior = 'cancelamento';
+  session.motivo_transferencia = 'cliente_aceitou_proposta';
+  
+  // Muda o intent para COMERCIAL
+  session.fluxo_atual = 'COMERCIAL';
+  
+  // Envia a mensagem limpa ao cliente
+  await sendWhatsAppMessage(phone, cleanMessage);
+  
+  // Chama o agente comercial com contexto
+  // Passa para agente_vendas na próxima interação
+  return;
+}
+
+## PASSO 4 — CONTEXTO NO COMERCIAL
+Quando o agente_vendas for chamado após transferência do cancelamento,
+injetar no prompt o contexto:
+"Cliente veio do fluxo de cancelamento. Estava considerando cancelar
+por [motivo]. Aceitou avaliar uma proposta comercial. Seja objetivo
+e apresente a solução diretamente."
+
+Verificar se o prompt do agente_vendas já recebe variáveis de sessão
+como {{contexto_anterior}} ou similar. Se não receber, adicionar
+a injeção de contexto no momento da chamada.
+
+## PASSO 5 — ATUALIZAR PROMPT DO CANCELAMENTO
+Adicionar no final do prompt do agente_cancelamento no banco:
+"Quando o cliente aceitar avaliar um plano diferente ou proposta comercial,
+responda confirmando e inclua ao final da mensagem apenas: TRANSFERIR_COMERCIAL"
+
+## VERIFICAÇÃO ESPERADA
+Fluxo testável:
+1. Cliente: "quero cancelar"
+2. Marcela: entende motivo, oferece alternativa
+3. Cliente: "tudo bem, me mostra os planos"
+4. Marcela: confirma + TRANSFERIR_COMERCIAL (tag removida antes de enviar)
+5. Ana Carolina assume com contexto de que cliente estava cancelando
+
+## REGRAS
+- A tag TRANSFERIR_COMERCIAL nunca deve aparecer na mensagem ao cliente
+- O contexto anterior deve ser passado para o Comercial
+- Se a transferência falhar, Cancelamento continua o atendimento
+- Reportar todos os arquivos modificados

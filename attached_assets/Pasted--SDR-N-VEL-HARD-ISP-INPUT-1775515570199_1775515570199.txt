@@ -1,0 +1,184 @@
+// =========================
+// 🔥 SDR NÍVEL HARD - ISP
+// =========================
+
+// ===== INPUT =====
+const entrada = $('Set Entrada').item.json;
+const body = entrada.body ?? {};
+
+const msg =
+  (body.mensagem ||
+   body.message ||
+   body.media_transcription ||
+   body.media_description ||
+   '').toLowerCase().trim();
+
+const buttonId = body.button_id || body.selected_row_id || null;
+
+// ===== CONTEXTO =====
+const F = $('Code: Contexto + SDR').item?.json?.F || {};
+const fluxoAtual = (entrada.sessao?.fluxo_atual || 'menu').toLowerCase();
+const intentAnterior = (entrada.sessao?.intent || null);
+
+// ===== OUTPUT BASE =====
+let intent = null;
+let motivo = null;
+let confianca = 0;
+let ambiguidade = false;
+
+// =========================
+// 🧱 1. BOTÃO TEM PRIORIDADE
+// =========================
+if (buttonId) {
+  return [{
+    json: {
+      ...entrada,
+      intent: buttonId.toUpperCase(),
+      origem: 'botao',
+      confianca: 1,
+      motivo: 'botao'
+    }
+  }];
+}
+
+// =========================
+// 🧠 2. SCORE POR INTENÇÃO
+// =========================
+const score = {
+  SUPORTE: 0,
+  FINANCEIRO: 0,
+  COMERCIAL: 0,
+  CANCELAMENTO: 0,
+  HUMANO: 0
+};
+
+// --- SUPORTE ---
+const kSup = [
+  'sem internet','caiu','não conecta','lenta','instável',
+  'wifi ruim','roteador','sem sinal','internet ruim'
+];
+
+// --- FINANCEIRO ---
+const kFin = [
+  'boleto','pagar','pagamento','pix','segunda via',
+  'fatura','vencido','atrasado','conta'
+];
+
+// --- COMERCIAL ---
+const kCom = [
+  'contratar','plano','preço','valor','quanto custa',
+  'tem internet','disponível','aumentar plano','upgrade'
+];
+
+// --- CANCELAMENTO ---
+const kCancel = [
+  'cancelar','encerrar','quero sair','não quero mais',
+  'trocar de internet'
+];
+
+// --- HUMANO ---
+const kHum = [
+  'atendente','humano','pessoa','falar com alguém'
+];
+
+// =========================
+// 🔢 CALCULA SCORE
+// =========================
+const calcScore = (keywords, peso = 1) => {
+  let s = 0;
+  for (const k of keywords) {
+    if (msg.includes(k)) s += peso;
+  }
+  return s;
+};
+
+score.SUPORTE += calcScore(kSup, 2);
+score.FINANCEIRO += calcScore(kFin, 2);
+score.COMERCIAL += calcScore(kCom, 2);
+score.CANCELAMENTO += calcScore(kCancel, 3);
+score.HUMANO += calcScore(kHum, 3);
+
+// =========================
+// 🧠 3. INTENÇÃO POR SCORE
+// =========================
+const sorted = Object.entries(score).sort((a,b)=>b[1]-a[1]);
+
+const top = sorted[0];
+const second = sorted[1];
+
+if (top[1] === 0) {
+  intent = intentAnterior || 'MENU';
+  motivo = 'fallback_sem_match';
+  confianca = 0.3;
+}
+else if (second && (top[1] - second[1] <= 1)) {
+  // 🔥 AMBIGUIDADE
+  ambiguidade = true;
+  intent = top[0];
+  confianca = 0.5;
+  motivo = 'ambiguidade';
+}
+else {
+  intent = top[0];
+  confianca = Math.min(1, top[1] / 5);
+  motivo = 'classificacao';
+}
+
+// =========================
+// 🔥 4. REGRA DE OURO ISP (ERP MANDA)
+// =========================
+const pediuSuporte = score.SUPORTE > 0;
+
+if (pediuSuporte) {
+
+  const suspenso = F.is_suspended || F.esta_suspenso || false;
+  const valorDevido = Number(F.valor_devido ?? 0);
+  const temDebito = valorDevido > 0;
+
+  if (suspenso || temDebito) {
+    intent = 'FINANCEIRO';
+    motivo = 'inadimplencia';
+    confianca = 1;
+  } else {
+    intent = 'SUPORTE';
+    motivo = 'tecnico';
+  }
+}
+
+// =========================
+// 🔄 5. TROCA DE INTENÇÃO DINÂMICA
+// =========================
+const mudouIntencao =
+  intentAnterior &&
+  intent !== intentAnterior &&
+  confianca > 0.6;
+
+// =========================
+// 🧠 6. CONTROLE DE AMBIGUIDADE
+// =========================
+let precisaConfirmacao = false;
+
+if (ambiguidade) {
+  precisaConfirmacao = true;
+}
+
+// =========================
+// 🧠 7. OUTPUT FINAL
+// =========================
+return [{
+  json: {
+    ...entrada,
+    intent,
+    motivo,
+    confianca,
+    ambiguidade,
+    precisa_confirmacao: precisaConfirmacao,
+    mudou_intencao: mudouIntencao,
+    fluxo_sugerido: intent.toLowerCase(),
+    debug: {
+      score,
+      top,
+      second
+    }
+  }
+}];

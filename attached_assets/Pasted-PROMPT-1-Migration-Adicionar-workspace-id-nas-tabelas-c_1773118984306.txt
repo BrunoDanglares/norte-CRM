@@ -1,0 +1,76 @@
+PROMPT 1 — Migration: Adicionar workspace_id nas tabelas coreImplemente o isolamento real de dados multi-tenant no FlowCRM.
+Hoje as tabelas core não têm workspace_id e todos os dados são compartilhados.
+
+## CONTEXTO
+- A tabela workspaces já existe no banco
+- Algumas tabelas já têm workspace_id (users, conexoes, etc.)
+- O usuário autenticado tem tenantId disponível via JWT (req.user.tenantId)
+- Existe um workspace padrão com id = 1
+
+---
+
+## PARTE 1: Migration SQL
+
+Execute as seguintes alterações no banco:
+
+### Adicionar workspace_id nas tabelas core
+
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS workspace_id INTEGER REFERENCES workspaces(id);
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS workspace_id INTEGER REFERENCES workspaces(id);
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS workspace_id INTEGER REFERENCES workspaces(id);
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS workspace_id INTEGER REFERENCES workspaces(id);
+ALTER TABLE deals ADD COLUMN IF NOT EXISTS workspace_id INTEGER REFERENCES workspaces(id);
+ALTER TABLE appointments ADD COLUMN IF NOT EXISTS workspace_id INTEGER REFERENCES workspaces(id);
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS workspace_id INTEGER REFERENCES workspaces(id);
+ALTER TABLE automations ADD COLUMN IF NOT EXISTS workspace_id INTEGER REFERENCES workspaces(id);
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS workspace_id INTEGER REFERENCES workspaces(id);
+ALTER TABLE pipeline_stages ADD COLUMN IF NOT EXISTS workspace_id INTEGER REFERENCES workspaces(id);
+ALTER TABLE tags ADD COLUMN IF NOT EXISTS workspace_id INTEGER REFERENCES workspaces(id);
+
+### Popular workspace_id nos registros existentes (todos pertencem ao workspace 1)
+
+UPDATE leads SET workspace_id = 1 WHERE workspace_id IS NULL;
+UPDATE contacts SET workspace_id = 1 WHERE workspace_id IS NULL;
+UPDATE conversations SET workspace_id = 1 WHERE workspace_id IS NULL;
+UPDATE messages SET workspace_id = 1 WHERE workspace_id IS NULL;
+UPDATE deals SET workspace_id = 1 WHERE workspace_id IS NULL;
+UPDATE appointments SET workspace_id = 1 WHERE workspace_id IS NULL;
+UPDATE transactions SET workspace_id = 1 WHERE workspace_id IS NULL;
+UPDATE automations SET workspace_id = 1 WHERE workspace_id IS NULL;
+UPDATE campaigns SET workspace_id = 1 WHERE workspace_id IS NULL;
+UPDATE pipeline_stages SET workspace_id = 1 WHERE workspace_id IS NULL;
+UPDATE tags SET workspace_id = 1 WHERE workspace_id IS NULL;
+
+### Tornar workspace_id NOT NULL após popular
+
+ALTER TABLE leads ALTER COLUMN workspace_id SET NOT NULL;
+ALTER TABLE contacts ALTER COLUMN workspace_id SET NOT NULL;
+ALTER TABLE conversations ALTER COLUMN workspace_id SET NOT NULL;
+ALTER TABLE messages ALTER COLUMN workspace_id SET NOT NULL;
+ALTER TABLE deals ALTER COLUMN workspace_id SET NOT NULL;
+ALTER TABLE appointments ALTER COLUMN workspace_id SET NOT NULL;
+ALTER TABLE transactions ALTER COLUMN workspace_id SET NOT NULL;
+ALTER TABLE automations ALTER COLUMN workspace_id SET NOT NULL;
+ALTER TABLE campaigns ALTER COLUMN workspace_id SET NOT NULL;
+ALTER TABLE pipeline_stages ALTER COLUMN workspace_id SET NOT NULL;
+ALTER TABLE tags ALTER COLUMN workspace_id SET NOT NULL;
+
+### Criar índices para performance
+
+CREATE INDEX IF NOT EXISTS idx_leads_workspace ON leads(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_contacts_workspace ON contacts(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_conversations_workspace ON conversations(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_messages_workspace ON messages(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_deals_workspace ON deals(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_automations_workspace ON automations(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_campaigns_workspace ON campaigns(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_pipeline_stages_workspace ON pipeline_stages(workspace_id);
+
+### Corrigir zapier_config e automation_pending_inputs
+-- Renomear tenant_id para workspace_id para consistência
+
+ALTER TABLE zapier_config RENAME COLUMN tenant_id TO workspace_id;
+ALTER TABLE automation_pending_inputs RENAME COLUMN tenant_id TO workspace_id;
+
+Confirme que a migration rodou sem erros e que todas as colunas
+workspace_id existem nas tabelas listadas.

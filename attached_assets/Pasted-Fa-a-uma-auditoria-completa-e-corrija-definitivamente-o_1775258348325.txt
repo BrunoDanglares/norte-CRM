@@ -1,0 +1,143 @@
+Faça uma auditoria completa e corrija definitivamente o sistema de autenticação
+para o N8N no ChatBanana. O problema: chamadas do N8N com
+"Authorization: Bearer chatbanana-n8n-2026" retornam "Token inválido ou expirado"
+mesmo com N8N_SERVICE_TOKEN=chatbanana-n8n-2026 configurado no EasyPanel.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PASSO 1 — AUDITORIA: encontre TODOS os lugares de auth
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Leia os seguintes arquivos e identifique TODOS os middlewares de autenticação:
+- server/middleware/auth.ts
+- server/routes/n8n.ts
+- server/index.ts (onde as rotas n8n são registradas)
+
+Responda:
+1. Qual função exata valida o token nas rotas /api/n8n/* ?
+2. Essa função lê process.env.N8N_SERVICE_TOKEN ?
+3. As rotas /api/n8n/* usam requireAuth ou outro middleware?
+4. O N8N_SERVICE_TOKEN está sendo lido no lugar certo?
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PASSO 2 — CORREÇÃO DEFINITIVA
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+No arquivo server/middleware/auth.ts, substitua a função requireAuth
+COMPLETAMENTE pela versão abaixo. Não modifique — substitua inteira:
+
+import { Request, Response, NextFunction } from 'express';
+import jwt from 'jsonwebtoken';
+
+const JWT_SECRET = process.env.JWT_SECRET!;
+const N8N_SERVICE_TOKEN = process.env.N8N_SERVICE_TOKEN ?? 'chatbanana-n8n-2026';
+
+export function requireAuth(req: Request, res: Response, next: NextFunction) {
+  try {
+    // Extrai o token de qualquer formato suportado
+    const authHeader = req.headers['authorization'] as string | undefined;
+    const xToken     = req.headers['x-flowcrm-token'] as string | undefined;
+    const xN8nToken  = req.headers['x-n8n-token'] as string | undefined;
+
+    let token: string | undefined;
+
+    if (authHeader?.startsWith('Bearer ')) {
+      token = authHeader.slice(7).trim();
+    } else if (xToken) {
+      token = xToken.trim();
+    } else if (xN8nToken) {
+      token = xN8nToken.trim();
+    }
+
+    if (!token) {
+      return res.status(401).json({ error: 'Nao autenticado' });
+    }
+
+    // VERIFICAÇÃO 1: Token de serviço fixo para N8N (prioridade máxima)
+    if (token === N8N_SERVICE_TOKEN) {
+      const workspaceId = req.body?.workspace_id
+        ?? req.query?.workspace_id
+        ?? '';
+      (req as any).user = {
+        id: 'n8n-service',
+        workspaceId,
+        role: 'service',
+      };
+      console.log('[Auth] N8N service token aceito, workspace:', workspaceId);
+      return next();
+    }
+
+    // VERIFICAÇÃO 2: JWT padrão do ChatBanana
+    const decoded = jwt.verify(token, JWT_SECRET) as any;
+    const workspaceId = decoded.workspaceId
+      ?? decoded.tenantId
+      ?? decoded.workspace_id
+      ?? '';
+
+    (req as any).user = {
+      id:          decoded.userId ?? decoded.id ?? decoded.sub,
+      workspaceId,
+      role:        decoded.role ?? 'user',
+    };
+
+    return next();
+  } catch (err: any) {
+    console.error('[Auth] Falha:', err.message, '| Header:', req.headers['authorization']?.substring(0, 30));
+    return res.status(401).json({ error: 'Token invalido ou expirado' });
+  }
+}
+
+export function resolveWorkspaceId(req: Request): string {
+  const user = (req as any).user;
+  return user?.workspaceId
+    ?? req.body?.workspace_id
+    ?? req.query?.workspace_id as string
+    ?? '';
+}
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PASSO 3 — ENDPOINT DE DIAGNÓSTICO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+No arquivo server/index.ts, adicione este endpoint ANTES de qualquer
+middleware de auth, logo após o app.use(express.json()):
+
+app.get('/api/health/auth', (req, res) => {
+  const N8N_SERVICE_TOKEN = process.env.N8N_SERVICE_TOKEN ?? 'chatbanana-n8n-2026';
+  const authHeader = req.headers['authorization'];
+  const token = authHeader?.replace('Bearer ', '').trim();
+  res.json({
+    env_token_set:    !!process.env.N8N_SERVICE_TOKEN,
+    env_token_value:  N8N_SERVICE_TOKEN.substring(0, 10) + '...',
+    received_token:   token?.substring(0, 20) + '...',
+    match:            token === N8N_SERVICE_TOKEN,
+    jwt_secret_set:   !!process.env.JWT_SECRET,
+  });
+});
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PASSO 4 — VERIFICAR REGISTRO DAS ROTAS N8N
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+No arquivo server/index.ts, confirme que as rotas N8N estão
+registradas com o requireAuth correto:
+
+  const { requireAuth } = await import('./middleware/auth');
+  const n8nRouter = (await import('./routes/n8n')).default;
+  app.use('/api/n8n', requireAuth, n8nRouter);
+
+Se estiver diferente disso, corrija para exatamente isso.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PASSO 5 — LOG DE DIAGNÓSTICO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+No início do servidor (server/index.ts), após as importações, adicione:
+
+console.log('[Boot] N8N_SERVICE_TOKEN:', 
+  process.env.N8N_SERVICE_TOKEN 
+    ? 'SET (' + process.env.N8N_SERVICE_TOKEN.substring(0,10) + '...)' 
+    : 'NOT SET — usando default chatbanana-n8n-2026'
+);
+
+Salve todos os arquivos e aguarde redeploy.

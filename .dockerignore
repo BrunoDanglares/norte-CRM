@@ -1,0 +1,20 @@
+# Auditoria 2026-06-20: o `COPY . .` do Dockerfile levava o .git (282MB) + lixo de dev
+# pra dentro da imagem. Exclui o que NÃO é necessário pro build (deps são reinstaladas por
+# `npm install`; o dist é gerado por `npm run build`).
+# ⚠️ NÃO excluir attached_assets/ inteiro: o client importa logos via alias @assets (vite.config.ts:24).
+.git
+node_modules
+dist
+uploads
+.env
+.env.*
+*.log
+.vscode
+.claude
+.vite
+attached_assets/*.txt
+.attached_assets/*.txt
+_crashtrap.mjs
+*.tar.gz
+.DS_Store
+security-audit

@@ -1,0 +1,62 @@
+Abra server/routes/conversations.ts (ou onde estiver a função
+generateProtocolNumber()).
+
+Localize a função. Deve ter algo assim:
+
+  function generateProtocolNumber(): string {
+    const date = new Date();
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const random = Math.floor(Math.random() * 9000) + 1000;
+    return `#${year}${month}${day}${random}`;
+  }
+
+CORREÇÃO — substituir Math.random() por sequência atômica no banco:
+
+PASSO 1 — Execute este SQL no banco para criar a sequência:
+
+CREATE SEQUENCE IF NOT EXISTS protocol_seq
+  START WITH 1
+  INCREMENT BY 1
+  NO MAXVALUE
+  CACHE 1;
+
+PASSO 2 — Substitua a função generateProtocolNumber() por:
+
+async function generateProtocolNumber(db: any): Promise<string> {
+  const date = new Date();
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+
+  const result = await db.execute(
+    sql`SELECT nextval('protocol_seq') as seq`
+  );
+  const seq = String(result.rows[0].seq).padStart(4, '0');
+  return `#${year}${month}${day}${seq}`;
+}
+
+Importe sql do drizzle-orm se ainda não estiver importado.
+
+PASSO 3 — Atualize todos os lugares que chamam generateProtocolNumber():
+- A função agora é async e precisa de await
+- Precisa receber db como parâmetro
+- Ex: const protocol = await generateProtocolNumber(db);
+
+PASSO 4 — Se existir uma constraint UNIQUE na coluna de número de protocolo
+na tabela protocols ou conversations, mantenha — ela é a última linha de defesa.
+Se não existir, adicione:
+
+ALTER TABLE protocols
+  ADD CONSTRAINT protocols_number_unique UNIQUE (number)
+  DEFERRABLE INITIALLY DEFERRED;
+
+(Use o nome real da coluna de número — pode ser number, numero, protocol_number)
+
+Confirme:
+1. Sequência protocol_seq criada no banco
+2. generateProtocolNumber() agora usa nextval (sem Math.random())
+3. Função é async, todos os callers usam await
+4. UNIQUE constraint existe na coluna de número
+5. Servidor sem erros de TypeScript

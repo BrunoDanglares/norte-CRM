@@ -1,0 +1,145 @@
+Prompt 2 — Backend: scheduler atualizado + rota POST atualizada
+Atualize o scheduler e a rota POST para suportar disparo recorrente mensal.
+
+---
+
+### PARTE 1 — Atualizar `server/storage/disparosStorage.ts`
+
+Adicione o método `createNextOccurrence` ao objeto `disparosStorage`:
+```typescript
+// Cria a próxima ocorrência de um disparo recorrente (mesmo dia, mês seguinte)
+async createNextOccurrence(disparo: DisparoProgramado) {
+  const current = new Date(disparo.scheduledAt);
+
+  // Avança um mês mantendo o mesmo dia; se o mês não tiver o dia (ex: 31/jan → fev),
+  // usa o último dia disponível do mês destino
+  const next = new Date(current);
+  next.setMonth(next.getMonth() + 1);
+  // Correção: se setMonth ultrapassou o mês (ex: 31/jan virou 3/mar), volta ao último dia de fev
+  if (next.getDate() !== current.getDate()) {
+    next.setDate(0); // último dia do mês anterior
+  }
+
+  const parentId = disparo.parentDisparoId ?? disparo.id;
+
+  const rows = await db.insert(disparosProgramados).values({
+    workspaceId: disparo.workspaceId,
+    leadId: disparo.leadId,
+    contactName: disparo.contactName,
+    phoneNumber: disparo.phoneNumber,
+    messageText: disparo.messageText,
+    mediaUrl: disparo.mediaUrl,
+    mediaType: disparo.mediaType,
+    scheduledAt: next,
+    isRecurring: true,
+    recurrenceType: disparo.recurrenceType,
+    parentDisparoId: parentId,
+    createdBy: disparo.createdBy,
+    status: 'pending',
+  }).returning();
+
+  return rows[0];
+},
+```
+
+---
+
+### PARTE 2 — Atualizar `server/jobs/disparosScheduler.ts`
+
+Substitua o trecho dentro do loop `for (const disparo of pendentes)` para incluir a lógica de recorrência após o envio bem-sucedido:
+```typescript
+for (const disparo of pendentes) {
+  try {
+    const instanceId = await getZapiInstance(disparo.workspaceId);
+    if (!instanceId) {
+      await disparosStorage.markFailed(disparo.id, 'Nenhuma instância Z-API encontrada para o workspace');
+      continue;
+    }
+
+    const phone = disparo.phoneNumber;
+
+    if (disparo.mediaType === 'text' || !disparo.mediaUrl) {
+      await zapiService.sendTextMessage(instanceId, phone, disparo.messageText || '');
+    } else {
+      await zapiService.sendMediaMessage(instanceId, phone, {
+        mediaUrl: disparo.mediaUrl,
+        mediaType: disparo.mediaType,
+        caption: disparo.messageText || '',
+      });
+    }
+
+    await disparosStorage.markSent(disparo.id);
+    console.log(`[DisparosScheduler] Disparo ${disparo.id} enviado para ${phone}`);
+
+    // --- NOVO: se for recorrente, agenda a próxima ocorrência ---
+    if (disparo.isRecurring && disparo.recurrenceType === 'monthly') {
+      const proxima = await disparosStorage.createNextOccurrence(disparo);
+      console.log(`[DisparosScheduler] Próxima ocorrência criada: ${proxima.id} para ${proxima.scheduledAt}`);
+    }
+    // -----------------------------------------------------------
+
+  } catch (err: any) {
+    const msg = err?.message || 'Erro desconhecido no envio';
+    await disparosStorage.markFailed(disparo.id, msg);
+    console.error(`[DisparosScheduler] Falha no disparo ${disparo.id}:`, msg);
+  }
+}
+```
+
+---
+
+### PARTE 3 — Atualizar rota `POST /api/disparos-programados`
+
+No arquivo `server/routes/disparosProgramados.ts`, atualize o handler POST para aceitar e salvar os campos de recorrência:
+```typescript
+router.post('/', requireAuth, async (req, res) => {
+  try {
+    const workspaceId = resolveWorkspaceId(req);
+    const userId = (req as any).user.id;
+    const {
+      leadId, contactName, phoneNumber, messageText,
+      mediaUrl, mediaType, scheduledAt,
+      isRecurring, recurrenceType,  // ← novos campos
+    } = req.body;
+
+    if (!leadId || !contactName || !phoneNumber || !scheduledAt) {
+      return res.status(400).json({ error: 'Campos obrigatórios: leadId, contactName, phoneNumber, scheduledAt' });
+    }
+    if (!messageText && !mediaUrl) {
+      return res.status(400).json({ error: 'É necessário informar messageText ou mediaUrl' });
+    }
+
+    const scheduledDate = new Date(scheduledAt);
+    if (scheduledDate <= new Date()) {
+      return res.status(400).json({ error: 'A data de agendamento deve ser no futuro' });
+    }
+
+    // Validação: se recorrente, recurrenceType deve ser informado
+    if (isRecurring && !recurrenceType) {
+      return res.status(400).json({ error: 'Informe o tipo de recorrência (ex: monthly)' });
+    }
+
+    const disparo = await disparosStorage.create({
+      workspaceId,
+      leadId,
+      contactName,
+      phoneNumber,
+      messageText,
+      mediaUrl,
+      mediaType: mediaType || 'text',
+      scheduledAt: scheduledDate,
+      isRecurring: !!isRecurring,
+      recurrenceType: isRecurring ? recurrenceType : null,
+      parentDisparoId: null,
+      createdBy: userId,
+      status: 'pending',
+    });
+
+    res.status(201).json(disparo);
+  } catch (error) {
+    res.status(500).json({ error: 'Erro ao criar disparo programado' });
+  }
+});
+```
+
+Confirme que o servidor sobe sem erros antes de seguir para o frontend.

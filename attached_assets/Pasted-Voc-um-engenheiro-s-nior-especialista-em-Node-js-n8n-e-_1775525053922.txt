@@ -1,0 +1,164 @@
+Você é um engenheiro sênior especialista em Node.js, n8n e UX conversacional.
+
+CONTEXTO:
+Existe um node no n8n responsável por gerar saudação e menu inicial do atendimento.
+
+O código atual já está FUNCIONANDO em produção.
+
+IMPORTANTE:
+
+* NÃO pode haver breaking changes
+* NÃO pode remover campos existentes
+* NÃO pode alterar nomes atuais
+* Apenas EXTENDER com melhorias
+
+---
+
+OBJETIVO:
+
+Melhorar a experiência do menu inicial tornando:
+
+* mais natural
+* mais inteligente
+* mais controlado
+* preparado para escala SaaS
+
+---
+
+IMPLEMENTAÇÕES OBRIGATÓRIAS:
+
+1. NORMALIZAÇÃO DO NOME
+
+Garantir:
+
+* pegar apenas primeiro nome
+* fallback: "Cliente"
+
+Exemplo:
+
+const nomeSeguro = ctx.cliente_nome?.split(' ')[0] || "Cliente";
+
+---
+
+2. CONTROLE DE PRIMEIRA INTERAÇÃO
+
+Manter lógica atual, mas garantir:
+
+* fallback seguro
+* evitar mensagem vazia
+
+---
+
+3. MELHORAR SAUDAÇÃO
+
+Garantir que:
+
+* sempre tenha tom natural
+* nunca fique robótica
+* sempre tenha fallback
+
+---
+
+4. CONTROLE DE EXIBIÇÃO DO MENU
+
+Adicionar campo:
+
+mostrar_menu: boolean
+
+Regras:
+
+* true → primeira mensagem
+* true → quando fluxo voltar para menu
+* false → durante fluxo ativo
+
+---
+
+5. EVITAR REPETIÇÃO
+
+Adicionar controle:
+
+* não enviar menu repetido consecutivamente
+
+---
+
+6. METADADOS (IMPORTANTE)
+
+Adicionar:
+
+meta: {
+tipo: "menu_inicial",
+origem: "sistema",
+timestamp: new Date().toISOString()
+}
+
+---
+
+7. IDENTIFICAÇÃO DO CONTEXTO
+
+Adicionar:
+
+tipo_resposta: "menu"
+
+---
+
+8. PRESERVAR ESTRUTURA ATUAL
+
+NÃO alterar:
+
+* saudacao
+* sections
+* conversation_id
+* workspace_id
+* cliente_nome
+* ja_identificado
+* cliente_id
+
+---
+
+9. CÓDIGO DEFENSIVO
+
+Garantir:
+
+* null safety
+* fallback seguro
+* nenhuma exceção
+
+---
+
+10. ESTRUTURA FINAL
+
+{
+saudacao,
+sections,
+conversation_id,
+workspace_id,
+cliente_nome,
+ja_identificado,
+cliente_id,
+
+mostrar_menu,
+tipo_resposta,
+
+meta
+}
+
+---
+
+IMPORTANTE:
+
+Se houver dúvida:
+
+* NÃO simplificar
+* NÃO refatorar estrutura existente
+* NÃO remover campos
+
+Apenas EXTENDER com segurança
+
+---
+
+RESULTADO ESPERADO:
+
+* melhor experiência do usuário
+* menos repetição
+* base pronta para expansão
+* sistema mais profissional

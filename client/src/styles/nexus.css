@@ -1,0 +1,154 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Estilos DERRAMADOS do template Nexus (nexus-react@3.3.0) — verbatim.
+ * Fonte: styles/core/components.css + styles/pages/layout.css do template.
+ * Aplica o visual exato do Nexus aos componentes daisyUI + ao sidebar-menu.
+ * (Os IDs de layout #layout-* do template não entram: o CRM monta a casca em
+ *  React, não no mecanismo de checkbox do Nexus. Só o styling visual entra.)
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+/* == Overrides de componentes daisyUI (core/components.css) == */
+.btn {
+    @apply font-medium;
+}
+
+/* == CTA primário com GRADIENTE (Bruno 2026-07-04, "violeta→rosa") ==
+   Aplica o gradiente-token (--gradient-primary, index.css) por cima do
+   background-color chapado do daisyUI. Pega todo `btn btn-primary` do app
+   (ex.: "Abrir o Chat" na home) sem editar cada tela. */
+.btn-primary {
+    background-image: var(--gradient-primary);
+    border-color: transparent;
+    box-shadow: var(--shadow-primary-glow);
+}
+.btn-primary:hover {
+    background-image: var(--gradient-primary-hover);
+    border-color: transparent;
+}
+
+.card {
+    .card-title {
+        @apply font-medium;
+    }
+    .card-body {
+        @apply gap-0;
+    }
+}
+
+.table th {
+    @apply font-medium;
+}
+
+.menu .menu-title {
+    @apply text-base-content/70 font-medium;
+}
+
+.fieldset {
+    .fieldset-legend {
+        @apply text-base-content/80 text-sm font-normal;
+    }
+    .fieldset-label,
+    .label {
+        @apply text-base-content/80 text-sm;
+    }
+}
+
+/* == strong = font-medium (igual ao ERP, sem negrito pesado) == */
+strong {
+    @apply font-medium;
+}
+
+/* == Abas NATIVAS daisyUI (core/tabs.css do ERP, verbatim) ==
+   Toda `.tabs .tab` do app: ATIVA = fundo azul sólido (primary), cantos = radius-field.
+   Pega qualquer tela que use daisyUI tabs sem editar arquivo. */
+.tabs .tab {
+    border-radius: var(--radius-field, 0.375rem);
+    border-block-end-color: transparent;
+    --tab-border: 0px;
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+.tabs .tab:hover:not(.tab-active):not([aria-selected="true"]) {
+    background-color: color-mix(in oklab, var(--color-base-content) 8%, transparent);
+}
+.tabs .tab.tab-active,
+.tabs .tab[aria-selected="true"] {
+    background-image: var(--gradient-primary);
+    color: var(--color-primary-content);
+    border-color: transparent;
+    font-weight: 600;
+}
+.tabs .tab.tab-active:hover,
+.tabs .tab[aria-selected="true"]:hover {
+    background-image: var(--gradient-primary-hover);
+    color: var(--color-primary-content);
+}
+
+/* == Abas segmentadas (.seg-tab) — MESMO visual do `.tabs .tab` do ERP ==
+   Classe canônica p/ unificar as abas do CRM (pílula, ativa = azul sólido).
+   Cantos = radius-field (0.5rem, igual ao ERP), ativa = font-semibold. */
+.seg-tab {
+    @apply inline-flex items-center gap-1.5 h-9 px-3.5 text-[13px] font-medium text-base-content/70 transition-colors cursor-pointer whitespace-nowrap;
+    border-radius: var(--radius-field, 0.5rem);
+}
+.seg-tab:hover:not(.seg-tab-active) {
+    background-color: color-mix(in oklab, var(--color-base-content) 8%, transparent);
+}
+.seg-tab.seg-tab-active {
+    background-image: var(--gradient-primary);
+    color: var(--color-primary-content);
+    box-shadow: var(--shadow-primary-glow);
+    @apply font-semibold;
+}
+.seg-tab.seg-tab-active:hover {
+    background-image: var(--gradient-primary-hover);
+    color: var(--color-primary-content);
+}
+
+/* == Sidebar menu (pages/layout.css) == */
+.sidebar-menu {
+    .menu-label {
+        @apply text-base-content/70 text-sm font-medium;
+    }
+
+    .menu-item {
+        @apply rounded-box flex h-8 items-center gap-2 px-2.5 text-sm;
+    }
+
+    a,
+    .menu-item-link {
+        @apply cursor-pointer;
+
+        &.menu-item {
+            @apply hover:bg-base-200;
+
+            &.active {
+                @apply bg-base-200 font-medium;
+            }
+        }
+    }
+
+    .collapse {
+        input {
+            @apply min-h-8 p-0;
+        }
+
+        .collapse-title {
+            @apply peer-hover:bg-base-200 rounded-box flex min-h-8 items-center gap-2 text-sm;
+
+            .arrow-icon {
+                @apply opacity-60 transition-all;
+            }
+
+            &:is(:where(.peer):checked ~ *) {
+                @apply font-medium;
+                .arrow-icon {
+                    @apply rotate-90 opacity-100;
+                }
+            }
+        }
+
+        .collapse-content:before {
+            @apply bg-base-content/10 absolute start-4 top-10 bottom-2 w-px;
+            content: "";
+        }
+    }
+}

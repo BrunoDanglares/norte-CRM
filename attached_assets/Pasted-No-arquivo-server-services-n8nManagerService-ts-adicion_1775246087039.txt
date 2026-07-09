@@ -1,0 +1,79 @@
+No arquivo server/services/n8nManagerService.ts, adicione este método:
+
+  async corrigirBodyNos(workflowId: string): Promise<any> {
+    const workflow = await n8nFetch(`/workflows/${workflowId}`);
+
+    const correcoes: Record<string, string> = {
+      'POST /api/n8n/erp — Enrichment Completo': 
+        `={{ JSON.stringify({ action: 'enrichmentCompleto', params: { telefone: $('Set Entrada').item.json.telefone } }) }}`,
+      'POST /api/n8n/erp — Liberar Cliente':
+        `={{ JSON.stringify({ action: 'liberarCliente', params: { id_cliente: $('Code: SDR Classificação').item.json.cliente?.id, id_contrato: $('Code: SDR Classificação').item.json.cliente?.contract, horas: 48 } }) }}`,
+      'POST /api/n8n/erp — Abrir Chamado':
+        `={{ JSON.stringify({ action: 'abrirChamado', params: { id_cliente: $('Code: SDR Classificação').item.json.cliente?.id, titulo: 'Chamado via Agente ISP', descricao: $('Code: SDR Classificação').item.json.mensagem, prioridade: 'normal' } }) }}`,
+      'POST /api/n8n/erp — Consultar Pagamento':
+        `={{ JSON.stringify({ action: 'consultarPagamento', params: { id_cliente: $json.client_id_erp, id_contrato: $json.contract_id } }) }}`,
+      'POST /api/n8n/erp — Suspender Cliente':
+        `={{ JSON.stringify({ action: 'suspenderCliente', params: { id_cliente: $json.client_id_erp, id_contrato: $json.contract_id } }) }}`,
+      'Agente Financeiro':
+        `={{ JSON.stringify({ prompt_name: 'agente_financeiro', mensagem: $('Code: SDR Classificação').item.json.mensagem, context: $('Code: SDR Classificação').item.json, historico: [] }) }}`,
+      'Agente Suporte Online':
+        `={{ JSON.stringify({ prompt_name: 'agente_suporte_online', mensagem: $('Code: SDR Classificação').item.json.mensagem, context: $('Code: SDR Classificação').item.json, historico: [] }) }}`,
+      'Agente Suporte Offline':
+        `={{ JSON.stringify({ prompt_name: 'agente_suporte_offline', mensagem: $('Code: SDR Classificação').item.json.mensagem, context: $('Code: SDR Classificação').item.json, historico: [] }) }}`,
+      'Agente Incidente Regional':
+        `={{ JSON.stringify({ prompt_name: 'agente_incidente_regional', mensagem: $('Code: SDR Classificação').item.json.mensagem, context: $('Code: SDR Classificação').item.json, historico: [] }) }}`,
+      'Agente Cancelamento':
+        `={{ JSON.stringify({ prompt_name: 'agente_cancelamento', mensagem: $('Code: SDR Classificação').item.json.mensagem, context: $('Code: SDR Classificação').item.json, historico: [] }) }}`,
+      'Agente Vendas':
+        `={{ JSON.stringify({ prompt_name: 'agente_vendas', mensagem: $('Code: SDR Classificação').item.json.mensagem, context: $('Code: SDR Classificação').item.json, historico: [] }) }}`,
+      'POST /api/n8n/send — Envia Resposta':
+        `={{ JSON.stringify({ conversation_id: $('Set Entrada').item.json.conversation_id, message: $json.result?.response ?? $json.response ?? '', humanize: true }) }}`,
+      'POST /api/n8n/send — Notifica Regularizado':
+        `={{ JSON.stringify({ conversation_id: $json.conversation_id ?? '', message: 'Pagamento identificado ✅\\n\\nSua conexão foi regularizada! 🙌', humanize: true }) }}`,
+      'POST /api/n8n/send — Notifica Suspenso':
+        `={{ JSON.stringify({ conversation_id: $json.conversation_id ?? '', message: 'Seu prazo expirou 😕\\n\\nSua conexão foi suspensa.\\n\\nPosso te enviar a fatura agora?', humanize: true }) }}`,
+    };
+
+    let corrigidos = 0;
+    const updatedNodes = workflow.nodes.map((node: any) => {
+      const expressao = correcoes[node.name];
+      if (!expressao) return node;
+
+      corrigidos++;
+      return {
+        ...node,
+        parameters: {
+          ...node.parameters,
+          contentType: 'raw',
+          rawContentType: 'application/json',
+          body: expressao,
+          // Remove campos conflitantes
+          sendBody: true,
+        }
+      };
+    });
+
+    await this.atualizarWorkflow(workflowId, {
+      name:        workflow.name,
+      nodes:       updatedNodes,
+      connections: workflow.connections,
+      settings:    { executionOrder: workflow.settings?.executionOrder ?? 'v1' },
+    });
+
+    return { ok: true, corrigidos, total: workflow.nodes.length };
+  }
+
+
+No arquivo server/routes/n8n.ts, adicione esta rota antes do export default router:
+
+router.post('/manager/corrigir-nos', async (req: Request, res: Response) => {
+  try {
+    const workflowId = req.body?.workflow_id ?? 'ofw3whE3auzl4hDI';
+    const result = await n8nManagerService.corrigirBodyNos(workflowId);
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+Salve e aguarde redeploy.

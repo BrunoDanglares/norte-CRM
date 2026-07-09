@@ -1,0 +1,300 @@
+# Auditoria WhatsApp Channels — ChatBanana CRM
+**Data:** 28/03/2026 | **Tipo:** Read-only audit (nenhuma alteracao feita)
+
+---
+
+## 1. WhatsApp Web.js (Baileys)
+
+### Inicializacao
+- **Arquivo:** `server/services/whatsappWebJS.ts`
+- **Funcao:** `initSession()` — **Linha 224**
+- Verifica sessoes existentes (linhas 225-233)
+- Restaura auth do banco para `/tmp/baileys-sessions/${conexaoId}` via `restoreAuthFromDB` (linhas 235-238)
+- Usa `useMultiFileAuthState` para persistencia (linhas 269-271)
+- Cria socket Baileys via `makeWASocket` (linhas 334-346)
+
+### QR Code
+- **Evento:** `connection.update` — **Linhas 358-372**
+- Quando o `update` contem campo `qr`, atualiza o state da sessao
+- Persiste QR code na tabela `conexoes` com timestamp de expiracao
+- Frontend faz polling via `GET /api/conexoes/:id/status` para obter o QR
+
+### Mensagens Recebidas
+- **Evento:** `messages.upsert` — **Linha 454**
+- **Handler:** `handleIncomingMessage()` — **Linha 515**
+- Resolve JIDs incluindo mapeamento LID (Linked Identity) para telefone padrao (linhas 521-556)
+- Extrai conteudo (texto, imagens, documentos, botoes) e salva em `mensagensLog` (linhas 564-612)
+- Identifica/cria Lead via `storage.getLeadByTelefone` ou `storage.createLead` (linhas 617-642)
+
+### Mensagens Enviadas
+| Funcao | Linha | Endpoint |
+|--------|-------|----------|
+| `sendTextMessage` | 1008-1036 | Texto simples |
+| `sendImageMessage` | 1077-1097 | Download + envio de imagem |
+| `sendDocumentMessage` | 1099-1119 | Documentos |
+| `sendButtonsMessage` | 1121-1210 | 3 fallbacks: buttons, interactive, template |
+| `sendListMessage` | 1212-1325 | Menus de lista interativa |
+
+### Armazenamento de Instancia por Workspace
+- **Linha 95:** `const sessions: Map<string, WWebSession> = new Map()`
+- Cada `WWebSession` inclui `conexaoId` e `workspaceId` (linhas 82-93)
+
+### Referencia no Message Processor
+- `whatsappWebJS.ts` chama `processIncomingMessageForAutomation()` do `message-processor.ts`
+- Usa `channel: "wweb"` ao chamar o processador
+
+### Passa pelo Channel Router?
+- **NAO.** O `channel-router.ts` nao roteia para Web.js
+- Envio manual (Inbox) e feito diretamente via `server/routes/messages.ts` que verifica `provider === "wweb"`
+- `automationEngine.ts` tambem verifica provider diretamente
+
+### Reconnect Logic
+- **Linhas 397-418** no listener `connection.update`
+- Verifica se desconexao foi intencional (logout)
+- Se `shouldReconnect === true`, deleta sessao e agenda retry com `setTimeout` apos 5s chamando `initSession` novamente
+- `restoreAllSessions()` (linha 1351) reboota todas as sessoes com status "connected" ou "qr_pending" no startup
+
+### Arquivos que Referenciam Web.js
+| Arquivo | Tipo |
+|---------|------|
+| `server/services/whatsappWebJS.ts` | Implementacao principal |
+| `server/routes/conexoes.ts` | Criacao/status de conexao `provider: "wweb"` |
+| `server/routes/messages.ts` | Envio manual (verifica `provider === "wweb"`) |
+| `server/services/automationEngine.ts` | Envio automatizado |
+| `server/index.ts` | Restauracao de sessoes no boot |
+| `client/src/pages/conexoes.tsx` | UI de criacao de conexao |
+
+---
+
+## 2. Z-API
+
+### Mensagens Enviadas
+| Arquivo | Linha | Funcao/Endpoint |
+|---------|-------|-----------------|
+| `server/utils/helpers.ts` | 137-168 | `zapiFetch()` — abstrai todas as chamadas HTTP para Z-API |
+| `server/routes/messages.ts` | 77-81 | `POST /api/conversations/:id/messages` → `zapiFetch("/send-text")` |
+| `server/services/automationEngine.ts` | 106-219 | `sendImageViaZAPI()` → `/send-image` (base64) |
+| `server/services/automationEngine.ts` | 221-327 | `sendDocumentViaZAPI()` → `/send-document/pdf` |
+| `server/services/automationEngine.ts` | 329-457 | `sendMessageViaZAPI()` → `/send-text` |
+| `server/routes/conexoes.ts` | 239-245 | `POST /api/conexoes/:id/send` → `/send-text` |
+| `server/routes/conexoes.ts` | 284-300 | Configuracao webhook → `/update-webhook-received`, `/update-webhook-delivery`, `/update-webhook-send` |
+| `server/routes/webhooks.ts` | 116 | `POST /api/n8n/mensagem` → envio via API token externo |
+
+### Webhook de Mensagens Recebidas
+- **Endpoint:** `POST /api/webhook/zapi`
+- **Arquivo:** `server/routes/webhook-zapi.ts` (183 linhas)
+- Handling: linhas 13-145 (ReceivedCallback, SentCallback, DeliveryCallback, ReadCallback)
+- Parsing: `parseZapiMedia()` linhas 148-183 (texto, imagens, audio, documentos)
+- Chama `processIncomingMessageForAutomation()` linhas 111-131
+
+### Credenciais por Workspace
+- **Tabela `integration_configs`:** Armazena `instanceId`, `token`, `clientToken` por workspace
+- **Tabela `conexoes`:** Armazena `instanceId` e `token` por conexao individual
+- **Env vars (fallback):** `ZAPI_INSTANCE_ID`, `ZAPI_TOKEN`, `ZAPI_CLIENT_TOKEN`, `ZAPI_BASE_URL`
+- **Retrieval:** `getZapiIntegConfig()` em `helpers.ts` linhas 112-130 (cache de 30s)
+
+### Passa pelo Channel Router?
+- **SIM**, como fallback. `channel-router.ts` tenta Meta primeiro, depois cai para `sendViaZAPI()`
+
+### Arquivos que Referenciam Z-API
+| Arquivo | Descricao |
+|---------|-----------|
+| `server/utils/helpers.ts` | `zapiFetch`, `getZapiIntegConfig`, `fetchAndSaveProfilePic` |
+| `server/routes/webhook-zapi.ts` | Entry point para dados recebidos do Z-API |
+| `server/routes/conexoes.ts` | Criacao de instancia, status, QR code, webhook config |
+| `server/services/automationEngine.ts` | Envio automatizado (texto, imagem, doc) |
+| `server/routes/messages.ts` | Envio manual do chat inbox |
+| `server/routes/webhooks.ts` | Envio via API token externo (n8n) |
+| `server/storage.ts` | CRUD de integration_configs e message logs |
+| `shared/schema.ts` | Schema de `conexoes` e `integration_configs` |
+| `server/index.ts` | Boot: webhook check, disparo de campanhas via Z-API |
+| `client/src/pages/conexoes.tsx` | UI de conexao Z-API |
+| `client/src/pages/integracoes.tsx` | UI de configuracao de credenciais Z-API |
+
+---
+
+## 3. Meta Cloud API
+
+### Mensagens Enviadas
+**Arquivo:** `server/services/meta-whatsapp.ts`
+
+| Funcao | Linhas | Tipo |
+|--------|--------|------|
+| `sendTextMessage` | 136-160 | Texto simples |
+| `sendMediaMessage` | 162-188 | Imagem, audio, documento, video |
+| `sendTemplateMessage` | 190-215 | Templates aprovados do Meta |
+| `markMessageAsRead` | 217-230 | Read receipts |
+
+- Endpoint alvo: `https://graph.facebook.com/v19.0/${phoneNumberId}/messages`
+- Usa `metaFetch()` com timeout embutido
+
+### Webhook de Mensagens Recebidas
+**Arquivo:** `server/routes/webhook-meta.ts` (392 linhas)
+
+| Funcao | Linhas | Descricao |
+|--------|--------|-----------|
+| GET verification | 19-28 | Challenge `hub.mode === "subscribe"` |
+| POST payload | 30-38 | Recebe dados + `setImmediate` |
+| `processMetaWebhookPayload` | 40-96 | Parse `entry.changes`, identifica workspace via `phoneNumberId` |
+| `processIncomingMessage` | 98-275 | Logica de mensagem (interactive, media, texto) |
+| Media parsing | 277-368 | Imagens, audio, documentos |
+
+### Credenciais
+**Tabela:** `whatsapp_official_connections` (separada da `conexoes`)
+
+| Coluna | Tipo | Descricao |
+|--------|------|-----------|
+| `accessToken` | text | System User Token |
+| `phoneNumberId` | text | Phone Number ID do Meta |
+| `wabaId` | text | WhatsApp Business Account ID |
+| `workspaceId` | uuid | Referencia ao workspace (unique) |
+| `status` | text | Status (default: "active") |
+| `webhookVerified` | boolean | Webhook Meta verificado |
+| `messagingLimitTier` | text | ex: "TIER_1K" |
+| `qualityRating` | text | ex: "GREEN" |
+| `metaBusinessId` | text | Meta Business ID |
+
+### Passa pelo Channel Router?
+- **SIM**, como prioridade #1. `sendMessage()` verifica Meta primeiro.
+
+---
+
+## 4. Channel Router (`server/services/channel-router.ts`)
+
+### Logica de Roteamento Completa
+
+```
+sendMessage(params)
+├── 1. Verifica Meta (whatsapp_official_connections com status "active")
+│   ├── Encontrou → sendViaMeta() → meta-whatsapp.ts
+│   └── Nao encontrou → proximo
+├── 2. Fallback Z-API (sendViaZAPI)
+│   ├── conexaoId especifico → usa esse
+│   ├── Busca conexao com status "connected" no workspace
+│   └── Fallback env vars: ZAPI_INSTANCE_ID, ZAPI_TOKEN
+└── 3. Web.js → NAO IMPLEMENTADO no router
+```
+
+### Cadeia de Prioridade: Meta > Z-API > (Web.js nao incluido)
+
+### Canais Suportados Atualmente
+| Canal | No Router? | Envio Manual (Inbox) | Automacao |
+|-------|:---------:|:-------------------:|:---------:|
+| Meta Cloud API | SIM (prioridade 1) | Via router | Via router |
+| Z-API | SIM (fallback) | Via router ou direto | Direto (`automationEngine`) |
+| Web.js (Baileys) | **NAO** | Direto (`messages.ts` verifica provider) | Direto (`automationEngine`) |
+
+---
+
+## 5. Message Processor (`server/services/message-processor.ts`)
+
+### Suporta os 3 Canais?
+**SIM.** A interface `IncomingMessage` aceita `channel: "zapi" | "meta" | "wweb"`
+
+### Pipeline Unificada
+Todos os 3 canais passam pela mesma pipeline:
+
+1. Notificacoes (`storage.createNotificacao`)
+2. Webhook dispatch (`dispatchWebhook("message.received")`)
+3. Zapier trigger (`triggerZapierWebhook`)
+4. WebSocket broadcast (`new_message`, `conversation_updated`)
+5. Pending input check (automacao ativa esperando resposta)
+6. Automation triggering (combined text, debounce, `runFlowFromNode`)
+7. Support keyword routing
+
+### Logica Canal-Especifica
+- **Minima.** Normalizacao de `type === "document"` para `"file"` (linha 109)
+- `isPlaceholderText` ignora mensagens tecnicas como `[figurinha]`, `[localizacao]`
+- Web.js tem resolucao LID complexa **dentro** do `whatsappWebJS.ts` (antes de chamar o processor)
+
+---
+
+## 6. Database — Tabela `conexoes`
+
+### Colunas Relevantes
+| Coluna | Tipo | Descricao |
+|--------|------|-----------|
+| `id` | uuid | PK |
+| `nome` | text | Nome da conexao |
+| `tipo` | text | Tipo (default: `"whatsapp"`) |
+| `provider` | text | **Distingue canal** (default: `"zapi"`) |
+| `instanceId` | text | ID da instancia Z-API |
+| `token` | text | Token Z-API |
+| `numero` | text | Numero de telefone |
+| `status` | text | `disconnected`, `connected`, `qr_pending` |
+| `qrCode` | text | QR code base64 |
+| `webhookUrl` | text | URL do webhook Z-API |
+| `workspaceId` | uuid | FK para workspace |
+| `baileysAuth` | jsonb | Auth data Baileys |
+
+### Valores de `provider`
+| Provider | Canal |
+|----------|-------|
+| `"zapi"` | Z-API |
+| `"wweb"` | WhatsApp Web.js (Baileys) |
+
+### Tabela Separada: `whatsapp_official_connections`
+- Meta Cloud API usa tabela propria (nao usa `conexoes`)
+- Vinculada por `workspaceId` (unique constraint)
+
+---
+
+## 7. Frontend — Pagina de Conexoes
+
+### Componente Principal
+**Arquivo:** `client/src/pages/conexoes.tsx`
+
+### Views/Estados
+| View | Descricao |
+|------|-----------|
+| `list` | Lista de conexoes existentes |
+| `new` | Formulario: nome + selecao de provider |
+| `qr` | Exibicao do QR Code (Web.js ou Z-API) |
+| `detail` | Detalhes de conexao ativa |
+| `cloud_api` | Wizard de setup Meta Cloud API (5 etapas) |
+
+### Selecao de Provider (linhas 1189-1215)
+- **WhatsApp Web.js** (`provider: "wweb"`) — "Conexao direta via QR Code"
+- **Z-API** (`provider: "zapi"`) — Instance ID/Token manual ou criacao automatica via Account Token
+- **Meta Cloud API** — Wizard integrado `CloudAPISetup` (linhas 406-976)
+
+### Meta Cloud API — Pagina Separada
+- **Arquivo:** `client/src/pages/whatsapp-oficial.tsx`
+- **Rota:** `/whatsapp-oficial`
+- Foco em WABA ID, Phone Number ID, sincronizacao de templates
+- Menu lateral mostra "Conexoes" e "WhatsApp Oficial" como itens separados
+
+---
+
+## Analise de Impacto: Se Z-API Fosse Removido
+
+### O que QUEBRARIA:
+
+| Area | Impacto | Severidade |
+|------|---------|------------|
+| **`automationEngine.ts`** | `sendMessageViaZAPI()`, `sendImageViaZAPI()`, `sendDocumentViaZAPI()` — funcoes de envio automatizado | CRITICO |
+| **`server/routes/webhook-zapi.ts`** | Todo o modulo ficaria sem uso (mas nao quebraria se nao chamado) | MEDIO |
+| **`server/routes/conexoes.ts`** | Criacao automatica de instancia, configuracao de webhook, status check — tudo Z-API-especifico | ALTO |
+| **`server/routes/messages.ts`** | Envio manual via `zapiFetch("/send-text")` | ALTO |
+| **`server/utils/helpers.ts`** | `zapiFetch()`, `getZapiIntegConfig()`, `invalidateZapiCache()`, `fetchAndSaveProfilePic()` ficariam sem uso | MEDIO |
+| **`channel-router.ts`** | `sendViaZAPI()` (fallback) seria removido — workspaces sem Meta ficariam sem envio automatico | CRITICO |
+| **`server/index.ts`** | Boot: webhook check loop, disparo de campanhas via Z-API | ALTO |
+| **`server/routes/webhooks.ts`** | `POST /api/n8n/mensagem` — integracao n8n via Z-API | MEDIO |
+| **Frontend `conexoes.tsx`** | Opcao "Z-API" no seletor de provider | BAIXO (UI) |
+| **Frontend `integracoes.tsx`** | Configuracao de credenciais Z-API | BAIXO (UI) |
+
+### O que CONTINUARIA Funcionando:
+- Meta Cloud API (envio e recebimento) — independente
+- Web.js/Baileys (envio e recebimento) — independente
+- Message Processor — canal-agnostico
+- Pipeline de automacao — **parcialmente** (nodes que usam `sendMessageViaZAPI` quebrariam)
+- Leads, pipeline, agendamentos — sem impacto
+- ISP module — sem impacto
+
+### Resumo
+**13 arquivos** referenciam Z-API. Remocao requer:
+1. Atualizar `channel-router.ts` para incluir Web.js como fallback
+2. Criar funcoes equivalentes no `automationEngine.ts` para Web.js/Meta
+3. Remover ou adaptar 6 arquivos de backend
+4. Atualizar 2 arquivos de frontend
+5. Migrar workspaces existentes para outro provider

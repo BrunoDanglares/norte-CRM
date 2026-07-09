@@ -1,0 +1,1023 @@
+Vou montar a estrutura completa do módulo ISP em 7 prompts sequenciais, integrando tudo numa arquitetura coesa.
+
+Visão geral
+#ConcernO que entrega1Schema4 tabelas ISP + colunas onboarding/aniversário2SGP AdapterServiço que abstrai toda a API SGP3Rotas backend/api/isp/* completo4SchedulersCobrança automática + aniversário5OnboardingTrigger boas-vindas quando lead vira cliente6Nó de automaçãoNode isp_action no canvas visual7FrontendPágina completa de configuração ISP
+
+PROMPT 1 — Schema ISP Completo
+Create the complete ISP (Internet Service Provider) module database schema for ChatBanana.
+
+## Context
+- Stack: PostgreSQL + Drizzle ORM, multi-tenant via workspace_id (UUID)
+- Follow exact same patterns as existing tables in the schema
+- All tables need workspace_id as foreign key to workspaces(id) on delete cascade
+- Do NOT modify any existing tables
+
+## Tables to create
+
+### 1. isp_configs
+Main ISP configuration per workspace — one row per workspace.
+
+Columns:
+- id: serial primary key
+- workspace_id: uuid not null references workspaces(id) on delete cascade — UNIQUE
+- company_name: text not null
+- sgp_base_url: text not null (e.g. "https://provedor.sgp.net.br/api/v2")
+- sgp_api_token: text not null
+- is_active: boolean not null default true
+
+-- Billing automation
+- billing_enabled: boolean not null default true
+- billing_days_before: integer not null default 3
+- billing_days_after: integer[] not null default [1, 3, 7]
+- billing_message_before: text
+- billing_message_after: text
+
+-- Onboarding
+- onboarding_enabled: boolean not null default true
+- onboarding_message: text
+- onboarding_delay_minutes: integer not null default 5
+
+-- Birthday
+- birthday_enabled: boolean not null default true
+- birthday_message: text
+- birthday_time: text not null default '09:00'
+
+-- Support
+- support_message_template: text
+- support_phone: text
+
+- created_at: timestamp default now()
+- updated_at: timestamp default now()
+
+### 2. isp_billing_logs
+Tracks every billing message sent — prevents duplicates.
+
+Columns:
+- id: serial primary key
+- workspace_id: uuid not null references workspaces(id) on delete cascade
+- sgp_customer_id: text not null
+- sgp_invoice_id: text not null
+- customer_phone: text not null
+- customer_name: text not null
+- invoice_due_date: date not null
+- invoice_amount: numeric(10,2) not null
+- message_type: text not null (enum: 'pre_due' | 'overdue_1' | 'overdue_3' | 'overdue_7' | 'custom')
+- days_offset: integer not null
+- whatsapp_sent: boolean not null default false
+- sent_at: timestamp
+- error_message: text
+- created_at: timestamp default now()
+
+Unique constraint: (workspace_id, sgp_invoice_id, message_type)
+
+### 3. isp_support_tickets
+Local record of support tickets opened via WhatsApp bot.
+
+Columns:
+- id: serial primary key
+- workspace_id: uuid not null references workspaces(id) on delete cascade
+- sgp_ticket_id: text
+- sgp_customer_id: text not null
+- customer_phone: text not null
+- customer_name: text not null
+- customer_cpf: text not null
+- ticket_type: text not null (enum: 'sem_sinal' | 'lentidao' | 'sem_wifi' | 'financeiro' | 'outros')
+- description: text not null
+- status: text not null default 'aberto' (enum: 'aberto' | 'em_andamento' | 'resolvido' | 'cancelado')
+- opened_at: timestamp default now()
+- resolved_at: timestamp
+- last_status_check: timestamp
+- created_at: timestamp default now()
+- updated_at: timestamp default now()
+
+### 4. isp_automation_logs
+Tracks ALL automated messages sent by ISP module (billing, onboarding, birthday) for reporting.
+
+Columns:
+- id: serial primary key
+- workspace_id: uuid not null references workspaces(id) on delete cascade
+- automation_type: text not null (enum: 'billing_pre_due' | 'billing_overdue' | 'onboarding' | 'birthday' | 'maintenance')
+- customer_phone: text not null
+- customer_name: text not null
+- message_preview: text (first 100 chars of message sent)
+- channel: text not null default 'whatsapp' (whatsapp | meta)
+- success: boolean not null default false
+- error_message: text
+- sent_at: timestamp default now()
+- workspace_id index for fast queries
+
+## Instructions
+1. Add all 4 tables to the existing Drizzle schema file
+2. Export TypeScript types for all tables following existing pattern
+3. Run migration with npm run db:push or equivalent
+4. Confirm all 4 tables created successfully
+5. Show the column names of the existing leads table (especially: name/nome field, phone/telefone field, status field, birthday/data_nascimento field) — this is needed for Prompts 4 and 5
+
+PROMPT 2 — SGP Adapter
+Create the SGP API adapter service for the ChatBanana ISP module.
+
+## Context
+- File to create: server/services/sgp-adapter.ts
+- SGP is a Brazilian ISP management system (Sistema de Gestão para Provedores)
+- The adapter must be stateless — credentials passed on each call
+- Use native fetch (Node 18+), no axios
+- All API calls use: Authorization: Bearer {apiToken} header
+
+## Interfaces to export
+```typescript
+export interface SGPCredentials {
+  baseUrl: string;
+  apiToken: string;
+}
+
+export interface SGPCustomer {
+  id: string;
+  nome: string;
+  cpf: string;
+  telefone: string;
+  email: string;
+  plano: string;
+  dataNascimento: string | null; // ISO date string
+  status: 'ativo' | 'suspenso' | 'cancelado' | 'inadimplente';
+  endereco: string;
+}
+
+export interface SGPInvoice {
+  id: string;
+  customerId: string;
+  numero: string;
+  valor: number;
+  vencimento: string; // ISO date
+  status: 'aberto' | 'pago' | 'vencido' | 'cancelado';
+  linhaDigitavel: string | null;
+  linkBoleto: string | null;
+  pix: string | null;
+  diasAtraso: number;
+}
+
+export interface SGPTicket {
+  id: string;
+  customerId: string;
+  tipo: string;
+  descricao: string;
+  status: 'aberto' | 'em_andamento' | 'resolvido';
+  criadoEm: string;
+  protocolo: string;
+}
+
+export interface SGPSecondCopy {
+  linhaDigitavel: string;
+  linkBoleto: string;
+  pix: string | null;
+  vencimento: string;
+  valor: number;
+}
+
+export class SGPError extends Error {
+  statusCode: number;
+  sgpMessage: string;
+  constructor(message: string, statusCode: number) {
+    super(message);
+    this.name = 'SGPError';
+    this.statusCode = statusCode;
+    this.sgpMessage = message;
+  }
+}
+```
+
+## Internal helpers
+
+### sgpFetch(url, options, credentials)
+- Wrapper with 10s timeout via AbortController
+- Adds Authorization: Bearer {token} header
+- Also adds token as query param: ?token={token} (SGP fallback)
+- On non-OK response: reads body, throws SGPError with status code
+- Logs: console.log('[SGP]', method, url)
+
+### formatCPF(cpf: string): string
+- Strips all non-digits, returns 11-digit string
+
+## Exported functions
+
+### searchCustomerByCPF(credentials, cpf): Promise<SGPCustomer | null>
+- GET {baseUrl}/clientes?cpf={formatCPF(cpf)}
+- Return null if 404 or empty result
+- Map response to SGPCustomer interface
+
+### getOpenInvoices(credentials, customerId): Promise<SGPInvoice[]>
+- GET {baseUrl}/financeiro/faturas?cliente_id={customerId}&status=aberto,vencido
+- Calculate diasAtraso for each (Math.max(0, days since vencimento))
+- Return sorted by vencimento ascending
+- Return [] if none found
+
+### generateSecondCopy(credentials, invoiceId): Promise<SGPSecondCopy>
+- POST {baseUrl}/financeiro/faturas/{invoiceId}/segunda-via
+- Throw SGPError if not found or already paid
+
+### createSupportTicket(credentials, params: { customerId, tipo, descricao }): Promise<SGPTicket>
+- POST {baseUrl}/os with body { cliente_id, tipo, descricao, prioridade: 'normal' }
+- Return created ticket with protocolo
+
+### getTicketStatus(credentials, ticketId): Promise<SGPTicket>
+- GET {baseUrl}/os/{ticketId}
+- Throw SGPError if not found
+
+### getOverdueCustomers(credentials, daysOverdue): Promise<Array<{ customer: SGPCustomer, invoices: SGPInvoice[] }>>
+- GET {baseUrl}/financeiro/faturas?status=vencido&dias_atraso={daysOverdue}
+- Group results by customer
+- Used by billing scheduler
+
+### getInvoicesDueSoon(credentials, daysUntilDue): Promise<Array<{ customer: SGPCustomer, invoice: SGPInvoice }>>
+- GET {baseUrl}/financeiro/faturas?vence_em={daysUntilDue}
+- Used by billing scheduler for pre-due reminders
+
+### getCustomerByPhone(credentials, phone): Promise<SGPCustomer | null>
+- GET {baseUrl}/clientes?telefone={phone}
+- Returns null if not found
+- Used by webhook to auto-identify callers
+
+## After implementing
+- Confirm TypeScript compiles without errors
+- Export all interfaces and functions as named exports
+- Confirm file created: server/services/sgp-adapter.ts
+
+PROMPT 3 — Rotas Backend /api/isp/*
+Create all backend Express routes for the ISP module in ChatBanana.
+
+## Context
+- Follow routing patterns of existing modules
+- All routes protected with requireAuth middleware
+- All queries scoped by workspace_id using resolveWorkspaceId(req)
+- Import sgp-adapter functions from server/services/sgp-adapter.ts
+- Import channel-router sendMessage from server/services/channel-router.ts
+- File to create: server/routes/isp.ts
+
+## Routes
+
+### Config
+
+GET /api/isp/config
+- Return isp_config for workspace
+- Replace sgp_api_token with "••••••••" for security
+- Return { configured: false } if none exists
+
+POST /api/isp/config
+- Upsert ISP config for workspace
+- Body: { company_name, sgp_base_url, sgp_api_token, support_phone, billing_enabled, billing_days_before, billing_days_after, billing_message_before, billing_message_after, onboarding_enabled, onboarding_message, onboarding_delay_minutes, birthday_enabled, birthday_message, birthday_time }
+- Required: company_name, sgp_base_url, sgp_api_token
+- Test SGP connection before saving: call searchCustomerByCPF with CPF '00000000000' — if it throws a network error (not 404), return 400 { error: 'Não foi possível conectar ao SGP' }
+- Return saved config (with token masked)
+
+PATCH /api/isp/config
+- Partial update — only updates fields present in body
+- Used for saving onboarding/birthday settings without re-entering token
+- Return updated config
+
+DELETE /api/isp/config
+- Soft delete: set is_active = false
+
+### Customer
+
+GET /api/isp/customer/:cpf
+- Search customer in SGP by CPF
+- Return customer data or 404 { error: 'Cliente não encontrado' }
+- Catch SGPError: return 502
+
+GET /api/isp/customer/:cpf/invoices
+- Search customer by CPF → get open invoices
+- Return { customer, invoices }
+
+POST /api/isp/invoice/:invoiceId/second-copy
+- Generate second copy
+- Return { linhaDigitavel, linkBoleto, pix, vencimento, valor }
+
+### Support Tickets
+
+POST /api/isp/ticket
+- Body: { cpf, ticket_type, description }
+- Search customer by CPF first → 404 if not found
+- Create ticket in SGP via createSupportTicket()
+- Save to isp_support_tickets table
+- Log to isp_automation_logs (type: 'support_opened')
+- Return { protocolo, sgp_ticket_id, message: 'Chamado aberto com sucesso' }
+
+GET /api/isp/ticket/:id
+- Get from local DB + refresh status from SGP
+- Update local status if changed
+- Return merged ticket data
+
+GET /api/isp/tickets
+- List tickets for workspace
+- Query params: ?status=aberto&limit=50&offset=0
+- Return { tickets, total }
+
+### Billing
+
+GET /api/isp/billing/preview
+- Preview who would receive billing messages if run now
+- Query params: ?type=pre_due|overdue&days=3
+- Cross-reference with isp_billing_logs to show already-notified
+- Return { total, preview: first 10 customers, already_sent: count }
+
+POST /api/isp/billing/send
+- Manual trigger billing run
+- Body: { type: 'pre_due' | 'overdue', days_offset: number }
+- For each customer:
+  a. Check isp_billing_logs — skip if already sent
+  b. Build message from template
+  c. Send via sendMessage (channel-router)
+  d. Log to isp_billing_logs AND isp_automation_logs
+  e. Sleep 1500ms between sends
+- Return { sent, skipped, errors }
+
+GET /api/isp/billing/logs
+- List billing logs for workspace
+- Query params: ?limit=50&offset=0&type=pre_due
+- Return { logs, total }
+
+### Reports
+
+GET /api/isp/reports/summary
+- Return counts from isp_automation_logs for workspace:
+  { total_sent_today, total_sent_month, billing_sent, onboarding_sent, birthday_sent, success_rate }
+
+## Error handling
+- SGPError → 502 { error: 'SGP API error', detail: err.sgpMessage }
+- Other errors → 500 { error: err.message }
+- Never expose credentials in errors
+
+## Register in server/index.ts
+import ispRouter from './routes/isp';
+app.use('/api/isp', requireAuth, ispRouter);
+
+## After implementing
+1. Test GET /api/isp/config → should return { configured: false }
+2. Confirm server starts without TypeScript errors
+3. Confirm route registered in boot logs
+
+PROMPT 4 — Schedulers (Cobrança + Aniversário)
+Create the automated billing and birthday schedulers for the ChatBanana ISP module.
+
+## Context
+- install node-cron if not already: npm install node-cron @types/node-cron
+- Both schedulers run daily for ALL active workspaces with ISP config
+- Use channel-router sendMessage for all sends
+- Log everything to isp_automation_logs table
+- Check actual column names in leads table (from Prompt 1 output) before writing birthday query
+
+## File to create: server/services/isp-schedulers.ts
+```typescript
+import cron from 'node-cron';
+import { db } from '../db';
+import { isp_configs, isp_billing_logs, isp_automation_logs, leads } from '../db/schema';
+import { eq, and, sql } from 'drizzle-orm';
+import * as sgpAdapter from './sgp-adapter';
+import { sendMessage } from './channel-router';
+
+// ─── Default message templates ───────────────────────────────────────────────
+
+const DEFAULT_PRE_DUE = `Olá, {{nome}}! 👋
+
+Sua fatura vence em *{{vencimento}}* no valor de *{{valor}}*.
+
+💳 Linha digitável: {{linha_digitavel}}
+🔗 Boleto: {{link_boleto}}
+
+Evite o corte — pague em dia! 😊`;
+
+const DEFAULT_OVERDUE = `Olá, {{nome}}! Sua fatura de *{{valor}}* venceu em *{{vencimento}}*.
+
+Para regularizar acesse: {{link_boleto}}
+
+💳 Linha digitável: {{linha_digitavel}}
+
+Regularize para evitar a suspensão do sinal. Qualquer dúvida, é só chamar! 🙏`;
+
+const DEFAULT_BIRTHDAY = `🎂 Feliz Aniversário, {{nome}}!
+
+A equipe {{empresa}} deseja a você um dia repleto de alegrias!
+
+É uma honra ter você como nosso cliente. Conte sempre com a gente! 🎉`;
+
+// ─── Start all ISP schedulers ────────────────────────────────────────────────
+
+export function startISPSchedulers() {
+  // Billing: daily at 08:00 BRT
+  cron.schedule('0 8 * * *', async () => {
+    console.log('[ISP Billing] Starting daily billing run...');
+    await runBillingForAllWorkspaces().catch(e => console.error('[ISP Billing] Fatal error:', e));
+  }, { timezone: 'America/Sao_Paulo' });
+
+  // Birthday: daily at 09:00 BRT
+  cron.schedule('0 9 * * *', async () => {
+    console.log('[ISP Birthday] Starting daily birthday check...');
+    await runBirthdayForAllWorkspaces().catch(e => console.error('[ISP Birthday] Fatal error:', e));
+  }, { timezone: 'America/Sao_Paulo' });
+
+  console.log('[ISP Schedulers] ✅ Billing at 08:00 BRT | Birthday at 09:00 BRT');
+}
+
+// ─── BILLING ─────────────────────────────────────────────────────────────────
+
+async function runBillingForAllWorkspaces() {
+  const configs = await db.select().from(isp_configs).where(
+    and(eq(isp_configs.is_active, true), eq(isp_configs.billing_enabled, true))
+  );
+  for (const config of configs) {
+    await runBillingForWorkspace(config).catch(e =>
+      console.error(`[ISP Billing] Workspace ${config.workspace_id} error:`, e)
+    );
+  }
+}
+
+async function runBillingForWorkspace(config: any) {
+  const credentials = { baseUrl: config.sgp_base_url, apiToken: config.sgp_api_token };
+  const workspaceId = config.workspace_id;
+  let sent = 0, skipped = 0, errors = 0;
+
+  // PRE-DUE reminders
+  const daysBefore = config.billing_days_before || 3;
+  const preDue = await sgpAdapter.getInvoicesDueSoon(credentials, daysBefore).catch(() => []);
+
+  for (const { customer, invoice } of preDue) {
+    const alreadySent = await checkAlreadySent(workspaceId, invoice.id, 'pre_due');
+    if (alreadySent) { skipped++; continue; }
+
+    const message = buildBillingMessage(config.billing_message_before || DEFAULT_PRE_DUE, customer, invoice);
+    const result = await sendMessage({ workspaceId, to: customer.telefone, type: 'text', content: message });
+
+    await logBilling(workspaceId, customer, invoice, 'pre_due', -daysBefore, result.success);
+    await logAutomation(workspaceId, 'billing_pre_due', customer, message, result);
+
+    result.success ? sent++ : errors++;
+    await sleep(1500);
+  }
+
+  // OVERDUE notices
+  const daysAfterList: number[] = config.billing_days_after || [1, 3, 7];
+
+  for (const daysAfter of daysAfterList) {
+    const overdue = await sgpAdapter.getOverdueCustomers(credentials, daysAfter).catch(() => []);
+    const msgType = `overdue_${daysAfter}` as any;
+
+    for (const { customer, invoices } of overdue) {
+      const invoice = invoices[0];
+      const alreadySent = await checkAlreadySent(workspaceId, invoice.id, msgType);
+      if (alreadySent) { skipped++; continue; }
+
+      const message = buildBillingMessage(config.billing_message_after || DEFAULT_OVERDUE, customer, invoice);
+      const result = await sendMessage({ workspaceId, to: customer.telefone, type: 'text', content: message });
+
+      await logBilling(workspaceId, customer, invoice, msgType, daysAfter, result.success);
+      await logAutomation(workspaceId, 'billing_overdue', customer, message, result);
+
+      result.success ? sent++ : errors++;
+      await sleep(1500);
+    }
+  }
+
+  console.log(`[ISP Billing] Workspace ${workspaceId}: sent=${sent} skipped=${skipped} errors=${errors}`);
+}
+
+async function checkAlreadySent(workspaceId: string, invoiceId: string, messageType: string): Promise<boolean> {
+  const log = await db.query.isp_billing_logs.findFirst({
+    where: and(
+      eq(isp_billing_logs.workspace_id, workspaceId),
+      eq(isp_billing_logs.sgp_invoice_id, invoiceId),
+      eq(isp_billing_logs.message_type, messageType),
+      eq(isp_billing_logs.whatsapp_sent, true)
+    )
+  });
+  return !!log;
+}
+
+async function logBilling(workspaceId: string, customer: any, invoice: any, type: string, daysOffset: number, success: boolean) {
+  await db.insert(isp_billing_logs).values({
+    workspace_id: workspaceId,
+    sgp_customer_id: customer.id,
+    sgp_invoice_id: invoice.id,
+    customer_phone: customer.telefone,
+    customer_name: customer.nome,
+    invoice_due_date: new Date(invoice.vencimento),
+    invoice_amount: invoice.valor,
+    message_type: type,
+    days_offset: daysOffset,
+    whatsapp_sent: success,
+    sent_at: success ? new Date() : null,
+  }).onConflictDoNothing().catch(e => console.error('[ISP Billing] Log error:', e));
+}
+
+function buildBillingMessage(template: string, customer: any, invoice: any): string {
+  return template
+    .replace(/\{\{nome\}\}/g, customer.nome?.split(' ')[0] || '')
+    .replace(/\{\{vencimento\}\}/g, new Date(invoice.vencimento).toLocaleDateString('pt-BR'))
+    .replace(/\{\{valor\}\}/g, `R$ ${Number(invoice.valor).toFixed(2)}`)
+    .replace(/\{\{link_boleto\}\}/g, invoice.linkBoleto || '')
+    .replace(/\{\{linha_digitavel\}\}/g, invoice.linhaDigitavel || '')
+    .replace(/\{\{pix\}\}/g, invoice.pix || '');
+}
+
+// ─── BIRTHDAY ─────────────────────────────────────────────────────────────────
+
+async function runBirthdayForAllWorkspaces() {
+  const configs = await db.select().from(isp_configs).where(
+    and(eq(isp_configs.is_active, true), eq(isp_configs.birthday_enabled, true))
+  );
+  for (const config of configs) {
+    await runBirthdayForWorkspace(config).catch(e =>
+      console.error(`[ISP Birthday] Workspace ${config.workspace_id} error:`, e)
+    );
+  }
+}
+
+async function runBirthdayForWorkspace(config: any) {
+  const workspaceId = config.workspace_id;
+  const today = new Date();
+  const month = today.getMonth() + 1;
+  const day = today.getDate();
+
+  // Agent: use the actual column names from leads table found in Prompt 1
+  // Adjust field names: nome/name, telefone/phone, data_nascimento/birthday/birth_date, status values
+  const clients = await db.select().from(leads).where(
+    and(
+      eq(leads.workspace_id, workspaceId),
+      sql`EXTRACT(MONTH FROM ${leads.data_nascimento}) = ${month}`,
+      sql`EXTRACT(DAY FROM ${leads.data_nascimento}) = ${day}`,
+      sql`${leads.status} IN ('cliente', 'ativo', 'client', 'active')`
+    )
+  ).catch(() => []);
+
+  if (!clients.length) {
+    console.log(`[ISP Birthday] No birthdays today for workspace ${workspaceId}`);
+    return;
+  }
+
+  console.log(`[ISP Birthday] ${clients.length} birthdays for workspace ${workspaceId}`);
+
+  for (const client of clients) {
+    const phone = (client as any).telefone || (client as any).phone;
+    const name = (client as any).nome || (client as any).name || 'cliente';
+    if (!phone) continue;
+
+    const message = (config.birthday_message || DEFAULT_BIRTHDAY)
+      .replace(/\{\{nome\}\}/g, name.split(' ')[0])
+      .replace(/\{\{empresa\}\}/g, config.company_name || '');
+
+    await sleep(1500);
+
+    const result = await sendMessage({ workspaceId, to: phone, type: 'text', content: message });
+    await logAutomation(workspaceId, 'birthday', { nome: name, telefone: phone }, message, result);
+
+    console.log(`[ISP Birthday] ${result.success ? '✅' : '❌'} ${name} (${phone})`);
+  }
+}
+
+// ─── Shared helpers ────────────────────────────────────────────────────────────
+
+async function logAutomation(workspaceId: string, type: string, customer: any, message: string, result: any) {
+  await db.insert(isp_automation_logs).values({
+    workspace_id: workspaceId,
+    automation_type: type,
+    customer_phone: customer.telefone || customer.phone || '',
+    customer_name: customer.nome || customer.name || '',
+    message_preview: message.substring(0, 100),
+    channel: result.channel || 'whatsapp',
+    success: result.success,
+    error_message: result.error || null,
+    sent_at: new Date()
+  }).catch(e => console.error('[ISP] Automation log error:', e));
+}
+
+function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)); }
+```
+
+## Register in server/index.ts
+```typescript
+import { startISPSchedulers } from './services/isp-schedulers';
+// After DB connection established, alongside other schedulers:
+startISPSchedulers();
+```
+
+## After implementing
+1. Confirm server starts with:
+   - "[ISP Schedulers] ✅ Billing at 08:00 BRT | Birthday at 09:00 BRT"
+2. Report any column name errors from the leads table (adjust field names in birthday query)
+3. Confirm isp_automation_logs table is accessible
+
+PROMPT 5 — Onboarding de Boas-vindas
+Implement the ISP welcome onboarding feature for ChatBanana.
+Triggers automatically when a lead's status changes to 'cliente'.
+
+## Context
+- File to create: server/services/isp-onboarding.ts
+- Use sendMessage from channel-router for sending
+- Log to isp_automation_logs
+- Fire-and-forget pattern — never blocks the lead update response
+- Check actual status values in leads table before implementing
+
+## File to create: server/services/isp-onboarding.ts
+```typescript
+import { db } from '../db';
+import { isp_configs, isp_automation_logs } from '../db/schema';
+import { eq, and } from 'drizzle-orm';
+import { sendMessage } from './channel-router';
+
+const DEFAULT_ONBOARDING = `Olá, {{nome}}! 🎉
+
+Seja muito bem-vindo(a) à família *{{empresa}}*!
+
+Sua internet está configurada no plano *{{plano}}*.
+
+📞 Suporte técnico: {{suporte}}
+💬 Atendimento: Pode chamar aqui mesmo pelo WhatsApp a qualquer hora!
+
+Qualquer dúvida estamos sempre à disposição. Seja bem-vindo(a)! 😊`;
+
+export async function triggerWelcomeOnboarding(params: {
+  workspaceId: string;
+  customerName: string;
+  customerPhone: string;
+  planName?: string;
+}) {
+  const { workspaceId, customerName, customerPhone, planName } = params;
+
+  const config = await db.query.isp_configs.findFirst({
+    where: and(
+      eq(isp_configs.workspace_id, workspaceId),
+      eq(isp_configs.is_active, true),
+      eq(isp_configs.onboarding_enabled, true)
+    )
+  });
+
+  if (!config) return; // ISP not configured or onboarding disabled
+
+  const delayMs = (config.onboarding_delay_minutes || 5) * 60 * 1000;
+
+  console.log(`[ISP Onboarding] Scheduled welcome for ${customerName} in ${config.onboarding_delay_minutes}min`);
+
+  setTimeout(async () => {
+    try {
+      const message = (config.onboarding_message || DEFAULT_ONBOARDING)
+        .replace(/\{\{nome\}\}/g, customerName.split(' ')[0])
+        .replace(/\{\{empresa\}\}/g, config.company_name || '')
+        .replace(/\{\{plano\}\}/g, planName || 'seu plano')
+        .replace(/\{\{suporte\}\}/g, config.support_phone || config.company_name || 'nossa equipe');
+
+      const result = await sendMessage({
+        workspaceId,
+        to: customerPhone,
+        type: 'text',
+        content: message
+      });
+
+      await db.insert(isp_automation_logs).values({
+        workspace_id: workspaceId,
+        automation_type: 'onboarding',
+        customer_phone: customerPhone,
+        customer_name: customerName,
+        message_preview: message.substring(0, 100),
+        channel: result.channel || 'whatsapp',
+        success: result.success,
+        error_message: result.error || null,
+        sent_at: new Date()
+      }).catch(() => {});
+
+      console.log(`[ISP Onboarding] ${result.success ? '✅' : '❌'} Welcome sent to ${customerName}`);
+    } catch (err: any) {
+      console.error('[ISP Onboarding] Error:', err.message);
+    }
+  }, delayMs);
+}
+```
+
+## Wire up trigger in lead status update route
+
+Find in the codebase where lead status is updated — likely PATCH /api/leads/:id or similar in server/routes.ts.
+
+After the DB update succeeds, add:
+```typescript
+import { triggerWelcomeOnboarding } from '../services/isp-onboarding';
+
+// After successful lead status update:
+const clientStatuses = ['cliente', 'client', 'ativo', 'active']; // adjust to actual values used
+const wasNotClient = !clientStatuses.includes(previousStatus);
+const isNowClient = clientStatuses.includes(newStatus);
+
+if (wasNotClient && isNowClient) {
+  const workspaceId = resolveWorkspaceId(req);
+  triggerWelcomeOnboarding({
+    workspaceId,
+    customerName: updatedLead.nome || updatedLead.name,
+    customerPhone: updatedLead.telefone || updatedLead.phone,
+    planName: updatedLead.plano || updatedLead.plan || undefined
+  }).catch(err => console.error('[ISP Onboarding] Trigger error:', err));
+}
+```
+
+## After implementing
+1. Confirm TypeScript compiles
+2. Test: update a lead status to 'cliente' via the UI or API
+3. Check logs for: "[ISP Onboarding] Scheduled welcome for X in 5min"
+4. Report what status values actually exist in the leads table
+
+PROMPT 6 — Nó de Automação isp_action
+Add the isp_action node to the ChatBanana automation engine and canvas.
+
+## Context
+- Follow exact same patterns as existing automation nodes
+- Node executes in the automation engine switch/case
+- Canvas panel is built in React
+- Variables set by this node are available in subsequent nodes via {{variable_name}}
+
+## Backend: Add to automation engine
+
+In the automation engine execution handler (find the switch/case for node types):
+```typescript
+case 'isp_action': {
+  const workspaceId = context.workspaceId;
+  const action = node.config.action;
+
+  const ispConfig = await db.query.isp_configs.findFirst({
+    where: and(
+      eq(isp_configs.workspace_id, workspaceId),
+      eq(isp_configs.is_active, true)
+    )
+  });
+
+  if (!ispConfig) {
+    context.variables.isp_error = 'Módulo ISP não configurado';
+    context.variables.isp_success = false;
+    break;
+  }
+
+  const credentials = { baseUrl: ispConfig.sgp_base_url, apiToken: ispConfig.sgp_api_token };
+  const resolve = (val: string) => val?.replace(/\{\{(\w+)\}\}/g, (_, k) => context.variables[k] ?? '');
+
+  try {
+    switch (action) {
+
+      case 'search_customer': {
+        const cpf = resolve(node.config.cpf_variable || '{{cpf}}');
+        const customer = await sgpAdapter.searchCustomerByCPF(credentials, cpf);
+        if (customer) {
+          context.variables.isp_success = true;
+          context.variables.isp_customer_nome = customer.nome;
+          context.variables.isp_customer_id = customer.id;
+          context.variables.isp_customer_plano = customer.plano;
+          context.variables.isp_customer_status = customer.status;
+          context.variables.isp_customer_telefone = customer.telefone;
+        } else {
+          context.variables.isp_success = false;
+          context.variables.isp_error = 'Cliente não encontrado no SGP';
+        }
+        break;
+      }
+
+      case 'get_invoices': {
+        const customerId = resolve(node.config.customer_id_variable || '{{isp_customer_id}}');
+        const invoices = await sgpAdapter.getOpenInvoices(credentials, customerId);
+        context.variables.isp_success = true;
+        context.variables.isp_invoices_count = invoices.length;
+        context.variables.isp_has_debt = invoices.length > 0;
+        if (invoices.length > 0) {
+          const inv = invoices[0];
+          context.variables.isp_invoice_id = inv.id;
+          context.variables.isp_invoice_valor = `R$ ${Number(inv.valor).toFixed(2)}`;
+          context.variables.isp_invoice_vencimento = new Date(inv.vencimento).toLocaleDateString('pt-BR');
+          context.variables.isp_invoice_status = inv.status;
+          context.variables.isp_invoice_dias_atraso = inv.diasAtraso;
+          context.variables.isp_linha_digitavel = inv.linhaDigitavel || '';
+          context.variables.isp_link_boleto = inv.linkBoleto || '';
+          context.variables.isp_pix = inv.pix || '';
+        }
+        break;
+      }
+
+      case 'second_copy': {
+        const invoiceId = resolve(node.config.invoice_id_variable || '{{isp_invoice_id}}');
+        const copy = await sgpAdapter.generateSecondCopy(credentials, invoiceId);
+        context.variables.isp_success = true;
+        context.variables.isp_linha_digitavel = copy.linhaDigitavel;
+        context.variables.isp_link_boleto = copy.linkBoleto;
+        context.variables.isp_pix = copy.pix || '';
+        context.variables.isp_invoice_valor = `R$ ${Number(copy.valor).toFixed(2)}`;
+        context.variables.isp_invoice_vencimento = new Date(copy.vencimento).toLocaleDateString('pt-BR');
+        break;
+      }
+
+      case 'create_ticket': {
+        const customerId = resolve(node.config.customer_id_variable || '{{isp_customer_id}}');
+        const tipo = resolve(node.config.ticket_type || 'sem_sinal');
+        const descricao = resolve(node.config.description || '{{ticket_description}}');
+        const ticket = await sgpAdapter.createSupportTicket(credentials, { customerId, tipo, descricao });
+
+        // Save locally
+        await db.insert(isp_support_tickets).values({
+          workspace_id: workspaceId,
+          sgp_ticket_id: ticket.id,
+          sgp_customer_id: customerId,
+          customer_phone: context.variables.customerPhone || '',
+          customer_name: context.variables.isp_customer_nome || '',
+          customer_cpf: context.variables.cpf || '',
+          ticket_type: tipo,
+          description: descricao,
+          status: 'aberto'
+        }).catch(() => {});
+
+        context.variables.isp_success = true;
+        context.variables.isp_ticket_id = ticket.id;
+        context.variables.isp_ticket_protocolo = ticket.protocolo;
+        break;
+      }
+
+      case 'get_ticket_status': {
+        const ticketId = resolve(node.config.ticket_id_variable || '{{isp_ticket_id}}');
+        const ticket = await sgpAdapter.getTicketStatus(credentials, ticketId);
+        context.variables.isp_success = true;
+        context.variables.isp_ticket_status = ticket.status;
+        context.variables.isp_ticket_protocolo = ticket.protocolo;
+        break;
+      }
+    }
+  } catch (err: any) {
+    context.variables.isp_success = false;
+    context.variables.isp_error = err.sgpMessage || err.message || 'Erro ao consultar SGP';
+    console.error('[ISP Node] Error:', err.message);
+  }
+  break;
+}
+```
+
+## Frontend: Node definition
+
+Add to the node types/configs array:
+```typescript
+{
+  type: 'isp_action',
+  label: 'Ação ISP',
+  icon: 'Wifi',
+  color: '#0ea5e9',
+  category: 'Integrações',
+  description: 'Consulta dados do provedor: clientes, boletos, chamados técnicos',
+  defaultConfig: {
+    action: 'search_customer',
+    cpf_variable: '{{cpf}}',
+    customer_id_variable: '{{isp_customer_id}}',
+    invoice_id_variable: '{{isp_invoice_id}}',
+    ticket_type: 'sem_sinal',
+    description: '',
+    ticket_id_variable: '{{isp_ticket_id}}'
+  }
+}
+```
+
+## Frontend: Config panel component
+
+Create client/src/components/automation/nodes/ISPActionNodeConfig.tsx:
+
+Show a Select for "Ação":
+- search_customer → "🔍 Buscar Cliente por CPF"
+- get_invoices → "📄 Listar Boletos em Aberto"
+- second_copy → "🧾 Gerar 2ª Via de Boleto"
+- create_ticket → "🔧 Abrir Chamado Técnico"
+- get_ticket_status → "📊 Consultar Status do Chamado"
+
+Conditional fields per action:
+- search_customer: text input "Variável do CPF" default {{cpf}}
+- get_invoices: text input "Variável do ID do cliente" default {{isp_customer_id}}
+- second_copy: text input "Variável do ID da fatura" default {{isp_invoice_id}}
+- create_ticket: select tipo (sem_sinal/lentidao/sem_wifi/financeiro/outros) + textarea descrição
+- get_ticket_status: text input "ID do chamado" default {{isp_ticket_id}}
+
+Info box showing variables this node sets:
+- search_customer sets: {{isp_customer_nome}}, {{isp_customer_id}}, {{isp_customer_plano}}, {{isp_customer_status}}, {{isp_success}}
+- get_invoices sets: {{isp_invoices_count}}, {{isp_has_debt}}, {{isp_invoice_valor}}, {{isp_invoice_vencimento}}, {{isp_linha_digitavel}}, {{isp_link_boleto}}, {{isp_pix}}, {{isp_success}}
+- second_copy sets: {{isp_linha_digitavel}}, {{isp_link_boleto}}, {{isp_pix}}, {{isp_invoice_valor}}, {{isp_success}}
+- create_ticket sets: {{isp_ticket_protocolo}}, {{isp_ticket_id}}, {{isp_success}}
+- get_ticket_status sets: {{isp_ticket_status}}, {{isp_ticket_protocolo}}, {{isp_success}}
+
+Register ISPActionNodeConfig in the node panel registry alongside existing nodes.
+
+## After implementing
+1. Open the automation canvas
+2. Confirm the "Ação ISP" node appears in the node picker under "Integrações"
+3. Drag it onto canvas and confirm the config panel opens correctly
+4. Confirm TypeScript compiles without errors
+
+PROMPT 7 — Frontend: Página de Configuração ISP
+Create the complete ISP settings page for ChatBanana.
+
+## File to create: client/src/pages/ISPConfig.tsx
+
+## Design system
+- Background: #0f0c1a, cards: #1c1830, accent: #8b5cf6→#6d28d9
+- Match existing pages exactly (same imports, same patterns)
+- Use apiFetch for all API calls
+- Use existing toast notification pattern
+
+## Page structure — 5 sections
+
+### Section 1: Connection Card (SGP API)
+Fields:
+- Company name (text input)
+- SGP Base URL (text input, placeholder: "https://seuprovedor.sgp.net.br/api/v2")
+- SGP API Token (password input with show/hide toggle)
+- Support phone (text input, optional)
+
+Buttons:
+- "Testar Conexão" → GET /api/isp/customer/00000000000 → toast result
+- "Salvar" → POST /api/isp/config
+
+Status badge: "● Conectado" (green) or "Não configurado" (gray)
+
+### Section 2: Billing Automation
+Toggle: "Ativar cobrança automática"
+Number input: "Enviar lembrete X dias antes do vencimento" (default 3)
+Multi-select chips for overdue days: [1, 3, 7, 15, 30] (default 1,3,7 selected)
+
+Textarea: "Mensagem de pré-vencimento"
+- Placeholder: DEFAULT_PRE_DUE template
+- Variable guide below: {{nome}} {{vencimento}} {{valor}} {{link_boleto}} {{linha_digitavel}} {{pix}}
+
+Textarea: "Mensagem de atraso"
+- Placeholder: DEFAULT_OVERDUE template
+- Same variable guide
+
+Button: "Salvar configurações" → PATCH /api/isp/config
+
+### Section 3: Onboarding de Boas-vindas
+Toggle: "Enviar mensagem de boas-vindas ao novo cliente"
+Number input: "Enviar após X minutos da ativação" (default 5)
+
+Textarea: "Mensagem de boas-vindas"
+- Variable guide: {{nome}} {{empresa}} {{plano}} {{suporte}}
+
+Info box (blue): "Esta mensagem é enviada automaticamente quando o status de um lead é alterado para 'cliente'."
+
+Button: "Salvar" → PATCH /api/isp/config
+
+### Section 4: Aniversário
+Toggle: "Enviar mensagem de aniversário"
+Time input: "Horário de envio" (default 09:00)
+
+Textarea: "Mensagem de aniversário"
+- Variable guide: {{nome}} {{empresa}}
+
+Info box (blue): "Enviado automaticamente todo dia no horário configurado para clientes ativos que fazem aniversário."
+
+Button: "Salvar" → PATCH /api/isp/config
+
+### Section 5: Relatórios (stats cards row)
+Load from GET /api/isp/reports/summary
+
+4 stat cards:
+- Total enviados hoje
+- Total enviados este mês  
+- Taxa de sucesso (%)
+- Chamados abertos
+
+Below stats: tabs for logs
+Tab 1 "Cobranças" → GET /api/isp/billing/logs
+Tab 2 "Automações" → shows isp_automation_logs (onboarding + birthday)
+Tab 3 "Chamados" → GET /api/isp/tickets
+
+Each tab shows a table with pagination.
+
+## API calls pattern
+```typescript
+const [config, setConfig] = useState<any>(null);
+const [loading, setLoading] = useState(true);
+
+useEffect(() => {
+  apiFetch('/api/isp/config')
+    .then(data => setConfig(data.configured === false ? null : data))
+    .catch(() => setConfig(null))
+    .finally(() => setLoading(false));
+}, []);
+```
+
+## Add to router and sidebar
+
+Router: add route /isp-config → ISPConfig component (ProtectedRoute)
+
+Sidebar: add entry
+- Icon: Wifi (lucide-react)
+- Label: "Provedor ISP"
+- Path: /isp-config
+- Show green dot if config.is_active === true
+
+## After implementing
+1. Navigate to /isp-config — page loads showing "not configured"
+2. Fill in SGP credentials and save
+3. Confirm all 5 sections render correctly
+4. Test billing preview button
+5. Report any issues with the stats endpoint
+
+Sequência de execução
+[1] Schema      → confirma 4 tabelas criadas + anota nomes de colunas do leads
+[2] SGP Adapter → confirma exports TypeScript
+[3] Rotas       → testa GET /api/isp/config → { configured: false }
+[4] Schedulers  → confirma boot logs dos dois schedulers
+[5] Onboarding  → testa mudando status de lead para 'cliente'
+[6] Nó canvas   → confirma node aparece no canvas
+[7] Frontend    → acessa /isp-config e conecta o SGP

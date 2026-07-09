@@ -1,0 +1,66 @@
+PROMPT 4 — Segurança das Rotas ISP e WhatsApp (A1 + A2)
+Verify and fix authentication on ISP and WhatsApp Official routes.
+
+## Context
+The audit flagged that ISP and WhatsApp Official routers may not have
+requireAuth applied. Check the current state first, then fix if needed.
+
+## Step 1: Check current mount points
+
+In server/index.ts, find where these routers are mounted:
+- ispRouter (from ./routes/isp.ts)  
+- whatsappOfficialRouter (from ./routes/whatsapp-official.ts)
+
+Check if requireAuth is applied at mount time:
+```typescript
+// SAFE — auth applied at mount:
+app.use('/api/isp', requireAuth, ispRouter);
+app.use('/api/whatsapp-official', requireAuth, whatsappOfficialRouter);
+
+// UNSAFE — no auth at mount:
+app.use('/api/isp', ispRouter);
+app.use('/api/whatsapp-official', whatsappOfficialRouter);
+```
+
+## Step 2: Fix if not protected
+
+If requireAuth is NOT applied at mount, add it:
+```typescript
+import { requireAuth } from './middleware/auth';
+
+// ISP routes — all require auth
+app.use('/api/isp', requireAuth, ispRouter);
+
+// WhatsApp Official routes — all require auth  
+app.use('/api/whatsapp-official', requireAuth, whatsappOfficialRouter);
+
+// Webhooks — explicitly PUBLIC (no auth)
+app.use('/api/webhook/meta', metaWebhookRouter);   // public
+app.use('/api/webhook/zapi', zapiWebhookRouter);   // public
+```
+
+## Step 3: Verify webhook routes are still public
+
+Confirm the webhook routes do NOT have requireAuth applied.
+Meta and Z-API webhooks must remain public — they're called by external services.
+
+## Step 4: Test all ISP routes require auth
+
+Test without a token:
+curl -X GET https://chatbanana.com.br/api/isp/config
+→ Should return 401 Unauthorized
+
+Test with a valid token:
+curl -X GET https://chatbanana.com.br/api/isp/config \
+  -H "Authorization: Bearer YOUR_TOKEN"
+→ Should return config data
+
+Test Meta webhook verification (must work without token):
+curl "https://chatbanana.com.br/api/webhook/meta?hub.mode=subscribe&hub.verify_token=chatbanana_whk_2024_xK9mPqR7&hub.challenge=test"
+→ Should return "test" without needing auth token
+
+## After implementing:
+1. Confirm all /api/isp/* routes return 401 without token
+2. Confirm all /api/whatsapp-official/* routes return 401 without token
+3. Confirm /api/webhook/meta still works without token (public)
+4. Confirm /api/webhook/zapi still works without token (public)

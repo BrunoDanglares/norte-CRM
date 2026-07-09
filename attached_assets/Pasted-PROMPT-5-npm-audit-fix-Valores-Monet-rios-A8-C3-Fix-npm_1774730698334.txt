@@ -1,0 +1,66 @@
+PROMPT 5 — npm audit fix + Valores Monetários (A8 + C3)
+Fix npm security vulnerabilities and monetary precision issue.
+
+## FIX 1: npm security vulnerabilities (A8)
+
+Run in order:
+npm audit fix
+
+If that doesn't fix all HIGH issues, run:
+npm audit fix --force
+
+After running, verify the application still starts:
+npm run build
+npm start (or equivalent)
+
+Check remaining vulnerabilities:
+npm audit
+
+Report which vulnerabilities remain after the fix attempt.
+Some may require manual version pinning — report those separately.
+
+---
+
+## FIX 2: Monetary values precision (C3)
+
+File: shared/schema.ts
+
+PROBLEM: valor fields use real() (float) causing precision errors.
+
+FIND these fields:
+- leads.valor (or similar name)
+- deals.valor
+- transactions.valor
+- Any other monetary fields using real() or doublePrecision()
+
+SOLUTION: Change to numeric with precision:
+```typescript
+// BEFORE:
+valor: real("valor"),
+
+// AFTER:
+valor: numeric("valor", { precision: 10, scale: 2 }),
+```
+
+Find ALL monetary fields in the schema and update them.
+Look for fields named: valor, preco, desconto, mensalidade, total, subtotal,
+invoice_amount, valor_pago, taxa.
+
+After updating schema:
+1. Run npm run db:push to apply changes
+2. Verify existing data was not corrupted (numeric and real are compatible in PostgreSQL)
+3. Update any TypeScript code that treats these as number type:
+   - Drizzle returns numeric as string in TypeScript
+   - Add parseFloat() where needed: parseFloat(lead.valor || '0')
+   - Or use a helper: const toMoney = (v: string | null) => parseFloat(v || '0')
+
+IMPORTANT: Do NOT change isp_billing_logs.invoice_amount or 
+isp_automation_logs fields — those are already numeric(10,2).
+Only fix the core tables: leads, deals, transactions.
+
+## After implementing:
+1. Confirm npm audit shows 0 HIGH/CRITICAL vulnerabilities
+2. Confirm build succeeds after audit fix
+3. Confirm monetary fields are now numeric in the schema
+4. Test creating a lead with a valor like 387.90 and confirm it's stored correctly
+5. Report any remaining npm vulnerabilities that couldn't be auto-fixed

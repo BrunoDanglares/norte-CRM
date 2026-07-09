@@ -1,0 +1,226 @@
+PROMPT 1 — Schema: campos de cobertura e indicação nos leads
+No arquivo shared/schema.ts, verifique se a tabela `leads` já tem os campos abaixo.
+Se não tiver, adicione via Drizzle alter table:
+```ts
+// Campos de prospecção Instagram ISP
+instagramId: text('instagram_id'),
+instagramUsername: text('instagram_username'),
+source: text('source'), // 'instagram_dm' | 'instagram_comment' | 'instagram_story' | 'indicacao_instagram'
+coberturaStatus: text('cobertura_status'), // 'disponivel' | 'indisponivel' | 'pendente' | 'lista_espera'
+coberturaEndereco: text('cobertura_endereco'),
+referralLeadId: uuid('referral_lead_id').references(() => leads.id),
+reengajando: boolean('reengajando').default(false),
+```
+
+Crie também a tabela `instagram_waitlist` para lista de espera de cobertura:
+```ts
+export const instagramWaitlist = pgTable('instagram_waitlist', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  workspaceId: uuid('workspace_id').notNull().references(() => workspaces.id, { onDelete: 'cascade' }),
+  leadId: uuid('lead_id').notNull().references(() => leads.id, { onDelete: 'cascade' }),
+  endereco: text('endereco').notNull(),
+  bairro: text('bairro'),
+  cidade: text('cidade'),
+  igUserId: text('ig_user_id'),
+  igUsername: text('ig_username'),
+  notificado: boolean('notificado').default(false),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (t) => ({
+  workspaceIdx: index('ig_waitlist_workspace_idx').on(t.workspaceId),
+  leadIdx: index('ig_waitlist_lead_idx').on(t.leadId),
+}));
+```
+
+Rode `npm run db:push` e reporte quais colunas foram criadas e se houve erros de migração.
+
+PROMPT 2 — Backend: Fluxo 1 (Comment-to-DM) + Fluxo 2 (Cobertura self-service)
+Crie o arquivo `server/services/ispInstagramFlows.ts` com os handlers dos fluxos de prospecção:
+```ts
+import { db } from '../db';
+import { leads, instagramWaitlist } from '../../shared/schema';
+import { eq, and, ilike } from 'drizzle-orm';
+import { sendInstagramDM } from './instagramService';
+
+// ─── FLUXO 1: Verificar cobertura via SGP/IXC ───────────────────────────────
+export async function checkCoverageISP(
+  workspaceId: string,
+  endereco: string
+): Promise<{ hasCoverage: boolean; plans?: string[] }> {
+  try {
+    // Buscar config ISP do workspace
+    const { ispConfigs } = await import('../../shared/schema');
+    const [config] = await db
+      .select()
+      .from(ispConfigs)
+      .where(eq(ispConfigs.workspaceId, workspaceId))
+      .limit(1);
+
+    if (!config) return { hascoverage: false } as any;
+
+    // Consulta SGP
+    if (config.provider === 'sgp') {
+      const formData = new URLSearchParams();
+      formData.append('token', config.apiToken);
+      formData.append('app', config.appKey || '');
+      formData.append('endereco', endereco);
+
+      const res = await fetch(`${config.apiUrl}/api/ura/consultacobertura/`, {
+        method: 'POST',
+        body: formData,
+      });
+      const data = await res.json();
+      return {
+        hasCoverage: data.cobertura === true || data.status === 'disponivel',
+        plans: data.planos || [],
+      };
+    }
+
+    // Consulta IXC
+    if (config.provider === 'ixc') {
+      const credentials = Buffer.from(`${config.tokenId}:${config.tokenHash}`).toString('base64');
+      const res = await fetch(`${config.apiUrl}/webservice/v1/cobertura?endereco=${encodeURIComponent(endereco)}`, {
+        headers: {
+          Authorization: `Basic ${credentials}`,
+          ixcsoft: 'listar',
+        },
+      });
+      const data = await res.json();
+      return {
+        hasCoverage: data.total > 0,
+        plans: data.registros?.map((r: any) => r.plano) || [],
+      };
+    }
+
+    // Sem integração ERP: retorna pendente para agente humano decidir
+    return { hasCoverage: true, plans: [] } as any;
+  } catch (err) {
+    console.error('[ISP Coverage] Erro ao consultar cobertura:', err);
+    return { hasCoverage: false } as any;
+  }
+}
+
+// ─── FLUXO 2: Processar resposta de endereço e retornar resultado ────────────
+export async function handleAddressAndCheckCoverage(params: {
+  workspaceId: string;
+  leadId: string;
+  igUserId: string;
+  igAccountUserId: string;
+  accessToken: string;
+  addressText: string;
+  igUsername: string;
+}) {
+  const { workspaceId, leadId, igUserId, igAccountUserId, accessToken, addressText, igUsername } = params;
+
+  // Salvar endereço no lead
+  await db.update(leads as any)
+    .set({ coberturaEndereco: addressText, coberturaStatus: 'pendente' })
+    .where(eq((leads as any).id, leadId));
+
+  // Verificar cobertura
+  const coverage = await checkCoverageISP(workspaceId, addressText);
+
+  if (coverage.hasCoverage) {
+    // Tem cobertura — atualizar lead e enviar planos
+    await db.update(leads as any)
+      .set({ coberturaStatus: 'disponivel', status: 'qualificado' })
+      .where(eq((leads as any).id, leadId));
+
+    const plansText = coverage.plans && coverage.plans.length > 0
+      ? coverage.plans.map((p: string, i: number) => `${i + 1}. ${p}`).join('\n')
+      : '• Fibra 300MB — R$79/mês\n• Fibra 500MB — R$99/mês\n• Fibra 1GB — R$139/mês';
+
+    await sendInstagramDM(accessToken, igAccountUserId, igUserId,
+      `✅ Ótima notícia, ${igUsername}! Temos cobertura no seu endereço!\n\n` +
+      `📋 Planos disponíveis:\n${plansText}\n\n` +
+      `Qual plano te interessa? Um consultor vai te ajudar a finalizar! 🚀`
+    );
+
+    return { hasCoverage: true };
+  } else {
+    // Sem cobertura — cadastrar lista de espera
+    await db.update(leads as any)
+      .set({ coberturaStatus: 'lista_espera', status: 'sem_cobertura' })
+      .where(eq((leads as any).id, leadId));
+
+    await db.insert(instagramWaitlist).values({
+      workspaceId,
+      leadId,
+      endereco: addressText,
+      igUserId,
+      igUsername,
+    }).onConflictDoNothing();
+
+    await sendInstagramDM(accessToken, igAccountUserId, igUserId,
+      `😕 Por enquanto ainda não chegamos na sua rua, ${igUsername}.\n\n` +
+      `Mas a boa notícia: te cadastramos na nossa lista de expansão! ` +
+      `Assim que chegarmos no seu bairro, você é o primeiro a saber! 📍\n\n` +
+      `Qualquer dúvida, é só chamar aqui! 😊`
+    );
+
+    return { hasCoverage: false };
+  }
+}
+
+// ─── FLUXO 4: Campanha de indicação ─────────────────────────────────────────
+export async function handleReferralComment(params: {
+  workspaceId: string;
+  connectionId: string;
+  accessToken: string;
+  igAccountUserId: string;
+  referrerIgUserId: string;
+  referrerIgUsername: string;
+  mentionedUsername?: string;
+}) {
+  const { workspaceId, accessToken, igAccountUserId,
+    referrerIgUserId, referrerIgUsername, mentionedUsername } = params;
+
+  // DM para o indicador (quem comentou)
+  await sendInstagramDM(accessToken, igAccountUserId, referrerIgUserId,
+    `🎉 Boa ${referrerIgUsername}! Sua indicação foi registrada!\n\n` +
+    `Se ${mentionedUsername ? `@${mentionedUsername}` : 'seu amigo'} assinar um plano, ` +
+    `você ganha 1 mês grátis na sua fatura! 🎁\n\n` +
+    `Vamos avisar você assim que a assinatura for confirmada! 😊`
+  );
+
+  // Tag o lead indicador no CRM
+  const { upsertInstagramLead } = await import('./instagramService');
+  const referrerLead = await upsertInstagramLead(workspaceId, referrerIgUserId, referrerIgUsername);
+  await db.update(leads as any)
+    .set({ source: 'indicacao_instagram' })
+    .where(eq((leads as any).id, referrerLead.id));
+
+  return { referrerLeadId: referrerLead.id };
+}
+
+// ─── FLUXO 5: Pós-instalação — upsell e avaliação ───────────────────────────
+export async function schedulePostInstallFlow(params: {
+  workspaceId: string;
+  leadId: string;
+  igUserId: string;
+  igAccountUserId: string;
+  accessToken: string;
+  igUsername: string;
+  delayDays?: number;
+}) {
+  const { workspaceId, leadId, igUserId, igAccountUserId, accessToken, igUsername, delayDays = 3 } = params;
+
+  const sendAt = new Date(Date.now() + delayDays * 24 * 60 * 60 * 1000);
+
+  // Usar tabela de disparos programados já existente no projeto
+  const { disparosProgramados } = await import('../../shared/schema');
+  await db.insert(disparosProgramados as any).values({
+    workspaceId,
+    nome: `Pós-instalação: ${igUsername}`,
+    canal: 'instagram',
+    mensagem: `Oi ${igUsername}! 😊 Como está a internet? Ficou tudo certo com a instalação?`,
+    destinatarios: JSON.stringify([{ igUserId, igAccountUserId, accessToken }]),
+    agendadoPara: sendAt,
+    status: 'pendente',
+    metadata: { leadId, type: 'pos_instalacao', igUserId, igAccountUserId, accessToken },
+  });
+
+  console.log(`[ISP Instagram] Pós-instalação agendado para ${sendAt.toISOString()} — lead ${leadId}`);
+}
+```
+
+Reporte se houve erros de importação — especialmente se `ispConfigs` e `disparosProgramados` existem no schema com esses nomes exatos.

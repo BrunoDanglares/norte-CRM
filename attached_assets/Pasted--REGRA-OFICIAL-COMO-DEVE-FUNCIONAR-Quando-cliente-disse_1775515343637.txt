@@ -1,0 +1,123 @@
+🧠 REGRA OFICIAL (COMO DEVE FUNCIONAR)
+
+Quando cliente disser algo como:
+
+“sem internet”
+“caiu”
+“não conecta”
+
+O sistema deve seguir:
+
+1. Detecta intenção → SUPORTE
+2. Consulta ERP (SGP)
+3. Se suspenso ou inadimplente → FINANCEIRO
+4. Se não → SUPORTE
+
+👉 Isso NÃO é IA
+👉 Isso é regra de orquestração obrigatória
+
+🔥 IMPLEMENTAÇÃO CERTA (NO SEU SDR)
+
+Você já tem isso parcialmente:
+
+if (F.is_suspended && (intent === 'MENU' || intent === 'SUPORTE')) intent = 'FINANCEIRO';
+
+👉 Isso está fraco e perigoso
+
+❌ Problema atual
+Só verifica is_suspended
+Ignora débito sem bloqueio ainda
+Só roda em casos limitados
+✅ VERSÃO PROFISSIONAL (SUBSTITUIR)
+
+Coloca isso logo após detectar suporte:
+
+const pediuSuporte = kSup.some(w => msg.includes(w));
+
+if (pediuSuporte) {
+
+  const suspenso = F.is_suspended || F.esta_suspenso || false;
+  const valorDevido = Number(F.valor_devido ?? F.amount_due ?? 0);
+  const temDebito = valorDevido > 0;
+
+  if (suspenso || temDebito) {
+    intent = 'FINANCEIRO';
+    motivo = 'inadimplencia';
+  } else {
+    intent = 'SUPORTE';
+    motivo = 'tecnico';
+  }
+
+}
+🧠 POR QUE ISSO É IMPORTANTE
+CASO REAL:
+
+Cliente:
+
+“tô sem internet”
+
+❌ SEM ESSA REGRA
+IA tenta suporte
+manda reiniciar roteador
+cliente fica irritado
+✅ COM ESSA REGRA
+detecta débito
+já entra cobrando
+resolve mais rápido
+🔥 MELHORIA EXTRA (NÍVEL PROFISSIONAL)
+
+Adiciona contexto para os agentes:
+
+motivo_atendimento: motivo,
+status_financeiro: {
+  suspenso,
+  valor_devido: valorDevido
+}
+🤖 COMO O AGENTE DEVE USAR ISSO
+💰 FINANCEIRO
+
+Se motivo = inadimplencia:
+
+Identifiquei que sua conexão está suspensa por pendência financeira.
+
+Posso te ajudar a regularizar agora 👇
+🛠️ SUPORTE
+
+Se motivo = tecnico:
+
+Entendi! Vamos verificar sua conexão agora 👇
+⚠️ REGRA QUE VOCÊ PRECISA GRAVAR
+SUPORTE NUNCA É A PRIMEIRA VERIFICAÇÃO
+
+👉 sempre vem depois do ERP
+
+🧠 AJUSTE NO SEU ORQUESTRADOR (IMPORTANTE)
+
+Hoje ele pode mandar:
+
+“vou verificar sua conexão”
+
+❌ ERRADO (quando inadimplente)
+✅ CORRETO
+
+Se financeiro:
+
+mensagemTransicao = "Vou verificar sua situação financeira rapidinho 👇";
+
+Se suporte:
+
+mensagemTransicao = "Vou verificar sua conexão agora 👇";
+🧱 COMO ISSO FICA NO FLUXO FINAL
+Mensagem chega
+↓
+SDR detecta suporte
+↓
+Consulta ERP
+↓
+IF:
+   inadimplente → FINANCEIRO
+   ok → SUPORTE
+↓
+Orquestrador ajusta mensagem
+↓
+Agente executa

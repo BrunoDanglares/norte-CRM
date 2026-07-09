@@ -1,0 +1,99 @@
+Três correções cirúrgicas nos agentes. Não altere nada além
+dos pontos indicados.
+
+══ GAP 1 — S11, S12, S13: adicionar detecção automática ══
+
+Em server/services/agents/suporteAgent.ts, no método
+detectSituation(), adicione os três casos abaixo.
+Inserir ANTES do return de fallback (S4 ou equivalente):
+
+  // S11 — WiFi não aparece na lista de redes
+  if (/rede sumiu|wifi sumiu|não aparece a rede|
+       rede desapareceu|sumiu o wifi|cadê minha rede/i
+      .test(texto)) {
+    return 'S11';
+  }
+
+  // S12 — Mover roteador de cômodo
+  if (/mudar o roteador|mover o roteador|outro cômodo|
+       outro quarto|mudar de lugar|colocar em outro/i
+      .test(texto)) {
+    return 'S12';
+  }
+
+  // S13 — Consulta de plano contratado
+  if (/qual meu plano|quantos megas|meu plano é qual|
+       o que tá incluído|qual plano eu tenho|
+       meu contrato é qual/i.test(texto)) {
+    return 'S13';
+  }
+
+══ GAP 2 — F8: trocar escalação via prompt por redirectTo ══
+
+Em server/services/agents/financeiroAgent.ts, no método
+handle(), localize onde situationCode === 'F8' é tratado
+(ou onde a IA é chamada sem escalação para F8).
+
+Adicione o bloco abaixo junto com F7, F9, F10
+na verificação de escalações obrigatórias:
+
+  if (situationCode === 'F8') {
+    // Coletar descrição antes de escalar
+    const descricao =
+      input.textoEfetivo ??
+      dados.descricao_contestacao ??
+      'não informada';
+
+    // Salvar para o handoff summary
+    dados.descricao_contestacao = descricao;
+
+    return {
+      message: '',
+      redirectTo: 'HUMANO',
+      guardFeedback:
+        `Contestação de cobrança. Descrição: ${descricao}. ` +
+        `Sem autoridade para estornar ou cancelar cobranças — ` +
+        `requer análise do financeiro humano.`,
+    };
+  }
+
+Isso garante que F8 aparece nos logs de GUARD_REDIRECT
+e no handoff summary igual aos demais.
+
+══ GAP 3 — C3: ampliar detecção de cobertura ══
+
+Em server/services/agents/comercialAgent.ts, no método
+detectSituation(), localize a condição atual de C3:
+  cobertura_verificada + sem cobertura
+
+Substitua por:
+
+  // C3 — Verificação de cobertura (pergunta inicial OU
+  //        resultado negativo de consulta anterior)
+  if (
+    /atendem minha rua|tem sinal aqui|cobre meu bairro|
+     vocês atendem|tem cobertura|atende meu endereço|
+     chega internet aí|passa fibra aqui/i.test(texto)
+  ) {
+    return 'C3';
+  }
+
+  // Mantém o caso original: cobertura consultada e negativa
+  if (
+    dados.cobertura_verificada === true &&
+    dados.cobertura_disponivel === false
+  ) {
+    return 'C3';
+  }
+
+══ VERIFICAÇÃO ══
+
+Após as três alterações, confirme que compila sem erros.
+
+Teste rápido dos casos corrigidos:
+- "minha rede wifi sumiu" → S11
+- "quero mudar o roteador de quarto" → S12  
+- "qual é o meu plano mesmo?" → S13
+- "fui cobrado errado esse mês" → F8 → redirectTo HUMANO
+- "vocês atendem minha rua?" → C3 (sem precisar de
+  cobertura já consultada)

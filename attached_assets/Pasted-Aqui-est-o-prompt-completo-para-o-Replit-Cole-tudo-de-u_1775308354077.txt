@@ -1,0 +1,112 @@
+Aqui está o prompt completo para o Replit. Cole tudo de uma vez:
+
+Faça uma auditoria completa e estruturada da integração entre ChatBanana e N8N. 
+Não altere nenhum arquivo. Apenas leia e documente. Siga exatamente esta ordem:
+
+─────────────────────────────────────────
+BLOCO 1 — ROTAS N8N NO CHATBANANA
+─────────────────────────────────────────
+Leia server/routes/n8n.ts e liste:
+- Todas as rotas registradas (método + path + handler)
+- Quais requerem auth e quais são públicas
+- Quais rotas o N8N chama (inbound) vs quais o ChatBanana chama no N8N (outbound)
+
+─────────────────────────────────────────
+BLOCO 2 — CONTRATO DA ROTA /api/n8n/ai
+─────────────────────────────────────────
+Leia o handler da rota POST /api/n8n/ai e documente:
+- Campos obrigatórios do body (workspace_id, prompt_name, mensagem, context, historico)
+- Como workspace_id é resolvido (req.body, req.body.context, resolveWorkspaceId?)
+- Como o prompt é carregado do banco (tabela, campo, query)
+- O que é enviado para a OpenAI (system prompt completo, como context e historico são injetados)
+- O que é retornado ao N8N (formato exato do response JSON)
+
+─────────────────────────────────────────
+BLOCO 3 — CONTRATO DA ROTA /api/n8n/memory/save
+─────────────────────────────────────────
+Leia o handler de POST /api/n8n/memory/save e documente:
+- Campos do body (workspace_id, conversation_id, telefone, user_message, assistant_message, intent, session_updates)
+- O que session_updates persiste (quais campos da sessão são atualizados)
+- Em qual tabela/estrutura a sessão é salva
+- O que é retornado
+
+─────────────────────────────────────────
+BLOCO 4 — CONTRATO DA ROTA /api/n8n/memory/session
+─────────────────────────────────────────
+Leia o handler de GET /api/n8n/memory/session e documente:
+- Parâmetros de entrada (workspace_id, telefone ou conversation_id?)
+- O que retorna (formato exato do JSON, campos de sessão disponíveis)
+- O campo session.fluxo_atual existe? Qual o valor default?
+
+─────────────────────────────────────────
+BLOCO 5 — TABELAS DE SESSÃO E HISTÓRICO
+─────────────────────────────────────────
+Procure em server/db/schema.ts (ou similar) as tabelas relacionadas a:
+- Sessão do N8N (n8n_sessions ou similar)
+- Histórico de conversa (n8n_history ou similar)
+- Templates de prompt (ai_prompt_templates ou similar)
+
+Para cada tabela, liste os campos e tipos.
+
+─────────────────────────────────────────
+BLOCO 6 — TEMPLATES DE PROMPT
+─────────────────────────────────────────
+Leia os templates ativos no banco ou no seed. Para cada agente:
+- agente_suporte_online
+- agente_financeiro  
+- agente_comercial
+
+Mostre o system prompt completo atual de cada um.
+Se não estiver no código, rode: SELECT name, system_prompt FROM ai_prompt_templates;
+
+─────────────────────────────────────────
+BLOCO 7 — DIAGNÓSTICO DE SINCRONIZAÇÃO
+─────────────────────────────────────────
+Com base em tudo que leu, identifique e liste:
+
+A) CAMPOS QUE O N8N ENVIA MAS O CHATBANANA NÃO USA
+   (campos no body das requisições que o handler ignora)
+
+B) CAMPOS QUE O CHATBANANA ESPERA MAS O N8N NÃO ENVIA
+   (campos que o handler tenta acessar mas podem vir undefined)
+
+C) COMO O HISTÓRICO CHEGA NO PROMPT DA IA
+   (o historico[] do N8N é passado como messages[] para OpenAI, 
+   ou apenas injetado no system prompt como texto?)
+
+D) O QUE ACONTECE COM session_updates.fluxo_atual
+   (é salvo? é lido corretamente na próxima chamada?)
+
+E) POR QUE O AGENTE REPETE PERGUNTAS
+   (o historico[] está sendo passado corretamente para a OpenAI?
+   Está sendo passado como messages do tipo user/assistant,
+   ou apenas como texto no system prompt?)
+
+─────────────────────────────────────────
+BLOCO 8 — SAÍDA FINAL ESTRUTURADA
+─────────────────────────────────────────
+Ao final, produza um resumo neste formato exato:
+
+=== CONTRATO N8N → CHATBANANA ===
+Rota: POST /api/n8n/ai
+Envia: { workspace_id, prompt_name, mensagem, context: {...}, historico: [...] }
+Retorna: { ... }
+Problema identificado: [sim/não + descrição]
+
+Rota: POST /api/n8n/memory/save  
+Envia: { workspace_id, conversation_id, telefone, user_message, assistant_message, intent, session_updates: { fluxo_atual, ... } }
+Retorna: { ... }
+Problema identificado: [sim/não + descrição]
+
+Rota: GET /api/n8n/memory/session
+Envia: { workspace_id, telefone }
+Retorna: { session: { fluxo_atual, identificado, cliente_nome, ... }, history: [...] }
+Problema identificado: [sim/não + descrição]
+
+=== CAUSA RAIZ DO AGENTE REPETITIVO ===
+[Explicação técnica precisa de por que o agente repete perguntas]
+
+=== CORREÇÕES NECESSÁRIAS (priorizadas) ===
+1. [correção crítica]
+2. [correção importante]
+3. [correção menor]

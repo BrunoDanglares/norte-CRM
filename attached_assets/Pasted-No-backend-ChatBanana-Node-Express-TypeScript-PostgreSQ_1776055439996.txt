@@ -1,0 +1,51 @@
+No backend ChatBanana (Node/Express/TypeScript/PostgreSQL/Drizzle ORM), precisa criar duas tabelas para o sistema de observabilidade do agente ISP.
+
+Adiciona ao schema Drizzle existente (mesmo arquivo onde estão as outras tabelas ISP):
+
+```typescript
+// Métricas por sessão de conversa ISP
+export const ispSessionMetrics = pgTable('isp_session_metrics', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  workspaceId: uuid('workspace_id').notNull(),
+  conversationId: uuid('conversation_id').notNull(),
+  phone: text('phone').notNull(),
+
+  // Agente e situação
+  agentUsed: text('agent_used'),        // 'financeiro' | 'comercial' | 'suporte'
+  situationDetected: text('situation_detected'), // ex: 'F1', 'S3', 'C2'
+
+  // Contadores
+  totalTurns: integer('total_turns').default(0),
+  erpCalls: integer('erp_calls').default(0),
+  erpTimeouts: integer('erp_timeouts').default(0),
+  gptCalls: integer('gpt_calls').default(0),
+  gptTimeouts: integer('gpt_timeouts').default(0),
+  erpUnavailable: boolean('erp_unavailable').default(false),
+
+  // Resolução
+  resolutionType: text('resolution_type'), // 'resolved' | 'escalated' | 'max_turns' | 'timeout' | 'abandoned'
+  totalLatencyMs: integer('total_latency_ms'),
+
+  startedAt: timestamp('started_at').defaultNow().notNull(),
+  resolvedAt: timestamp('resolved_at'),
+});
+
+// Eventos de infraestrutura (circuit breaker, timeouts, phone lock)
+export const ispSystemEvents = pgTable('isp_system_events', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  workspaceId: uuid('workspace_id'),
+
+  eventType: text('event_type').notNull(),
+  // Valores: 'CIRCUIT_BREAKER_OPEN' | 'CIRCUIT_BREAKER_CLOSE' |
+  //          'TIMEOUT_ERP' | 'TIMEOUT_GPT' |
+  //          'PHONE_LOCK_DISCARD' | 'MAX_TURNS_REACHED' |
+  //          'ERP_DEGRADED_MODE'
+
+  label: text('label'),       // ex: 'erp_getOpenInvoices', 'OpenAI gerarResposta'
+  metadata: jsonb('metadata'), // dados extras livres
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+```
+
+Após adicionar ao schema, roda a migração Drizzle (`npm run db:push` ou o comando equivalente já em uso no projeto). Confirma que as duas tabelas foram criadas no banco sem erros.

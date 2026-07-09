@@ -1,0 +1,84 @@
+[SGP] getOpenInvoices titulo id=55513, status=pago, vencimento=2023-02-01
+[SGP] getOpenInvoices titulo id=55512, status=pago, vencimento=2023-01-01
+[SGP] getOpenInvoices titulo id=55511, status=pago, vencimento=2022-12-01
+[SGP] getOpenInvoices titulo id=55510, status=pago, vencimento=2022-11-01
+[SGP] getOpenInvoices titulo id=55509, status=pago, vencimento=2022-10-01
+[SGP] getOpenInvoices titulo id=55508, status=pago, vencimento=2022-09-01
+[SGP] getOpenInvoices titulo id=55507, status=pago, vencimento=2022-08-01
+[SGP] getOpenInvoices titulo id=55506, status=cancelado, vencimento=2022-07-01
+[SGP] getOpenInvoices titulo id=55505, status=pago, vencimento=2022-06-30
+[SGP] getOpenInvoices FILTERED OUT id=112448: beyond 30 days venc=2026-12-20 (2026-12-20T00:00:00.000Z)
+[SGP] getOpenInvoices FILTERED OUT id=112447: beyond 30 days venc=2026-11-20 (2026-11-20T00:00:00.000Z)
+[SGP] getOpenInvoices FILTERED OUT id=112446: beyond 30 days venc=2026-10-20 (2026-10-20T00:00:00.000Z)
+[SGP] getOpenInvoices FILTERED OUT id=112445: beyond 30 days venc=2026-09-20 (2026-09-20T00:00:00.000Z)
+[SGP] getOpenInvoices FILTERED OUT id=112444: beyond 30 days venc=2026-08-20 (2026-08-20T00:00:00.000Z)
+[SGP] getOpenInvoices FILTERED OUT id=112443: beyond 30 days venc=2026-07-20 (2026-07-20T00:00:00.000Z)
+[SGP] getOpenInvoices FILTERED OUT id=112442: beyond 30 days venc=2026-06-20 (2026-06-20T00:00:00.000Z)
+[SGP] getOpenInvoices FILTERED OUT id=112441: beyond 30 days venc=2026-05-20 (2026-05-20T00:00:00.000Z)
+[SGP] getOpenInvoices FILTERED OUT id=107321: status=pago
+[SGP] getOpenInvoices FILTERED OUT id=107320: status=pago
+[SGP] getOpenInvoices FILTERED OUT id=107319: status=pago
+[SGP] getOpenInvoices FILTERED OUT id=107318: status=pago
+[SGP] getOpenInvoices FILTERED OUT id=107317: status=pago
+[SGP] getOpenInvoices FILTERED OUT id=107316: status=pago
+[SGP] getOpenInvoices FILTERED OUT id=107315: status=pago
+[SGP] getOpenInvoices FILTERED OUT id=107314: status=pago
+[SGP] getOpenInvoices FILTERED OUT id=107313: status=pago
+[SGP] getOpenInvoices FILTERED OUT id=107312: status=pago
+[SGP] getOpenInvoices FILTERED OUT id=107311: status=pago
+[SGP] getOpenInvoices FILTERED OUT id=107310: status=pago
+[SGP] getOpenInvoices FILTERED OUT id=101000: status=cancelado
+[SGP] getOpenInvoices FILTERED OUT id=100999: status=cancelado
+[SGP] getOpenInvoices FILTERED OUT id=100998: status=cancelado
+[SGP] getOpenInvoices FILTERED OUT id=100997: status=cancelado
+[SGP] getOpenInvoices FILTERED OUT id=100996: status=cancelado
+[SGP] getOpenInvoices FILTERED OUT id=100995: status=cancelado
+[SGP] getOpenInvoices FILTERED OUT id=100994: status=cancelado
+[SGP] getOpenInvoices FILTERED OUT id=100993: status=cancelado
+[SGP] getOpenInvoices FILTERED OUT id=100992: status=cancelado
+[SGP] getOpenInvoices FILTERED OUT id=100991: status=pago
+[SGP] getOpenInvoices FILTERED OUT id=100990: status=pago
+[SGP] getOpenInvoices FILTERED OUT id=100989: status=pago
+[SGP] getOpenInvoices FILTERED OUT id=86223: status=pago
+[SGP] getOpenInvoices FILTERED OUT id=86222: status=pago
+[SGP] getOpenInvoices FILTERED OUT id=86221: status=pago
+[SGP] getOpenInvoices FILTERED OUT id=86220: status=pago
+[SGP] getOpenInvoices FILTERED OUT id=86219: status=pago
+[SGP] getOpenInvoices FILTERED OUT id=86218: status=pago
+[SGP] getOpenInvoices FILTERED OUT id=86217: status=pago
+[SGP] getOpenInvoices FILTERED OUT id=86216: status=pago
+[SGP] getOpenInvoices FILTERED OUT id=86215: status=pago
+[SGP] getOpenInvoices FILTERED OUT id=86214: status=pago
+[SGP] getOpenInvoices FILTERED OUT id=86213: status=pago
+[SGP] getOpenInvoices FILTERED OUT id=86212: status=pago
+[SGP] getOpenInvoices FILTERED OUT id=70224: status=pago
+[SGP] getOpenInvoices FILTERED OUT id=70223: status=pago
+[SGP] getOpenInvoices FILTERED OUT id=70222: status=pago
+[SGP] getOpenInvoices FILTERED OUT id=70221: status=pago
+[SGP] getOpenInvoices FILTERED OUT id=70220: status=pago
+[SGP] getOpenInvoices FILTERED OUT id=70219: status=pago
+[SGP] getOpenInvoices FILTERED OUT id=55517: status=pago
+[SGP] getOpenInvoices FILTERED OUT id=55516: status=pago
+[SGP] getOpenInvoices FILTERED OUT id=55515: status=pago
+[SGP] getOpenInvoices FILTERED OUT id=55514: status=pago
+[SGP] getOpenInvoices FILTERED OUT id=55513: status=pago
+[SGP] getOpenInvoices FILTERED OUT id=55512: status=pago
+[SGP] getOpenInvoices FILTERED OUT id=55511: status=pago
+[SGP] getOpenInvoices FILTERED OUT id=55510: status=pago
+[SGP] getOpenInvoices FILTERED OUT id=55509: status=pago
+[SGP] getOpenInvoices FILTERED OUT id=55508: status=pago
+[SGP] getOpenInvoices FILTERED OUT id=55507: status=pago
+[SGP] getOpenInvoices FILTERED OUT id=55506: status=cancelado
+[SGP] getOpenInvoices FILTERED OUT id=55505: status=pago
+[ERP] normalizeCustomerToEnrichment: 1 raw invoices → 1 after filtering (cutoff=today+30d: 2026-05-07T23:59:59.999Z)
+[ISP Agent] 🔍 ERP: found=true, suspended=false, invoices=1, offline=false
+[N8N_TRIGGER] ISP Agent did not handle — forwarding to N8N webhook
+[N8N_TRIGGER] ISP Agent error: Cannot access 'Wo' before initialization
+[N8N_TRIGGER] Webhook https://n8n-n8n.xhtsxx.easypanel.host/webhook/chatbanana-isp-v5 → HTTP 200
+[N8N ERP] workspace_id: aa73eb2b-b80d-4b6a-924f-79117f4fdf7e | action: enrichmentCompleto | tipo: completo | meta: v1
+[N8N Identify] workspace=aa73eb2b-b80d-4b6a-924f-79117f4fdf7e, conv=262, cpf=***3232, contrato=7146, origem=whatsapp
+[SEND DEBUG] message: Identidade confirmada! Olá, *cliente*!
+
+Como posso te ajudar hoje? | conv: 262 | tipo: texto | origem: orquestrador
+[N8N SEND] conv=262, workspace=aa73eb2b-b80d-4b6a-924f-79117f4fdf7e, msgLen=66
+[Protocols] SLA checker disabled — protocols table not foun

@@ -1,0 +1,204 @@
+const router = (await import("./routes/xxx")).default;
+app.use("/api/xxx", authMiddleware, router);
+```
+
+**Real-time:** `broadcastToWorkspace()` já existe e funciona via WebSocket + SSE. Os protocolos vão usar isso nativamente para atualizar o painel em tempo real.
+
+**Schedulers:** já existe padrão de `setInterval` no boot para tarefas periódicas — vou usar o mesmo padrão para o checker de SLA dos protocolos.
+
+**3 pontos de atenção:**
+- O `registerRoutes` em `./routes` é chamado antes dos routers modulares — o protocolo vai no padrão modular (depois do registerRoutes)
+- `storage` ainda é usado em alguns lugares — o serviço de protocolo vai usar `db` diretamente como os módulos mais novos (ISP, Instagram)
+- O `broadcastToWorkspace` já está exportado — basta importar no serviço de protocolos
+
+---
+
+## Prompt 2 — Serviço de Protocolos
+```
+Crie o arquivo server/services/protocol.service.ts com toda a lógica de negócio 
+do sistema de protocolos do ChatBanana.
+
+--- PARTE 1: GERAÇÃO DO NÚMERO ---
+
+Implemente a função assíncrona generateProtocolNumber(workspaceId: string): Promise<string>
+
+A lógica deve:
+1. Obter a data atual no fuso horário de Brasília (America/Sao_Paulo)
+2. Formatar como YYYYMMDD usando padStart para garantir zeros
+3. Montar o prefixo: ex. "20260331"
+4. Executar a seguinte query no banco:
+   SELECT numero FROM protocols 
+   WHERE workspace_id = $workspaceId 
+   AND numero LIKE $prefixo || '%'
+   ORDER BY numero DESC 
+   LIMIT 1
+5. Se não encontrar nenhum: retornar prefixo + "0001"
+6. Se encontrar: pegar os últimos 4 chars do numero, converter para int, 
+   somar 1, padStart(4, '0'), concatenar ao prefixo
+7. Retornar o número gerado (sempre 12 dígitos)
+
+Use db.select() do Drizzle com sql`` para o LIKE. Importe db de "../db" e 
+protocols de "@shared/schema".
+
+--- PARTE 2: CALCULAR PRAZO SLA ---
+
+Implemente a função assíncrona calcularPrazoSla(workspaceId: string, categoria: string): Promise<Date | null>
+
+Lógica:
+1. Buscar em protocol_sla_configs WHERE workspace_id = workspaceId AND categoria = categoria
+2. Se não encontrar config, usar defaults: suporte_tecnico=4h, financeiro=8h, comercial=24h, geral=48h
+3. Calcular: new Date(Date.now() + prazoHoras * 60 * 60 * 1000)
+4. Retornar o Date calculado
+
+--- PARTE 3: CRIAR PROTOCOLO ---
+
+Implemente a função assíncrona criarProtocolo(data: {
+  workspaceId: string,
+  titulo: string,
+  categoria: string,
+  prioridade: string,
+  descricao?: string,
+  conversationId?: number,
+  contactId?: number,
+  agenteId?: number,
+  tags?: string[],
+  criadoPorId?: number,
+  criadoPorNome?: string,
+}): Promise<SelectProtocol>
+
+Lógica:
+1. Chamar generateProtocolNumber(data.workspaceId)
+2. Chamar calcularPrazoSla(data.workspaceId, data.categoria)
+3. Inserir na tabela protocols via db.insert(protocols).values({...}).returning()
+4. Inserir em protocol_events o evento inicial:
+   {
+     workspaceId: data.workspaceId,
+     protocolId: protocol.id,
+     tipo: 'criado',
+     descricao: `Protocolo ${numero} criado`,
+     usuarioId: data.criadoPorId ?? null,
+     usuarioNome: data.criadoPorNome ?? 'Sistema',
+     metadata: { categoria: data.categoria, prioridade: data.prioridade }
+   }
+5. Retornar o protocolo criado
+
+--- PARTE 4: ATUALIZAR STATUS ---
+
+Implemente a função assíncrona atualizarStatusProtocolo(data: {
+  protocolId: string,
+  workspaceId: string,
+  novoStatus: string,
+  usuarioId?: number,
+  usuarioNome?: string,
+}): Promise<SelectProtocol>
+
+Lógica:
+1. Buscar o protocolo atual pelo id e workspace_id (validar que existe)
+2. Montar o objeto de update:
+   - status: data.novoStatus
+   - updatedAt: new Date()
+   - Se novoStatus === 'resolvido': resolvedAt = new Date()
+   - Se novoStatus === 'fechado': closedAt = new Date()
+3. Fazer db.update(protocols).set(updates).where(...).returning()
+4. Inserir event em protocol_events:
+   {
+     tipo: 'status_alterado',
+     descricao: `Status alterado de "${statusAnterior}" para "${data.novoStatus}"`,
+     metadata: { statusAnterior, novoStatus: data.novoStatus }
+   }
+5. Se novoStatus === 'resolvido' e csatEnviado === false:
+   Chamar enviarCsat(protocolo) em background (sem await)
+6. Retornar o protocolo atualizado
+
+--- PARTE 5: VERIFICAR SLA (para o scheduler) ---
+
+Implemente a função assíncrona verificarSlaViolados(): Promise<void>
+
+Lógica:
+1. Buscar todos os protocols WHERE status NOT IN ('resolvido', 'fechado') 
+   AND sla_prazo IS NOT NULL 
+   AND sla_prazo < NOW() 
+   AND sla_violado = false
+2. Para cada um:
+   a. UPDATE protocols SET sla_violado = true, updated_at = now()
+   b. Inserir event: tipo 'sla_violado', descricao 'SLA vencido'
+   c. Chamar broadcastToWorkspace(protocol.workspaceId, 'protocol_sla_violated', { protocolId, numero })
+3. Logar quantos foram marcados
+
+Importe broadcastToWorkspace de "../index".
+
+--- PARTE 6: ENVIAR CSAT ---
+
+Implemente a função assíncrona enviarCsat(protocol: SelectProtocol): Promise<void>
+
+Lógica:
+1. Se protocol.conversationId é null, retornar sem fazer nada
+2. Buscar a conversation para obter o telefone
+3. Se não tiver telefone, retornar
+4. Montar a mensagem:
+   "Olá! Seu atendimento #{protocol.numero} foi concluído. 
+   Como você avalia nosso atendimento? Responda com um número:
+   1 - Péssimo
+   2 - Ruim  
+   3 - Regular
+   4 - Bom
+   5 - Excelente"
+5. Importar sendMessage de "./channel-router" e enviar para o telefone da conversa
+6. UPDATE protocols SET csat_enviado = true WHERE id = protocol.id
+7. Inserir event: tipo 'csat_enviado'
+8. Envolver tudo em try/catch — nunca lançar erro, apenas logar
+
+--- PARTE 7: REGISTRAR RESPOSTA CSAT ---
+
+Implemente a função assíncrona registrarRespostaCsat(data: {
+  workspaceId: string,
+  telefone: string,
+  nota: number, // 1 a 5
+}): Promise<void>
+
+Lógica:
+1. Buscar o protocolo mais recente com csat_enviado = true AND csat_nota IS NULL
+   que tenha conversationId vinculado a uma conversa com esse telefone e workspaceId
+2. Se encontrar: UPDATE SET csat_nota = nota, csat_respondido_em = now()
+3. Inserir event: tipo 'csat_recebido', metadata: { nota }
+4. Envolver em try/catch
+
+--- PARTE 8: LISTAR PROTOCOLOS ---
+
+Implemente a função assíncrona listarProtocolos(workspaceId: string, filtros?: {
+  status?: string,
+  categoria?: string,
+  agenteId?: number,
+  prioridade?: string,
+  slaViolado?: boolean,
+  busca?: string,
+  limite?: number,
+  offset?: number,
+}): Promise<{ protocols: SelectProtocol[], total: number }>
+
+Use db.select() com where conditions encadeadas usando and() do drizzle-orm.
+Para busca de texto: usar sql`${protocols.numero} ILIKE ${'%' + busca + '%'} OR ${protocols.titulo} ILIKE ${'%' + busca + '%'}`
+Retornar com paginação: limite padrão 20, offset padrão 0.
+
+--- EXPORTS ---
+
+Ao final do arquivo, exportar todas as funções:
+export {
+  generateProtocolNumber,
+  calcularPrazoSla,
+  criarProtocolo,
+  atualizarStatusProtocolo,
+  verificarSlaViolados,
+  enviarCsat,
+  registrarRespostaCsat,
+  listarProtocolos,
+}
+
+--- IMPORTS NECESSÁRIOS ---
+
+import { db } from "../db";
+import { protocols, protocolEvents, protocolSlaConfigs, conversations, workspaces } from "@shared/schema";
+import type { SelectProtocol } from "@shared/schema";
+import { eq, and, lt, isNotNull, notInArray, sql, desc, ilike, or } from "drizzle-orm";
+
+Confirme quando o arquivo for criado sem erros de TypeScript.

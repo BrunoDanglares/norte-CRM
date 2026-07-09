@@ -1,0 +1,131 @@
+Prompt F4-A — Utilitário de criptografia + chave no ambiente
+PASSO 1 — Gere uma chave de criptografia e adicione ao ambiente:
+
+Execute no terminal do Replit:
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+
+Copie o valor gerado e adicione nos Secrets do Replit:
+  Nome: ENCRYPTION_KEY
+  Valor: [o hex gerado]
+
+PASSO 2 — Crie o arquivo server/utils/crypto.ts com o conteúdo abaixo:
+
+import crypto from 'crypto';
+
+const ALGORITHM = 'aes-256-gcm';
+const KEY_HEX = process.env.ENCRYPTION_KEY;
+
+function getKey(): Buffer {
+  if (!KEY_HEX || KEY_HEX.length !== 64) {
+    throw new Error('[crypto] ENCRYPTION_KEY não configurada ou inválida (deve ser 64 hex chars)');
+  }
+  return Buffer.from(KEY_HEX, 'hex');
+}
+
+export function encrypt(plaintext: string): string {
+  if (!plaintext) return plaintext;
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv(ALGORITHM, getKey(), iv);
+  const encrypted = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  // Formato: iv(24):tag(32):ciphertext(base64)
+  return `${iv.toString('hex')}:${tag.toString('hex')}:${encrypted.toString('base64')}`;
+}
+
+export function decrypt(ciphertext: string): string {
+  if (!ciphertext) return ciphertext;
+  // Se não estiver no formato criptografado, retorna como está (migração gradual)
+  if (!ciphertext.includes(':')) return ciphertext;
+  const parts = ciphertext.split(':');
+  if (parts.length !== 3) return ciphertext;
+  const [ivHex, tagHex, encryptedB64] = parts;
+  const iv = Buffer.from(ivHex, 'hex');
+  const tag = Buffer.from(tagHex, 'hex');
+  const encrypted = Buffer.from(encryptedB64, 'base64');
+  const decipher = crypto.createDecipheriv(ALGORITHM, getKey(), iv);
+  decipher.setAuthTag(tag);
+  return decipher.update(encrypted).toString('utf8') + decipher.final('utf8');
+}
+
+export function isEncrypted(value: string): boolean {
+  if (!value) return false;
+  const parts = value.split(':');
+  return parts.length === 3 && parts[0].length === 24 && parts[1].length === 32;
+}
+
+PASSO 3 — Verifique que o arquivo foi criado e compila sem erros:
+npx tsc --noEmit
+
+Confirme:
+1. ENCRYPTION_KEY adicionada nos Secrets do Replit (64 caracteres hex)
+2. Arquivo server/utils/crypto.ts criado com encrypt, decrypt, isEncrypted
+3. Sem erros de TypeScript
+Não altere nenhum outro arquivo ainda.
+
+Prompt F4-B — Criptografar na escrita, descriptografar na leitura
+Agora vamos proteger as credenciais ERP sem quebrar dados existentes.
+A função decrypt() já lida com valores não-criptografados (migração gradual).
+
+Abra o arquivo onde isp_configs é lido e escrito.
+Provavelmente server/routes/isp.ts ou server/storage.ts.
+Leia o arquivo antes de editar.
+
+CAMPOS A PROTEGER na tabela isp_configs:
+- api_token (SGP)
+- qualquer campo que contenha token, password, secret, api_key
+
+PASSO 1 — Na escrita (PUT/POST de isp_config):
+Importe no topo do arquivo:
+  import { encrypt } from '../utils/crypto';
+
+Antes de salvar no banco, criptografe os campos sensíveis:
+  if (data.api_token) data.api_token = encrypt(data.api_token);
+  if (data.ixc_token) data.ixc_token = encrypt(data.ixc_token);
+  // adicione outros campos sensíveis que existirem
+
+PASSO 2 — Na leitura (GET de isp_config e em qualquer serviço que lê as credenciais):
+Importe no topo:
+  import { decrypt } from '../utils/crypto';
+
+Após buscar do banco, descriptografe antes de usar:
+  if (config.api_token) config.api_token = decrypt(config.api_token);
+  if (config.ixc_token) config.ixc_token = decrypt(config.ixc_token);
+
+PASSO 3 — No sgp-adapter.ts e ixc-adapter.ts:
+Esses arquivos recebem as credenciais já descriptografadas via isp_configs
+(vindo do n8nErpService que lê do banco). Verifique se os adapters leem
+diretamente do banco — se sim, adicione decrypt() na leitura também.
+Se recebem as credenciais já prontas como parâmetro, não mexa.
+
+PASSO 4 — Migração dos dados existentes (rodar UMA vez):
+Execute no terminal do Replit após as edições acima estarem salvas e
+o servidor reiniciado:
+
+node -e "
+const { Pool } = require('pg');
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+
+// Importa as funções de crypto compiladas
+// (rodar após tsc compilar o projeto)
+async function migrate() {
+  const rows = await pool.query('SELECT id, api_token FROM isp_configs WHERE api_token IS NOT NULL');
+  console.log('Registros a migrar:', rows.rows.length);
+  // Apenas lista — não criptografa aqui
+  // A criptografia acontece na próxima vez que o tenant salvar as configs
+  rows.rows.forEach(r => console.log('id:', r.id, 'token length:', r.api_token?.length));
+  pool.end();
+}
+migrate();
+"
+
+IMPORTANTE: Não force re-criptografia de dados antigos via script agora.
+A função decrypt() já aceita valores não-criptografados e retorna como estão.
+Na próxima vez que o tenant salvar as configs pela tela, os valores serão
+criptografados automaticamente. Isso evita risco de corromper dados existentes.
+
+Confirme:
+1. encrypt() chamado na escrita dos campos sensíveis
+2. decrypt() chamado na leitura antes de usar as credenciais
+3. Servidor rodando sem erros
+4. Teste: salve uma config ISP pela tela e verifique no banco que o
+   api_token agora aparece no formato iv:tag:ciphertext (não mais plaintext)

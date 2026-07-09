@@ -1,0 +1,159 @@
+Você vai atuar como engenheiro sênior de backend especializado em Node.js e automação com n8n.
+
+CONTEXTO:
+Tenho um fluxo de atendimento para provedores de internet rodando no n8n.
+O código atual já está em produção e FUNCIONANDO.
+NÃO PODE haver breaking changes.
+
+OBJETIVO:
+Apenas ACRESCENTAR inteligência ao orquestrador existente.
+NÃO remover, NÃO alterar a estrutura atual, NÃO mudar variáveis existentes.
+Somente EXTENDER comportamento.
+
+REGRAS CRÍTICAS:
+
+* Não alterar nomes de variáveis existentes
+* Não remover nenhuma lógica atual
+* Não mudar estrutura de retorno
+* Apenas adicionar novas variáveis e condições
+* Código deve ser compatível com n8n Code Node
+* Código deve ser defensivo (null safety)
+
+---
+
+IMPLEMENTAÇÕES NECESSÁRIAS:
+
+1. DETECÇÃO DE MUDANÇA DE INTENÇÃO
+
+Adicionar suporte a:
+
+* sdr.mudou_intencao (boolean)
+* sdr.confianca (number)
+
+Criar:
+const mudouIntencao = sdr.mudou_intencao ?? false;
+const confianca = sdr.confianca ?? 1;
+
+Criar regra:
+const deveForcarMudanca = mudouIntencao && confianca > 0.6;
+
+E integrar no fluxo existente:
+
+* Forçar transição mesmo se fluxo atual for igual
+
+---
+
+2. DETECÇÃO DE AMBIGUIDADE
+
+Adicionar suporte a:
+
+* sdr.ambiguidade (boolean)
+
+Criar regra ANTES do switch principal:
+
+Se ambiguidade for true:
+
+* Interromper fluxo normal
+* Retornar resposta com:
+
+  * mensagem_transicao: "Só pra te ajudar melhor 👇"
+  * briefing: "Cliente com intenção ambígua. Oferecer opções claras."
+  * novo_fluxo: "menu"
+  * tipo: "confirmacao"
+
+Sem quebrar retorno atual.
+
+---
+
+3. REGRA DE NEGÓCIO ISP (FINANCEIRO PRIORITÁRIO)
+
+Dentro do case 'SUPORTE':
+
+ANTES de qualquer lógica de diagnóstico:
+
+Adicionar verificação:
+
+const valor = F.valor_devido ?? F.amount_due ?? 0;
+const suspenso = F.esta_suspenso ?? F.is_suspended ?? false;
+const temDebito = valor > 0;
+
+Se (suspenso || temDebito):
+
+* NÃO continuar suporte
+* Redirecionar para financeiro
+* Ajustar:
+  novoIntent = 'FINANCEIRO'
+  mensagemTransicao explicando bloqueio
+  briefing explicando redirecionamento
+
+---
+
+4. CONTROLE DE REPETIÇÃO DE TRANSIÇÃO
+
+Evitar repetir mensagens quando já está no mesmo fluxo:
+
+Criar:
+const repetirTransicao = sdr.orquestrador?.ultimo_fluxo === novoFluxo;
+
+Alterar condição:
+
+* Só enviar transição se NÃO for repetição
+
+---
+
+5. SISTEMA DE PRIORIDADE
+
+Adicionar variável:
+
+let prioridade = 'normal';
+
+Regras:
+
+* Se FINANCEIRO + suspenso → prioridade = 'alta'
+* Caso contrário → normal
+
+Adicionar no retorno final:
+prioridade
+
+---
+
+6. METADADOS DE CONTEXTO (IMPORTANTE)
+
+Adicionar no retorno:
+
+tipo_input: sdr.tipo_input ?? 'texto'
+mudou_intencao: mudouIntencao
+ambiguidade: ambiguidade
+confianca: confianca
+
+---
+
+7. COMPATIBILIDADE
+
+Garantir:
+
+* Nenhuma variável existente seja sobrescrita indevidamente
+* Nenhum campo atual seja removido
+* Fluxo original continue funcionando mesmo sem novos dados
+
+---
+
+RESULTADO ESPERADO:
+
+* Orquestrador passa a respeitar mudança de intenção
+* Sistema lida com ambiguidade de forma controlada
+* Regra financeira impede suporte indevido
+* UX melhora (menos repetição)
+* Base pronta para escalar SaaS
+
+---
+
+IMPORTANTE:
+
+Se houver qualquer dúvida:
+
+* NÃO simplifique
+* NÃO remova lógica existente
+* NÃO refatore
+
+Apenas EXTENDA o comportamento com segurança.

@@ -1,0 +1,89 @@
+Esta referência da API está organizada por tipo de recurso. Cada tipo de recurso tem uma ou mais representações de dados e um ou mais métodos.
+
+Tipos de recurso
+Acl 
+Para detalhes sobre o recurso Acl, consulte a página de representação do recurso.
+
+Método	Solicitação HTTP	Descrição
+URIs relacionados a https://www.googleapis.com/calendar/v3, a menos que especificado de outra forma
+delete	DELETE  /calendars/calendarId/acl/ruleId	Exclui uma regra de controle de acesso.
+get	GET  /calendars/calendarId/acl/ruleId	Retorna uma regra de controle de acesso.
+inserir	POST  /calendars/calendarId/acl	Cria uma regra de controle de acesso.
+list	GET  /calendars/calendarId/acl	Retorna as regras na lista de controle de acesso da agenda.
+patch	PATCH  /calendars/calendarId/acl/ruleId	Atualiza uma regra de controle de acesso. Esse método é compatível com a semântica de patch. Cada solicitação de patch consome três unidades de cota. É melhor usar um get seguido de um update. Os valores de campo especificados substituem os valores atuais. Os campos que você não especificar na solicitação vão permanecer inalterados. Os campos de matriz, se especificados, substituem as matrizes atuais, descartando todos os elementos anteriores.
+update	PUT  /calendars/calendarId/acl/ruleId	Atualiza uma regra de controle de acesso.
+assistir	POST  /calendars/calendarId/acl/watch	Monitore as mudanças nos recursos de ACL.
+CalendarList 
+Para saber mais sobre o recurso CalendarList, consulte a página de representação do recurso.
+
+Método	Solicitação HTTP	Descrição
+URIs relacionados a https://www.googleapis.com/calendar/v3, a menos que especificado de outra forma
+delete	DELETE  /users/me/calendarList/calendarId	Remove uma agenda da lista de agendas do usuário.
+get	GET  /users/me/calendarList/calendarId	Retorna uma agenda da lista de agendas do usuário.
+inserir	POST  /users/me/calendarList	Insere uma agenda na lista de agendas do usuário.
+list	GET  /users/me/calendarList	Retorna as agendas na lista de agendas do usuário.
+patch	PATCH  /users/me/calendarList/calendarId	Atualiza uma agenda na lista de agendas do usuário. Esse método é compatível com a semântica de patch. Cada solicitação de patch consome três unidades de cota. É melhor usar um get seguido de um update. Os valores de campo especificados substituem os valores atuais. Os campos que você não especificar na solicitação vão permanecer inalterados. Os campos de matriz, se especificados, substituem as matrizes atuais, descartando todos os elementos anteriores.
+update	PUT  /users/me/calendarList/calendarId	Atualiza uma agenda na lista de agendas do usuário.
+assistir	POST  /users/me/calendarList/watch	Monitorar mudanças nos recursos CalendarList.
+Agendas 
+Para saber mais sobre o recurso Calendars, consulte a página de representação do recurso.
+
+Método	Solicitação HTTP	Descrição
+URIs relacionados a https://www.googleapis.com/calendar/v3, a menos que especificado de outra forma
+clear	POST  /calendars/calendarId/clear	Limpa uma agenda principal. Essa operação exclui todos os eventos associados à agenda principal de uma conta.
+delete	DELETE  /calendars/calendarId	Exclui uma agenda secundária. Use calendars.clear para limpar todos os eventos das agendas principais.
+get	GET  /calendars/calendarId	Retorna metadados de uma agenda.
+inserir	POST  /calendars	Cria uma agenda secundária.
+O usuário autenticado da solicitação se torna o proprietário dos dados da nova agenda.
+
+Observação:recomendamos que você faça a autenticação como o proprietário de dados pretendido do calendário. Você pode usar a delegação de autoridade em todo o domínio para permitir que os aplicativos ajam em nome de um usuário específico. Não use uma conta de serviço para autenticação. Se você usar uma conta de serviço para autenticação, ela será a proprietária dos dados, o que pode causar um comportamento inesperado. Por exemplo, se uma conta de serviço for a proprietária dos dados, não será possível transferir a propriedade.
+patch	PATCH  /calendars/calendarId	Atualiza os metadados de uma agenda. Esse método é compatível com a semântica de patch. Cada solicitação de patch consome três unidades de cota. É melhor usar um get seguido de um update. Os valores de campo especificados substituem os valores atuais. Os campos que você não especificar na solicitação vão permanecer inalterados. Os campos de matriz, se especificados, substituem as matrizes atuais, descartando todos os elementos anteriores.
+update	PUT  /calendars/calendarId	Atualiza os metadados de uma agenda.
+Canais 
+Para detalhes sobre o recurso Channels, consulte a página de representação do recurso.
+
+Método	Solicitação HTTP	Descrição
+URIs relacionados a https://www.googleapis.com/calendar/v3, a menos que especificado de outra forma
+stop	POST  /channels/stop	Parar de assistir recursos por esse canal.
+Cores 
+Para detalhes sobre o recurso Colors, consulte a página de representação do recurso.
+
+Método	Solicitação HTTP	Descrição
+URIs relacionados a https://www.googleapis.com/calendar/v3, a menos que especificado de outra forma
+get	GET  /colors	Retorna as definições de cores para agendas e eventos.
+Eventos 
+Para saber mais sobre o recurso Events, consulte a página de representação do recurso.
+
+Método	Solicitação HTTP	Descrição
+URIs relacionados a https://www.googleapis.com/calendar/v3, a menos que especificado de outra forma
+delete	DELETE  /calendars/calendarId/events/eventId	Exclui um evento.
+get	GET  /calendars/calendarId/events/eventId	Retorna um evento com base no ID do Google Agenda. Para recuperar um evento usando o ID do iCalendar, chame o método events.list usando o parâmetro iCalUID.
+import	POST  /calendars/calendarId/events/import	Importa um evento. Essa operação é usada para adicionar uma cópia particular de um evento a uma agenda. Só é possível importar eventos com um eventType de default.
+Comportamento descontinuado:se um evento que não seja default for importado, o tipo dele será alterado para default, e todas as propriedades específicas do tipo de evento serão descartadas.
+
+inserir	POST  /calendars/calendarId/events	Cria um evento.
+instâncias	GET  /calendars/calendarId/events/eventId/instances	Retorna instâncias do evento recorrente especificado.
+list	GET  /calendars/calendarId/events	Retorna eventos na agenda especificada.
+move	POST  /calendars/calendarId/events/eventId/move	Move um evento para outra agenda, ou seja, muda o organizador de um evento. Só é possível mover eventos default. Os eventos birthday, focusTime, fromGmail, outOfOffice e workingLocation não podem ser movidos.
+Parâmetros de consulta obrigatórios: destination
+
+patch	PATCH  /calendars/calendarId/events/eventId	Atualiza um evento. Esse método é compatível com a semântica de patch. Cada solicitação de patch consome três unidades de cota. É melhor usar um get seguido de um update. Os valores de campo especificados substituem os valores atuais. Os campos que você não especificar na solicitação vão permanecer inalterados. Os campos de matriz, se especificados, substituem as matrizes atuais, descartando todos os elementos anteriores.
+quickAdd	POST  /calendars/calendarId/events/quickAdd	Cria um evento com base em uma string de texto simples.
+Parâmetros de consulta obrigatórios: text
+
+update	PUT  /calendars/calendarId/events/eventId	Atualiza um evento. Esse método não é compatível com a semântica de patch e sempre atualiza todo o recurso de evento. Para fazer uma atualização parcial, execute um get seguido de um update usando etags para garantir a atomicidade.
+assistir	POST  /calendars/calendarId/events/watch	Monitore as mudanças nos recursos de eventos.
+Disponível/ocupado 
+Para detalhes sobre o recurso Freebusy, consulte a página Representação de recursos.
+
+Método	Solicitação HTTP	Descrição
+URIs relacionados a https://www.googleapis.com/calendar/v3, a menos que especificado de outra forma
+query	POST  /freeBusy	Retorna informações de disponibilidade para um conjunto de agendas.
+Configurações 
+Para saber mais sobre o recurso Settings, consulte a página de representação do recurso.
+
+Método	Solicitação HTTP	Descrição
+URIs relacionados a https://www.googleapis.com/calendar/v3, a menos que especificado de outra forma
+get	GET  /users/me/settings/setting	Retorna uma única configuração de usuário.
+list	GET  /users/me/settings	Retorna todas as configurações do usuário autenticado.
+assistir	POST  /users/me/settings/watch	Monitore as mudanças nos recursos de configurações.

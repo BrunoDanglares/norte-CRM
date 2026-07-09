@@ -1,0 +1,139 @@
+Conectar o Guard Layer ao fluxo real de cada agente e validar
+end-to-end. Este é o último prompt do Bloco A.
+
+══ PASSO 1 — Montar ActionContext no motor ══
+
+Em ispAgentEngine.ts, logo antes de despachar para qualquer
+agente, monte o objeto ActionContext:
+
+  import { runGuardLayer, ActionContext } from './agents/guardLayer';
+
+  const actionCtx: ActionContext = {
+    tenant: {
+      allowTrustUnlock: businessRules.allowTrustUnlock ?? false,
+      allowPix:         businessRules.allowPix ?? true,
+      allowBarcode:     businessRules.allowBarcode ?? true,
+      allowAutoOpenTicket: businessRules.allowAutoOpenTicket ?? true,
+      allowDepartmentSwitch: businessRules.allowDepartmentSwitch ?? true,
+    },
+    client: {
+      contractId:     sessionState.contrato_id ?? null,
+      status:         sessionState.dados_coletados?.onu_status ?? null,
+      activePromises: sessionState.dados_coletados?.promessas_ativas ?? 0,
+    },
+    workspaceId,
+  };
+
+══ PASSO 2 — Interceptar resposta de cada agente ══
+
+O padrão atual é: agente.handle() → retorna AgentResponse com
+{ message, buttons?, actions? }.
+
+Adicione um wrapper após o handle() de qualquer agente que
+gere respostas com action tags:
+
+  async function handleComGuard(
+    agente: any,
+    input: AgentInput,
+    actionCtx: ActionContext,
+    maxRetries = 2
+  ): Promise<AgentResponse> {
+    let tentativa = 0;
+    let contextoExtra = '';
+
+    while (tentativa <= maxRetries) {
+      const response = await agente.handle({
+        ...input,
+        contextoAdicional: contextoExtra,
+      });
+
+      const guard = await runGuardLayer(response.message, actionCtx);
+
+      if (guard.proceed) return response;
+
+      if (guard.redirectTo) {
+        return {
+          message: '',
+          redirectTo: guard.redirectTo,
+          guardFeedback: guard.feedbackToAI,
+        };
+      }
+
+      // Bloqueo: tentar de novo com feedback para a IA
+      contextoExtra =
+        `\n\nINSTRUÇÃO DO SISTEMA: A ação [${guard.blockedAction}] ` +
+        `foi bloqueada pelo seguinte motivo: ${guard.feedbackToAI} ` +
+        `Reformule sua resposta sem propor essa ação.`;
+
+      tentativa++;
+    }
+
+    // Se após maxRetries ainda bloqueado, resposta segura
+    return {
+      message:
+        'Estou verificando algumas informações com nossa equipe. ' +
+        'Em instantes retorno com uma solução para você.',
+    };
+  }
+
+Substitua as chamadas diretas a agente.handle() pelas chamadas
+a handleComGuard() para os agentes: financeiroAgent, suporteAgent,
+comercialAgent.
+
+humanoAgent não precisa — ele não gera action tags.
+cancelamentoAgent (inline) já vai para humano diretamente.
+
+══ PASSO 3 — Tratar redirectTo no motor ══
+
+Após o handleComGuard(), verifique se a resposta tem redirectTo.
+Se sim:
+  sessionState.fluxo_atual = response.redirectTo;
+  // Re-despachar para o agente correto neste mesmo ciclo
+  // (chamar o handle do agente destino com o mesmo input)
+
+══ PASSO 4 — Log estruturado do Guard Layer ══
+
+Cada vez que o guardLayer bloquear ou redirecionar, salve em
+isp_automation_logs (ou tabela de log existente):
+
+  {
+    workspace_id,
+    conversation_id,
+    evento: 'GUARD_BLOCK' | 'GUARD_REDIRECT',
+    action_tag: guard.blockedAction,
+    redirect_to: guard.redirectTo ?? null,
+    tentativa: número da tentativa,
+    timestamp: new Date()
+  }
+
+══ TESTE END-TO-END — 4 cenários ══
+
+Teste manualmente com o bot da ConexãoNet e verifique nos logs:
+
+CENÁRIO 1 — Guard bloqueia ação inválida:
+  Desative allowTrustUnlock na ConexãoNet.
+  Cliente: "me desbloqueia que pago amanhã"
+  Esperado: bot NÃO confirma desbloqueio, explica que não
+  está disponível e oferece alternativa de pagamento.
+  Log: GUARD_BLOCK em isp_automation_logs.
+
+CENÁRIO 2 — Fluid routing com transição suave:
+  Cliente inicia no suporte ("minha internet tá lenta").
+  Em seguida envia "quero ver meu boleto".
+  Esperado: bot envia mensagem de transição ("Entendido,
+  vou te ajudar com financeiro...") e muda para agente
+  financeiro sem perder contexto do cliente.
+
+CENÁRIO 3 — Multi-intent com prioridade:
+  Cliente envia: "quero cancelar porque tô sem internet
+  e não tenho dinheiro pra pagar"
+  Esperado: intent resolvido = CANCELAMENTO (P2),
+  contexto da IA recebe menção a SUPORTE e FINANCEIRO
+  como intents secundários.
+  Verificar em log de contexto enviado para OpenAI.
+
+CENÁRIO 4 — Áudio com intent financeiro:
+  Simule payload com type='audio' e transcricao=
+  "oi eu tava querendo saber do meu boleto"
+  Esperado: input_type='audio' no contexto,
+  intent FINANCEIRO detectado, resposta sem lista numerada.

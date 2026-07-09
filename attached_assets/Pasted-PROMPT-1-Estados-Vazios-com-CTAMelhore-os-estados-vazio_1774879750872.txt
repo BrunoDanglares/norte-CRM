@@ -1,0 +1,45 @@
+PROMPT 1 — Estados Vazios com CTAMelhore os estados vazios (empty states) das principais telas do ChatBanana para incluir ilustração, mensagem contextual e botão de ação direta.
+
+Crie um componente reutilizável `client/src/components/ui/empty-state.tsx`:
+```tsxinterface EmptyStateProps {
+icon: string; // emoji ou ícone
+title: string;
+description: string;
+actionLabel?: string;
+onAction?: () => void;
+}export function EmptyState({ icon, title, description, actionLabel, onAction }: EmptyStateProps) {
+return (
+<div className="flex flex-col items-center justify-center py-16 px-4 text-center">
+<div className="text-6xl mb-4">{icon}</div>
+<h3 className="text-lg font-semibold text-white mb-2">{title}</h3>
+<p className="text-sm text-gray-400 max-w-sm mb-6">{description}</p>
+{actionLabel && onAction && (
+<button
+       onClick={onAction}
+       className="px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white rounded-lg text-sm font-medium transition-colors"
+     >
+{actionLabel}
+</button>
+)}
+</div>
+);
+}
+
+Aplique o componente nas seguintes telas, substituindo qualquer estado vazio existente:
+
+1. **Leads** (`client/src/pages/leads.tsx`) — quando lista vazia:
+   - icon: "👥", title: "Nenhum lead ainda", description: "Importe contatos ou aguarde novas conversas chegarem pelo WhatsApp ou Instagram.", actionLabel: "Importar Contatos", onAction: navega para /contatos
+
+2. **Pipeline** (`client/src/pages/pipeline.tsx`) — quando não há deals em nenhuma coluna:
+   - icon: "🏆", title: "Pipeline vazio", description: "Crie seu primeiro negócio e comece a acompanhar oportunidades.", actionLabel: "Criar Deal", onAction: abre modal de criação
+
+3. **Automações** (`client/src/pages/automacoes.tsx`) — quando não há fluxos:
+   - icon: "⚡", title: "Nenhuma automação criada", description: "Automatize mensagens, qualificação de leads e muito mais.", actionLabel: "Criar Automação", onAction: navega para criação de novo fluxo
+
+4. **Campanhas** (`client/src/pages/campanhas.tsx`) — quando não há campanhas:
+   - icon: "📢", title: "Nenhuma campanha ainda", description: "Envie mensagens em massa para seus contatos com segmentação.", actionLabel: "Criar Campanha", onAction: abre modal de criação
+
+5. **Inbox** (`client/src/pages/inbox.tsx`) — quando não há conversas:
+   - icon: "💬", title: "Nenhuma conversa ainda", description: "Quando clientes enviarem mensagens pelo WhatsApp ou Instagram, elas aparecerão aqui."
+
+Não altere nenhuma lógica de dados, apenas substitua os renders condicionais de lista vazia.

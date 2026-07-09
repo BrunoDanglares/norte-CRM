@@ -1,0 +1,232 @@
+Prompt 2 — Serviços (server/services/)Estou trabalhando no projeto ChatBanana. Preciso criar dois arquivos de serviço novos em `server/services/`.
+
+---
+
+### Arquivo 1: `server/services/situationTagService.ts`
+
+Cria esse arquivo completo:
+
+```typescriptimport { db } from "../db";
+import { conversationSituationTags } from "../../shared/schema";
+import { eq, and } from "drizzle-orm";
+import type { ConversationSituationTag } from "../../shared/schema";export const SITUATION_TAG_MAP: Record<string, string> = {
+// Financeiro — pipeline: Fatura Pendente → Negociação/Acordo → Promessa de Pagamento
+//              → Aguardando Pagamento → Pago/Regularizado | Inadimplente | Cancelado por Débito
+F1:  "#promessa-pago",
+F2:  "#suspensao-levantada",
+F3:  "#conta-reativada",
+F4:  "#2via-enviada",
+F5:  "#debitos-consultados",
+F6:  "#linha-verificada",
+F7:  "#negociacao-feita",
+F8:  "#contestacao-aberta",
+F9:  "#cancel-com-debito",
+F10: "#downgrade-feito",
+// Suporte Técnico — pipeline: Novo Chamado → Diagnóstico Remoto → Ação Remota
+//                  → Aguardando Cliente → Resolvido | Visita Técnica | Escalado/NOC
+S1:  "#sem-acesso-triado",
+S2:  "#onu-online",
+S3:  "#onu-restaurada",
+S4:  "#lentidao-resolvida",
+S5:  "#instabilidade-resolvida",
+S6:  "#horario-ajustado",
+S7:  "#site-verificado",
+S8:  "#os-aberta",
+S9:  "#equipamento-trocado",
+S10: "#senha-wifi-alterada",
+S11: "#wifi-restaurado",
+S12: "#roteador-movido",
+S13: "#plano-consultado",
+// Comercial — pipeline: Novo Lead → Contato Feito → Viabilidade Técnica
+//             → Proposta Enviada → Agendamento Instalação → Instalado/Ativado | Perdido
+C1:  "#upgrade-feito",
+C2:  "#agendamento-feito",
+C3:  "#cobertura-verificada",
+C4:  "#fidelidade-aplicada",
+C5:  "#contrato-fechado",
+C6:  "#cancelamento-feito",
+C7:  "#titularidade-alterada",
+C8:  "#planos-consultados",
+C9:  "#endereco-alterado",
+C10: "#indicacao-registrada",
+C11: "#dados-coletados",
+};export async function applyAutoTag(
+workspaceId: string,
+conversationId: number,
+situationCode: string
+): Promise<void> {
+const tagSlug = SITUATION_TAG_MAP[situationCode];
+if (!tagSlug) return;const existing = await db
+.select()
+.from(conversationSituationTags)
+.where(
+and(
+eq(conversationSituationTags.conversationId, conversationId),
+eq(conversationSituationTags.situationCode, situationCode)
+)
+)
+.limit(1);if (existing.length > 0) return;await db.insert(conversationSituationTags).values({
+workspaceId,
+conversationId,
+situationCode,
+tagSlug,
+origin: "auto",
+});
+}export async function applyManualTag(
+workspaceId: string,
+conversationId: number,
+situationCode: string,
+appliedBy: number
+): Promise<void> {
+const tagSlug = SITUATION_TAG_MAP[situationCode];
+if (!tagSlug) throw new Error(Código de situação inválido: ${situationCode});const existing = await db
+.select()
+.from(conversationSituationTags)
+.where(
+and(
+eq(conversationSituationTags.conversationId, conversationId),
+eq(conversationSituationTags.situationCode, situationCode)
+)
+)
+.limit(1);if (existing.length > 0) return;await db.insert(conversationSituationTags).values({
+workspaceId,
+conversationId,
+situationCode,
+tagSlug,
+origin: "manual",
+appliedBy,
+});
+}export async function removeTag(
+conversationId: number,
+tagId: number
+): Promise<void> {
+await db
+.delete(conversationSituationTags)
+.where(
+and(
+eq(conversationSituationTags.id, tagId),
+eq(conversationSituationTags.conversationId, conversationId)
+)
+);
+}export async function getTagsByConversation(
+conversationId: number
+): Promise<ConversationSituationTag[]> {
+return db
+.select()
+.from(conversationSituationTags)
+.where(eq(conversationSituationTags.conversationId, conversationId));
+}
+
+---
+
+### Arquivo 2: `server/services/kanbanArchivalService.ts`
+
+Cria esse arquivo completo:
+
+```typescriptimport { db } from "../db";
+import { leads } from "../../shared/schema";
+import { eq, and, isNull, inArray } from "drizzle-orm";/**
+
+Stages finais por pipeline — exatamente como estão cadastrados no banco.
+
+COMERCIAL:
+"Instalado / Ativado" → ativado
+"Perdido"             → perdido
+
+SUPORTE TÉCNICO (3 etapas finais):
+"Resolvido"           → ativado
+"Visita Técnica"      → ativado
+"Escalado / NOC"      → perdido
+
+FINANCEIRO (3 etapas finais):
+"Pago / Regularizado" → ativado
+"Inadimplente"        → perdido
+"Cancelado por Débito"→ perdido
+*/
+const FINAL_STAGE_MAP: Record<string, "ativado" | "perdido"> = {
+// Comercial
+"Instalado / Ativado":  "ativado",
+"Perdido":              "perdido",
+// Suporte Técnico
+"Resolvido":            "ativado",
+"Visita Técnica":       "ativado",
+"Escalado / NOC":       "perdido",
+// Financeiro
+"Pago / Regularizado":  "ativado",
+"Inadimplente":         "perdido",
+"Cancelado por Débito": "perdido",
+};
+const FINAL_STAGE_NAMES = Object.keys(FINAL_STAGE_MAP);/**
+
+Arquiva um lead imediatamente ao ser movido para etapa final.
+Chamado pelo frontend/rota quando o lead é arrastado para a coluna final.
+*/
+export async function archiveLead(
+leadId: number,
+reason: "ativado" | "perdido"
+): Promise<void> {
+await db
+.update(leads)
+.set({
+archivedAt: new Date(),
+archivalReason: reason,
+})
+.where(eq(leads.id, leadId));
+}
+/**
+
+Detecta automaticamente o motivo pelo nome do stage.
+Útil quando o arquivamento vem de uma movimentação de stage sem reason explícito.
+*/
+export function resolveArchivalReason(stageName: string): "ativado" | "perdido" {
+return FINAL_STAGE_MAP[stageName] ?? "perdido";
+}
+/**
+
+Job de limpeza de fim de expediente.
+Arquiva todos os leads nas etapas finais que ainda não foram arquivados.
+Deve ser chamado às 18h (seg-sex) e 12h (sáb).
+*/
+export async function archiveEndOfShift(): Promise<{ archived: number }> {
+const leadsToArchive = await db
+.select({ id: leads.id, stage: leads.stage })
+.from(leads)
+.where(
+and(
+isNull(leads.archivedAt),
+inArray(leads.stage, FINAL_STAGE_NAMES)
+)
+);
+if (leadsToArchive.length === 0) return { archived: 0 };for (const lead of leadsToArchive) {
+const reason = resolveArchivalReason(lead.stage ?? "");
+await db
+.update(leads)
+.set({ archivedAt: new Date(), archivalReason: reason })
+.where(eq(leads.id, lead.id));
+}console.log([KanbanArchival] ${leadsToArchive.length} leads arquivados (fim de expediente));
+return { archived: leadsToArchive.length };
+}
+
+---
+
+### Registrar o job no servidor
+
+Abre `server/index.ts`.
+
+Adiciona no topo:
+
+```typescriptimport { archiveEndOfShift } from "./services/kanbanArchivalService";
+
+Após `app.listen`, adiciona:
+
+```typescript// Job de arquivamento de fim de expediente
+// Seg-Sex às 18h | Sáb às 12h — checa a cada minuto
+setInterval(async () => {
+const now = new Date();
+const hora = now.getHours();
+const minuto = now.getMinutes();
+const dia = now.getDay(); // 0=Dom, 6=Sábconst fimUtil = dia >= 1 && dia <= 5 && hora === 18 && minuto === 0;
+const fimSab  = dia === 6 && hora === 12 && minuto === 0;if (fimUtil || fimSab) {
+await archiveEndOfShift();
+}
+}, 60 * 1000);

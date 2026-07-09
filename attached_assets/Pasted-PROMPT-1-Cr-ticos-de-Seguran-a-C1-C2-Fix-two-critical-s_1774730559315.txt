@@ -1,0 +1,76 @@
+PROMPT 1 — Críticos de Segurança (C1 + C2)Fix two critical security vulnerabilities in the ChatBanana codebase.
+Do NOT change anything else — only these two issues.
+
+## FIX 1: Remove hardcoded super admin credentials (C1)
+
+File: server/routes.ts lines ~5046-5047
+
+PROBLEM: Super admin credentials are hardcoded in plain text:
+const SUPER_ADMIN_USER = "Administrador";
+const SUPER_ADMIN_PASS = "Odlareg159951@";
+
+SOLUTION:
+1. Remove the hardcoded constants entirely
+2. Read from environment variables instead:
+```typescriptconst SUPER_ADMIN_USER = process.env.SUPER_ADMIN_USER;
+const SUPER_ADMIN_PASS_HASH = process.env.SUPER_ADMIN_PASS_HASH;if (!SUPER_ADMIN_USER || !SUPER_ADMIN_PASS_HASH) {
+console.error('[SuperAdmin] SUPER_ADMIN_USER and SUPER_ADMIN_PASS_HASH env vars are required');
+}
+
+3. The password comparison must use scrypt hash comparison (same as existing auth):
+```typescript// Instead of plain text comparison:
+// if (pass === SUPER_ADMIN_PASS) ...// Use scrypt:
+import { scrypt, timingSafeEqual } from 'crypto';
+// or use the existing comparePasswords utility if it exists in the codebaseasync function verifySuperAdminPassword(inputPassword: string): Promise<boolean> {
+if (!SUPER_ADMIN_PASS_HASH) return false;
+try {
+// Use the same password verification function used for regular users
+// Find the existing comparePasswords or hashPassword function and use it here
+return await comparePasswords(inputPassword, SUPER_ADMIN_PASS_HASH);
+} catch {
+return false;
+}
+}
+
+4. Add to .env file (DO NOT commit this):SUPER_ADMIN_USER=Administrador
+SUPER_ADMIN_PASS_HASH=<generate hash using the existing hashPassword function>
+
+5. To generate the hash for the existing password, add a temporary one-time script:
+```typescript// Run once to generate hash, then add to EasyPanel env vars
+// DELETE this code after running
+import { hashPassword } from './your-auth-utils';
+const hash = await hashPassword("Odlareg159951@");
+console.log("SUPER_ADMIN_PASS_HASH=" + hash);
+
+6. Add SUPER_ADMIN_USER and SUPER_ADMIN_PASS_HASH to EasyPanel environment variables.
+
+---
+
+## FIX 2: Remove JWT_SECRET fallback (C2)
+
+Files: server/index.ts:66, server/middleware/auth.ts:6
+
+PROBLEM: JWT_SECRET has an insecure fallback:
+```typescriptJWT_SECRET = process.env.JWT_SECRET || "flowcrm-secret-2025"
+
+SOLUTION:
+```typescript// In server/index.ts and server/middleware/auth.ts:
+const JWT_SECRET = process.env.JWT_SECRET;if (!JWT_SECRET) {
+console.error('[FATAL] JWT_SECRET environment variable is not set. Server cannot start securely.');
+process.exit(1); // Hard stop — do not start with insecure secret
+}
+
+Important: Make sure JWT_SECRET is already configured in EasyPanel before deploying.
+If it's not configured, the server will refuse to start (which is the correct behavior).
+Verify JWT_SECRET exists in EasyPanel → Environment BEFORE deploying this fix.
+
+---
+
+## After implementing:
+1. Verify JWT_SECRET is in EasyPanel environment
+2. Run the one-time hash generation script for the super admin password
+3. Add SUPER_ADMIN_USER and SUPER_ADMIN_PASS_HASH to EasyPanel
+4. Delete the hash generation script
+5. Deploy and confirm server starts correctly
+6. Test super admin login still works
+7. Confirm no hardcoded credentials remain: grep -r "Odlareg" . and grep -r "flowcrm-secret" .

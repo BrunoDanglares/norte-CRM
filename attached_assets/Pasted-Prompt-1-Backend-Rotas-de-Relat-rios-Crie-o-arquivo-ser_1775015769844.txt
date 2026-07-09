@@ -1,0 +1,157 @@
+Prompt 1 — Backend: Rotas de Relatórios
+Crie o arquivo server/routes/relatorios.ts com todas as rotas de relatórios
+do ChatBanana. Usar db diretamente (não storage). Todas as rotas requerem
+autenticação via requireAuth (já importar do middleware).
+
+--- IMPORTS NECESSÁRIOS ---
+
+import { Router } from "express";
+import { db } from "../db";
+import { 
+  conversations, messages, protocols, protocolEvents,
+  ispBillingLogs, ispUnlockLogs, ispSupportTickets, ispConfigs,
+  users
+} from "@shared/schema";
+import { eq, and, gte, lte, sql, count, avg, isNotNull, inArray } from "drizzle-orm";
+import { resolveWorkspaceId } from "../utils/helpers";
+
+const router = Router();
+
+--- HELPER: parseRange ---
+
+Crie a função local parseRange(query: any): { dataInicio: Date, dataFim: Date }
+
+Lógica:
+- Se query.periodo === 'hoje': inicio = hoje 00:00:00, fim = hoje 23:59:59
+- Se query.periodo === '7d': inicio = 7 dias atrás, fim = agora
+- Se query.periodo === '30d': inicio = 30 dias atrás, fim = agora
+- Se query.periodo === '90d': inicio = 90 dias atrás, fim = agora
+- Se query.dataInicio e query.dataFim existirem: usar esses valores (new Date())
+- Default sem parâmetros: 30 dias atrás até agora
+
+Sempre retornar como objetos Date.
+
+--- ROTA 1: GET /stats/atendimentos ---
+
+Retornar um objeto com:
+
+1. totalConversas: COUNT de conversations no período (createdAt entre dataInicio e dataFim)
+
+2. conversasResolvidas: COUNT WHERE status IN ('resolved', 'resolvido')
+
+3. tempoMedioResolucao: AVG em horas de (resolvedAt - createdAt) WHERE resolvedAt IS NOT NULL
+   Usar: sql`EXTRACT(EPOCH FROM (${conversations.resolvedAt} - ${conversations.createdAt})) / 3600`
+   Retornar como número com 1 casa decimal, ou null se sem dados
+
+4. porCanal: array de { canal: string, total: number }
+   GROUP BY canal ORDER BY total DESC
+
+5. porAgente: array de { agenteNome: string, total: number, resolvidas: number }
+   Buscar conversations agrupado por assignedUserName WHERE assignedUserName IS NOT NULL
+   ORDER BY total DESC LIMIT 10
+
+6. volumePorDia: array de { data: string, total: number }
+   GROUP BY DATE(createdAt) no período
+   Formatar data como 'DD/MM' usando TO_CHAR(date, 'DD/MM')
+   ORDER BY data ASC
+   (para o gráfico de linha)
+
+7. taxaResolucao: (conversasResolvidas / totalConversas * 100) arredondado, ou 0
+
+Todas as queries filtram por workspaceId = resolveWorkspaceId(req) e pelo período.
+
+--- ROTA 2: GET /stats/protocolos ---
+
+Retornar:
+
+1. total: COUNT de protocols no período (createdAt)
+
+2. porStatus: array de { status: string, total: number }
+   GROUP BY status
+
+3. porCategoria: array de { categoria: string, total: number }
+   GROUP BY categoria ORDER BY total DESC
+
+4. slaViolados: COUNT WHERE sla_violado = true
+
+5. taxaSlaViolado: (slaViolados / total * 100) arredondado, ou 0
+
+6. csatMedia: AVG(csat_nota) WHERE csat_nota IS NOT NULL
+   Retornar com 1 casa decimal ou null
+
+7. distribuicaoCsat: array de { nota: number, total: number }
+   GROUP BY csat_nota WHERE csat_nota IS NOT NULL
+   ORDER BY nota ASC
+   (para gráfico de barras)
+
+8. tempoMedioResolucao: AVG em horas de (resolved_at - created_at) WHERE resolved_at IS NOT NULL
+   Retornar com 1 casa decimal ou null
+
+9. volumePorDia: array de { data: string, total: number }
+   GROUP BY DATE(createdAt), formatar como 'DD/MM', ORDER BY ASC
+
+--- ROTA 3: GET /stats/isp ---
+
+Verificar primeiro se existe isp_configs para o workspace. Se não existir,
+retornar { enabled: false } com status 200.
+
+Se existir, retornar:
+
+1. cobrancasEnviadas: COUNT de isp_billing_logs WHERE whatsapp_sent = true
+   no período (sent_at entre dataInicio e dataFim)
+
+2. porTipoMensagem: array de { messageType: string, total: number }
+   GROUP BY message_type WHERE whatsapp_sent = true
+   (tipos: before_due, after_due_1, after_due_3, after_due_7)
+   Traduzir no backend para labels:
+   'before_due' → 'Pré-vencimento'
+   'after_due_1' → '1 dia após'  
+   'after_due_3' → '3 dias após'
+   'after_due_7' → '7 dias após'
+   Outros: manter como está
+
+3. desbloqueios: objeto com:
+   - total: COUNT de isp_unlock_logs no período (unlockedAt)
+   - sucesso: COUNT WHERE success = true
+   - falha: COUNT WHERE success = false
+   - taxaSucesso: (sucesso / total * 100) arredondado ou 0
+   - porTipo: array de { unlockType: string, total: number } GROUP BY unlock_type
+
+4. tickets: objeto com:
+   - total: COUNT de isp_support_tickets no período (openedAt)
+   - abertos: COUNT WHERE status = 'aberto'
+   - resolvidos: COUNT WHERE status = 'resolvido'
+   - taxaResolucao: (resolvidos / total * 100) arredondado ou 0
+
+5. volumeCobrancasPorDia: array de { data: string, total: number }
+   FROM isp_billing_logs GROUP BY DATE(sent_at) WHERE whatsapp_sent = true
+   Formatar como 'DD/MM' ORDER BY ASC
+
+Adicionar { enabled: true } ao retorno.
+
+--- REGISTRO DAS ROTAS ---
+
+router.get("/stats/atendimentos", async (req, res) => { ... });
+router.get("/stats/protocolos", async (req, res) => { ... });
+router.get("/stats/isp", async (req, res) => { ... });
+
+export default router;
+
+--- REGISTRO NO index.ts ---
+
+No server/index.ts, após o registro do instaProspectRouter, adicionar:
+
+const relatoriosRouter = (await import("./routes/relatorios")).default;
+app.use("/api/relatorios", authMiddleware, relatoriosRouter);
+console.log("[Boot] Relatórios routes registered at /api/relatorios");
+
+--- TRATAMENTO DE ERROS ---
+
+Cada rota deve ter try/catch retornando:
+- 200 com dados em caso de sucesso
+- 500 com { error: "Erro ao buscar relatório de X", details: err.message } em caso de falha
+
+Confirme quando as 3 rotas estiverem funcionando. Teste manualmente com:
+GET /api/relatorios/stats/atendimentos?periodo=30d
+GET /api/relatorios/stats/protocolos?periodo=30d
+GET /api/relatorios/stats/isp?periodo=30d

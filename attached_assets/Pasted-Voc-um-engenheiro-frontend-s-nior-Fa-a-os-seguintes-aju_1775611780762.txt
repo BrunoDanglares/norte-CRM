@@ -1,0 +1,100 @@
+Você é um engenheiro frontend sênior. Faça os seguintes ajustes de UX, layout e formatação na tela de Chat do ChatBanana. NÃO altere lógica de negócio, rotas, contextos ou estados — apenas presentation layer (CSS, componentes de renderização de mensagem).
+
+---
+
+### 1. RENDERIZAÇÃO DE MARKDOWN / WHATSAPP FORMATTING
+
+No componente que renderiza o corpo das mensagens (provavelmente `MessageBubble`, `ChatMessage` ou similar), implemente um parser de formatação no estilo WhatsApp ANTES de exibir o texto:
+
+- `*texto*` → <strong>texto</strong> (negrito)
+- `_texto_` → <em>texto</em> (itálico)
+- `~texto~` → <del>texto</del> (tachado)
+- ` `` `texto` `` ` → <code>texto</code> (monoespaçado, fundo cinza sutil)
+- `\n` → quebra de linha real (<br /> ou white-space: pre-wrap)
+
+Implemente uma função `parseWhatsAppText(text: string): string` que aplica replaces com regex em sequência e retorna HTML seguro. Use `dangerouslySetInnerHTML` com sanitização (ou biblioteca `dompurify` se já estiver no projeto). Aplique essa função em TODAS as mensagens de texto (enviadas e recebidas).
+
+---
+
+### 2. DIMENSÕES E LARGURA DAS MENSAGENS
+
+- Largura máxima dos balões: `max-width: 72%` no desktop, `max-width: 88%` no mobile (< 768px)
+- Largura mínima dos balões: `min-width: 80px` para evitar balões colapsados
+- Mensagens com apenas emoji (1–3 emojis, sem texto): aumentar font-size para `2rem` e remover fundo/borda do balão (fundo transparente, sem padding lateral excessivo)
+- O campo de texto (textarea) deve ter `min-height: 44px` e `max-height: 160px` com scroll interno
+
+---
+
+### 3. ESPAÇAMENTOS E RITMO VERTICAL
+
+- Espaço entre mensagens consecutivas do MESMO remetente: `margin-bottom: 2px`
+- Espaço entre mensagens de remetentes DIFERENTES: `margin-bottom: 10px`
+- Padding interno do balão: `padding: 8px 12px`
+- Padding do container de mensagens (scroll area): `padding: 16px 20px`
+- Timestamp dentro do balão: `font-size: 0.68rem`, alinhado à direita, `opacity: 0.65`, `margin-top: 4px`, nunca quebra linha sozinha — usar `display: flex; justify-content: space-between; align-items: flex-end; gap: 8px` no wrapper interno do balão
+
+---
+
+### 4. TIPOGRAFIA
+
+- Fonte do corpo das mensagens: manter Nunito, `font-size: 0.875rem` (14px), `line-height: 1.5`
+- Texto de mensagem recebida: cor `#e2e2e2`
+- Texto de mensagem enviada (balão azul): cor `#ffffff`
+- Código inline (`<code>`): `background: rgba(255,255,255,0.15)`, `border-radius: 4px`, `padding: 1px 5px`, `font-family: monospace`, `font-size: 0.82rem`
+- Nome do remetente AI (ex: "Banana AI") acima do balão: `font-size: 0.7rem`, `font-weight: 700`, `opacity: 0.7`, `margin-bottom: 2px`
+
+---
+
+### 5. BALÕES — BORDER RADIUS E VISUAL
+
+- Mensagem enviada (direita): `border-radius: 18px 18px 4px 18px`
+- Mensagem recebida (esquerda): `border-radius: 18px 18px 18px 4px`
+- Mensagens consecutivas do mesmo remetente (não a última): reduzir o border-radius do canto adjacente para `6px` para simular agrupamento visual (como WhatsApp/Telegram)
+- Sombra sutil nos balões: `box-shadow: 0 1px 2px rgba(0,0,0,0.25)`
+
+---
+
+### 6. ÁUDIO / VOICE MESSAGE
+
+- O componente de áudio deve ter: fundo `rgba(255,255,255,0.08)`, border-radius `24px`, padding `8px 14px`, altura fixa de `48px`
+- O waveform (barras) deve ter cor `#4CB8F0` (Chat Blue)
+- Timestamp do áudio alinhado à direita, mesmo estilo dos outros timestamps
+- Legenda transcrita abaixo do player (quando existir) em itálico, `font-size: 0.8rem`, `opacity: 0.75`
+
+---
+
+### 7. SCROLL E ÁREA DE MENSAGENS
+
+- O scroll deve ser `overflow-y: auto` com `scroll-behavior: smooth`
+- Adicionar `padding-bottom: 12px` no final da lista para a última mensagem não ficar colada na caixa de input
+- Auto-scroll para o final ao receber nova mensagem (se o usuário já estiver no final — não forçar se ele rolou para cima)
+
+---
+
+### 8. CAIXA DE INPUT
+
+- Remover borda visível padrão; usar `border: 1.5px solid rgba(255,255,255,0.08)` com `focus: border-color: #4CB8F0`
+- `border-radius: 24px`
+- `background: rgba(255,255,255,0.05)`
+- Botão de envio: manter ícone atual, mas garantir `min-width: 40px; min-height: 40px` e `border-radius: 50%`
+- Ícones de anexo, emoji e áudio: `opacity: 0.6` no estado idle, `opacity: 1` no hover, transição `0.2s ease`
+
+---
+
+### 9. INDICADOR DE STATUS DA MENSAGEM
+
+- Ícones de status (enviado ✓, entregue ✓✓, lido ✓✓ azul) devem estar dentro do wrapper do timestamp
+- Usar tamanho `12px`, alinhados verticalmente com o timestamp
+- Cores: enviado = `opacity: 0.5`, entregue = `opacity: 0.8`, lido = `color: #4CB8F0`
+
+---
+
+### INSTRUÇÕES DE EXECUÇÃO
+
+1. Localize o componente principal de renderização de mensagem (busque por "MessageBubble", "ChatMessage", "renderMessage" ou similar)
+2. Aplique os ajustes de CSS preferencialmente via classes Tailwind existentes ou CSS modules — não use style inline para propriedades repetidas
+3. Implemente a função `parseWhatsAppText` em um arquivo utilitário separado: `src/utils/formatMessage.ts`
+4. Teste visualmente nos dois tipos de balão (enviado/recebido) e nos tipos de mídia (texto, áudio, imagem)
+5. NÃO altere a estrutura de dados, hooks de estado, contextos de auth ou lógica de envio de mensagens
+
+Confirme cada arquivo modificado e mostre o diff das mudanças principais.

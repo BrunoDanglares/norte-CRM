@@ -1,0 +1,104 @@
+No arquivo server/services/n8nManagerService.ts, adicione estes dois métodos novos:
+
+  // Lista todas as credentials do N8N
+  async listarCredentials(): Promise<any[]> {
+    const data = await n8nFetch('/credentials');
+    return data.data ?? data ?? [];
+  }
+
+  // Atualiza os nós de um workflow com a credential correta
+  // e atualiza o nó Set Entrada com token e URL do ChatBanana
+  async configurarWorkflowISP(workflowId: string): Promise<any> {
+
+    // 1. Busca a credential Supabase criada
+    const credentials = await this.listarCredentials();
+    const supabaseCred = credentials.find((c: any) =>
+      c.type === 'supabaseApi' || c.name?.toLowerCase().includes('supabase')
+    );
+    if (!supabaseCred) throw new Error('Credential Supabase não encontrada no N8N');
+
+    // 2. Busca o workflow atual
+    const workflow = await n8nFetch(`/workflows/${workflowId}`);
+
+    // 3. Atualiza os nós
+    const updatedNodes = workflow.nodes.map((node: any) => {
+
+      // Nós Supabase — injeta a credential
+      if (node.type === 'n8n-nodes-base.supabase') {
+        return {
+          ...node,
+          credentials: {
+            supabaseApi: {
+              id:   supabaseCred.id,
+              name: supabaseCred.name,
+            }
+          }
+        };
+      }
+
+      // Nó Set Entrada — injeta token e URL do ChatBanana
+      if (node.name === 'Set Entrada') {
+        const assignments = node.parameters?.assignments?.assignments ?? [];
+        const updated = assignments.map((a: any) => {
+          if (a.name === 'chatbanana_token') {
+            return { ...a, value: process.env.CHATBANANA_N8N_TOKEN ?? a.value };
+          }
+          if (a.name === 'chatbanana_url') {
+            return { ...a, value: 'https://chatbanana.com.br' };
+          }
+          return a;
+        });
+        return {
+          ...node,
+          parameters: {
+            ...node.parameters,
+            assignments: { assignments: updated }
+          }
+        };
+      }
+
+      return node;
+    });
+
+    // 4. Salva o workflow atualizado
+    await this.atualizarWorkflow(workflowId, {
+      ...workflow,
+      nodes: updatedNodes,
+    });
+
+    return {
+      workflow_id:     workflowId,
+      supabase_cred:   supabaseCred.name,
+      nodes_updated:   updatedNodes.filter((n: any) => n.type === 'n8n-nodes-base.supabase').length,
+    };
+  }
+
+
+No arquivo server/routes/n8n.ts, adicione esta rota antes do export default router:
+
+// POST /api/n8n/manager/configurar-isp
+// Injeta credentials Supabase + token ChatBanana no workflow ISP automaticamente
+router.post('/manager/configurar-isp', async (req: Request, res: Response) => {
+  try {
+    // Busca o workflow ISP pelo nome
+    const workflow = await n8nManagerService.buscarPorNome(
+      '🍌 Agente ISP V4 — ChatBanana Proxy (ERP + IA + Envio)'
+    );
+    if (!workflow) {
+      return res.status(404).json({ error: 'Workflow ISP não encontrado no N8N' });
+    }
+    const result = await n8nManagerService.configurarWorkflowISP(workflow.id);
+    return res.json({ ok: true, ...result });
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+
+Além disso, adicione a variável de ambiente CHATBANANA_N8N_TOKEN ao EasyPanel.
+Ela deve conter o JWT do ChatBanana que o N8N vai usar para chamar /api/n8n/erp,
+/api/n8n/ai e /api/n8n/send.
+
+Por enquanto deixe o valor como string vazia — vamos preencher depois.
+
+Salve e aguarde redeploy.

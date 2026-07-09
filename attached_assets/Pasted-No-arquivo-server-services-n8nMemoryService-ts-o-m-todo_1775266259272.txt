@@ -1,0 +1,55 @@
+No arquivo server/services/n8nMemoryService.ts, o método updateSession
+está causando erro "Não existe parâmetro $4" porque a query SQL manual
+com parâmetros posicionais está com bug.
+
+Substitua o método updateSession completamente por esta versão que
+usa sql template literals do Drizzle em vez de query manual:
+
+  async updateSession(conversationId: string, updates: {
+    clienteNome?:     string;
+    clienteIdErp?:    string;
+    clienteContrato?: string;
+    sistemaErp?:      string;
+    fluxoAtual?:      string;
+    dadosColetados?:  Record<string, any>;
+    identificado?:    boolean;
+    ultimoIntent?:    string;
+  }) {
+    // Usa JSON patch para atualizar apenas os campos enviados
+    const patch: Record<string, any> = { updated_at: new Date().toISOString() };
+
+    if (updates.clienteNome     !== undefined) patch.cliente_nome     = updates.clienteNome;
+    if (updates.clienteIdErp    !== undefined) patch.cliente_id_erp   = updates.clienteIdErp;
+    if (updates.clienteContrato !== undefined) patch.cliente_contrato  = updates.clienteContrato;
+    if (updates.sistemaErp      !== undefined) patch.sistema_erp       = updates.sistemaErp;
+    if (updates.fluxoAtual      !== undefined) patch.fluxo_atual       = updates.fluxoAtual;
+    if (updates.identificado    !== undefined) patch.identificado       = updates.identificado;
+    if (updates.ultimoIntent    !== undefined) patch.ultimo_intent      = updates.ultimoIntent;
+
+    // Monta SET dinamicamente com índices corretos
+    const keys   = Object.keys(patch);
+    const values = Object.values(patch);
+    
+    if (keys.length === 0) return;
+
+    const setClause = keys
+      .map((k, i) => `${k} = $${i + 1}`)
+      .join(', ');
+
+    values.push(conversationId); // último parâmetro = WHERE
+
+    await db.execute({
+      sql:    `UPDATE isp_session_state SET ${setClause} WHERE conversation_id = $${keys.length + 1}`,
+      params: values,
+    } as any);
+
+    // dados_coletados separado (jsonb merge)
+    if (updates.dadosColetados && Object.keys(updates.dadosColetados).length > 0) {
+      await db.execute({
+        sql:    `UPDATE isp_session_state SET dados_coletados = dados_coletados || $1::jsonb WHERE conversation_id = $2`,
+        params: [JSON.stringify(updates.dadosColetados), conversationId],
+      } as any);
+    }
+  }
+
+Salve e aguarde redeploy.

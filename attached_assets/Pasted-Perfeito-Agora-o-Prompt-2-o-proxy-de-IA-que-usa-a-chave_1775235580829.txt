@@ -1,0 +1,497 @@
+Perfeito. Agora o Prompt 2 — o proxy de IA que usa a chave OpenAI e os prompt templates do ChatBanana.
+
+PROMPT 2 — AI Proxy /api/n8n/ai
+Adicione o sistema de prompt templates editáveis e o endpoint de IA ao projeto ChatBanana.
+São 4 passos: schema, service, rota, seed de templates padrão.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PASSO 1 — Adicionar tabela ao shared/schema.ts
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Encontre o arquivo shared/schema.ts e adicione esta definição junto com as outras tabelas:
+
+import { pgTable, uuid, text, boolean, timestamp } from 'drizzle-orm/pg-core';
+
+export const ai_prompt_templates = pgTable('ai_prompt_templates', {
+  id:            uuid('id').defaultRandom().primaryKey(),
+  workspace_id:  uuid('workspace_id').notNull(),
+  name:          text('name').notNull(),
+  description:   text('description'),
+  system_prompt: text('system_prompt').notNull(),
+  is_active:     boolean('is_active').default(true).notNull(),
+  created_at:    timestamp('created_at').defaultNow(),
+  updated_at:    timestamp('updated_at').defaultNow(),
+});
+
+// Unique constraint: um template por nome por workspace
+// Adicione junto ao export ou via uniqueIndex se o projeto usar essa pattern
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PASSO 2 — Criar migration
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Execute no SQL Editor do Supabase (ou via drizzle push):
+
+CREATE TABLE IF NOT EXISTS ai_prompt_templates (
+  id            UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  workspace_id  UUID NOT NULL,
+  name          TEXT NOT NULL,
+  description   TEXT,
+  system_prompt TEXT NOT NULL,
+  is_active     BOOLEAN DEFAULT true NOT NULL,
+  created_at    TIMESTAMPTZ DEFAULT now(),
+  updated_at    TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS ai_prompt_templates_workspace_name
+  ON ai_prompt_templates(workspace_id, name);
+
+CREATE INDEX IF NOT EXISTS ai_prompt_templates_workspace
+  ON ai_prompt_templates(workspace_id);
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PASSO 3 — Criar server/services/n8nAiService.ts
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+import { db } from '../db';
+import { ai_prompt_templates } from '../../shared/schema';
+import { eq, and } from 'drizzle-orm';
+import OpenAI from 'openai';
+
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+// ── Templates padrão ISP (usados como fallback se não houver no DB) ──────────
+
+const DEFAULT_TEMPLATES: Record<string, { description: string; system_prompt: string }> = {
+
+  agente_financeiro: {
+    description: 'Agente especializado em cobranças, 2ª via e promessa de pagamento',
+    system_prompt: `Você é Sofia, especialista financeira de um provedor de internet.
+Tom: empático, direto, sem julgamento. Nunca pressione o cliente.
+
+FLUXO:
+- Cliente SUSPENSO: informe e ofereça "1️⃣ Pagar agora" ou "2️⃣ Promessa de 48h"
+- ELEGÍVEL para promessa: confirme e informe que a conexão será liberada em instantes
+- NÃO ELEGÍVEL (2+ promessas no mês ou dívida > R$300): empurre pagamento imediato
+- Pagamento: ofereça PIX, boleto ou link de pagamento
+
+REGRAS RÍGIDAS:
+- Nunca libere sem verificar elegibilidade
+- Se cliente recusar pagamento após 2 tentativas → transfira para humano
+- Use *negrito* para destaques no WhatsApp, mensagens curtas, uma coisa por vez`,
+  },
+
+  agente_suporte_online: {
+    description: 'Suporte técnico para cliente conectado com problemas de qualidade',
+    system_prompt: `Você é Sofia, técnica de suporte de um provedor de internet.
+O cliente está CONECTADO mas com problemas de qualidade (lentidão, instabilidade, quedas).
+
+FLUXO:
+1. Pergunte: lentidão, quedas frequentes ou Wi-Fi fraco?
+2. Se o sistema detectou instabilidade recente → mencione proativamente: "Vi aqui que tivemos algumas instabilidades na sua conexão"
+3. Guie: teste fast.com → cabo vs Wi-Fi → reiniciar roteador (30s desligado)
+4. Se não resolver em 2 passos → abrir chamado técnico
+5. Se plano limitado e cliente reclama de velocidade → sugira upgrade
+
+REGRAS: uma pergunta por vez, formato WhatsApp (*negrito*), seja proativa com os dados do cliente`,
+  },
+
+  agente_suporte_offline: {
+    description: 'Suporte técnico para cliente sem internet',
+    system_prompt: `Você é Sofia, técnica de suporte de um provedor de internet.
+O cliente está SEM INTERNET. Resolva em até 3 passos ou abra chamado.
+
+FLUXO:
+1. Reinicialização: desligar da tomada 30s, religar — aguarde resposta antes de continuar
+2. LEDs: verde/azul sólido = OK, vermelho/piscando = problema na linha
+3. Se não resolveu → abrir chamado técnico com prioridade
+
+SITUAÇÕES ESPECIAIS:
+- RX < -25 dBm → problema na fibra (não peça reinicialização)
+- Offline > 2h → abra chamado direto
+- Cliente recorrente → escale como prioridade máxima
+
+Uma instrução por vez. Nunca peça mais de 2 testes antes do chamado.`,
+  },
+
+  agente_incidente_regional: {
+    description: 'Agente para incidentes de rede afetando múltiplos clientes',
+    system_prompt: `Você é Sofia, do suporte de um provedor de internet.
+Há um PROBLEMA COLETIVO DE REDE afetando a região do cliente.
+
+MISSÃO:
+- Informe com transparência e calma que é um problema na rede (não no equipamento)
+- Confirme que a equipe técnica já está trabalhando
+- NÃO peça para reiniciar roteador (não vai adiantar)
+- NÃO abra chamado individual
+- Agradeça genuinamente a compreensão
+- Dê previsão de retorno se disponível`,
+  },
+
+  agente_cancelamento: {
+    description: 'Agente de retenção para clientes que querem cancelar',
+    system_prompt: `Você é Sofia, especialista em retenção de um provedor de internet.
+NUNCA aceite o cancelamento de imediato. Entenda o motivo real primeiro.
+
+FLUXO:
+1. Acolha: "Antes de qualquer coisa, pode me contar o que está acontecendo?"
+2. Identifique o motivo real e ofereça UMA solução específica:
+   - Preço alto → explore plano menor disponível
+   - Problema técnico → abra chamado PRIORITÁRIO + compromisso de resolução
+   - Concorrência → peça a proposta e tente igualar
+   - Mudança de endereço → verifique disponibilidade
+3. Só transfira para humano após 2 tentativas sem sucesso
+
+Valorize o tempo de cliente. Nunca pressione nem implore.`,
+  },
+
+  agente_vendas: {
+    description: 'Agente para novos clientes e upgrades de plano',
+    system_prompt: `Você é Sofia, consultora de um provedor de internet.
+Atenda novos clientes e clientes interessados em upgrade.
+
+FLUXO NOVO CLIENTE:
+1. Boas-vindas calorosas
+2. Peça CEP/endereço para verificar disponibilidade
+3. Apresente planos disponíveis (consulte a base de conhecimento)
+4. Destaque o melhor custo-benefício para o perfil
+5. Colete dados para cadastro se decidir
+6. Informe prazo de instalação
+
+FLUXO UPGRADE:
+1. Entenda o que motivou o interesse
+2. Apresente a opção mais adequada
+3. Facilite o processo sem criar atrito
+
+Nunca invente preços ou prazos. Use sempre a base de conhecimento.`,
+  },
+
+  cliente_nao_encontrado: {
+    description: 'Resposta quando cliente não é encontrado no ERP',
+    system_prompt: `Você é Sofia, atendente de um provedor de internet.
+O cliente entrou em contato mas não foi possível localizá-lo no sistema pelo número.
+
+Peça educadamente que ele confirme:
+- O número completo com DDD
+- Ou o CPF/CNPJ cadastrado
+- Ou o nome completo
+
+Seja empática e diga que vai resolver assim que confirmar os dados.`,
+  },
+};
+
+// ── Serviço ──────────────────────────────────────────────────────────────────
+
+export class N8nAiService {
+
+  // Busca template do DB. Se não encontrar, usa o default.
+  private async getTemplate(workspaceId: string, name: string) {
+    const rows = await db
+      .select()
+      .from(ai_prompt_templates)
+      .where(
+        and(
+          eq(ai_prompt_templates.workspace_id, workspaceId),
+          eq(ai_prompt_templates.name, name),
+          eq(ai_prompt_templates.is_active, true)
+        )
+      )
+      .limit(1);
+
+    if (rows[0]) return rows[0].system_prompt;
+
+    // Fallback para template padrão
+    const def = DEFAULT_TEMPLATES[name];
+    if (def) return def.system_prompt;
+
+    throw new Error(`Template '${name}' não encontrado e sem default disponível`);
+  }
+
+  // ── GERAR RESPOSTA IA ──────────────────────────────────────────────────────
+  async gerarResposta(params: {
+    workspaceId: string;
+    prompt_name: string;
+    context: Record<string, any>;       // dados ERP + score + promises
+    mensagem: string;                   // mensagem atual do cliente
+    historico?: Array<{ role: 'user' | 'assistant'; content: string }>;
+  }): Promise<{ response: string; prompt_name: string; tokens_used: number }> {
+
+    const systemPromptBase = await this.getTemplate(params.workspaceId, params.prompt_name);
+
+    // Injeta contexto estruturado no system prompt
+    const contextBlock = `
+---
+DADOS REAIS DO CLIENTE (use exclusivamente esses dados, nunca invente):
+${JSON.stringify(params.context, null, 2)}
+
+Data/hora atual: ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+---`;
+
+    const systemPrompt = systemPromptBase + contextBlock;
+
+    // Monta histórico de mensagens
+    const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+      { role: 'system', content: systemPrompt },
+      ...(params.historico ?? []),
+      { role: 'user', content: params.mensagem },
+    ];
+
+    const completion = await openai.chat.completions.create({
+      model:       'gpt-4o-mini',
+      messages,
+      max_tokens:  1000,
+      temperature: 0.7,
+    });
+
+    const response   = completion.choices[0]?.message?.content ?? '';
+    const tokens_used = completion.usage?.total_tokens ?? 0;
+
+    return { response, prompt_name: params.prompt_name, tokens_used };
+  }
+
+  // ── SEED DE TEMPLATES PADRÃO ───────────────────────────────────────────────
+  // Cria os templates ISP para o workspace se ainda não existirem
+  async seedDefaultTemplates(workspaceId: string): Promise<{
+    created: string[];
+    skipped: string[];
+  }> {
+    const created: string[] = [];
+    const skipped: string[] = [];
+
+    for (const [name, template] of Object.entries(DEFAULT_TEMPLATES)) {
+      // Verifica se já existe
+      const existing = await db
+        .select({ id: ai_prompt_templates.id })
+        .from(ai_prompt_templates)
+        .where(
+          and(
+            eq(ai_prompt_templates.workspace_id, workspaceId),
+            eq(ai_prompt_templates.name, name)
+          )
+        )
+        .limit(1);
+
+      if (existing.length > 0) {
+        skipped.push(name);
+        continue;
+      }
+
+      await db.insert(ai_prompt_templates).values({
+        workspace_id:  workspaceId,
+        name,
+        description:   template.description,
+        system_prompt: template.system_prompt,
+        is_active:     true,
+      });
+
+      created.push(name);
+    }
+
+    return { created, skipped };
+  }
+
+  // ── LISTAR TEMPLATES DO WORKSPACE ─────────────────────────────────────────
+  async listarTemplates(workspaceId: string) {
+    return db
+      .select({
+        id:          ai_prompt_templates.id,
+        name:        ai_prompt_templates.name,
+        description: ai_prompt_templates.description,
+        is_active:   ai_prompt_templates.is_active,
+        updated_at:  ai_prompt_templates.updated_at,
+      })
+      .from(ai_prompt_templates)
+      .where(eq(ai_prompt_templates.workspace_id, workspaceId))
+      .orderBy(ai_prompt_templates.name);
+  }
+
+  // ── SALVAR/ATUALIZAR TEMPLATE ──────────────────────────────────────────────
+  async salvarTemplate(workspaceId: string, params: {
+    name: string;
+    system_prompt: string;
+    description?: string;
+  }) {
+    const existing = await db
+      .select({ id: ai_prompt_templates.id })
+      .from(ai_prompt_templates)
+      .where(
+        and(
+          eq(ai_prompt_templates.workspace_id, workspaceId),
+          eq(ai_prompt_templates.name, params.name)
+        )
+      )
+      .limit(1);
+
+    if (existing.length > 0) {
+      await db
+        .update(ai_prompt_templates)
+        .set({
+          system_prompt: params.system_prompt,
+          description:   params.description,
+          updated_at:    new Date(),
+        })
+        .where(
+          and(
+            eq(ai_prompt_templates.workspace_id, workspaceId),
+            eq(ai_prompt_templates.name, params.name)
+          )
+        );
+      return { action: 'updated', name: params.name };
+    }
+
+    await db.insert(ai_prompt_templates).values({
+      workspace_id:  workspaceId,
+      name:          params.name,
+      description:   params.description,
+      system_prompt: params.system_prompt,
+    });
+    return { action: 'created', name: params.name };
+  }
+}
+
+export const n8nAiService = new N8nAiService();
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PASSO 4 — Adicionar rotas /ai em server/routes/n8n.ts
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Adicione estas rotas no arquivo server/routes/n8n.ts existente,
+ANTES do export default router:
+
+import { n8nAiService } from '../services/n8nAiService';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/n8n/ai
+// Body: { prompt_name, context, mensagem, historico? }
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/ai', async (req: Request, res: Response) => {
+  try {
+    const workspaceId = resolveWorkspaceId(req);
+    const { prompt_name, context, mensagem, historico } = req.body as {
+      prompt_name: string;
+      context:     Record<string, any>;
+      mensagem:    string;
+      historico?:  Array<{ role: 'user' | 'assistant'; content: string }>;
+    };
+
+    if (!prompt_name || !mensagem) {
+      return res.status(400).json({
+        error: 'Campos obrigatórios: prompt_name, mensagem'
+      });
+    }
+
+    const result = await n8nAiService.gerarResposta({
+      workspaceId,
+      prompt_name,
+      context:  context ?? {},
+      mensagem,
+      historico,
+    });
+
+    return res.json({ ok: true, ...result });
+
+  } catch (err: any) {
+    console.error('[N8N AI]', err);
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/n8n/ai/seed
+// Cria os 7 templates padrão ISP para o workspace (idempotente)
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/ai/seed', async (req: Request, res: Response) => {
+  try {
+    const workspaceId = resolveWorkspaceId(req);
+    const result = await n8nAiService.seedDefaultTemplates(workspaceId);
+    return res.json({ ok: true, ...result });
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/n8n/ai/templates
+// Lista todos os templates do workspace
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/ai/templates', async (req: Request, res: Response) => {
+  try {
+    const workspaceId = resolveWorkspaceId(req);
+    const templates = await n8nAiService.listarTemplates(workspaceId);
+    return res.json({ ok: true, templates });
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PUT /api/n8n/ai/templates/:name
+// Salva ou atualiza um template
+// ─────────────────────────────────────────────────────────────────────────────
+router.put('/ai/templates/:name', async (req: Request, res: Response) => {
+  try {
+    const workspaceId = resolveWorkspaceId(req);
+    const { name } = req.params;
+    const { system_prompt, description } = req.body;
+
+    if (!system_prompt) {
+      return res.status(400).json({ error: 'Campo system_prompt é obrigatório' });
+    }
+
+    const result = await n8nAiService.salvarTemplate(workspaceId, {
+      name,
+      system_prompt,
+      description,
+    });
+
+    return res.json({ ok: true, ...result });
+
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+VERIFICAÇÃO APÓS IMPLEMENTAR
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. Crie os templates padrão para o workspace:
+
+POST /api/n8n/ai/seed
+Authorization: Bearer {jwt}
+
+Resposta esperada:
+{ "ok": true, "created": ["agente_financeiro", "agente_suporte_online", ...], "skipped": [] }
+
+2. Teste a geração de resposta:
+
+POST /api/n8n/ai
+Authorization: Bearer {jwt}
+Content-Type: application/json
+
+{
+  "prompt_name": "agente_financeiro",
+  "mensagem": "tô sem internet, acho que cortaram",
+  "context": {
+    "cliente": { "name": "João Silva", "plan": "400MB" },
+    "financial": { "is_suspended": true, "amount_due": 149.90, "days_late": 18 },
+    "promises": { "eligible": true, "this_month": 0 }
+  }
+}
+
+Resposta esperada:
+{
+  "ok": true,
+  "response": "João, identifiquei aqui que sua conexão está suspensa por pendência financeira...",
+  "prompt_name": "agente_financeiro",
+  "tokens_used": 312
+}
+
+3. Liste os templates para confirmar:
+
+GET /api/n8n/ai/templates
+Authorization: Bearer {jwt}

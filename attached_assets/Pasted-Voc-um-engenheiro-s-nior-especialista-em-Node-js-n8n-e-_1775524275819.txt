@@ -1,0 +1,178 @@
+Você é um engenheiro sênior especialista em Node.js, n8n e arquitetura SaaS multi-tenant.
+
+CONTEXTO:
+Existe um node no n8n responsável por registrar a conversa e atualizar a sessão após atendimento do agente financeiro.
+
+O payload atual já está FUNCIONANDO em produção com a seguinte estrutura:
+
+{
+workspace_id,
+conversation_id,
+telefone,
+user_message,
+assistant_message,
+intent,
+session_updates
+}
+
+IMPORTANTE:
+
+* NÃO pode haver breaking changes
+* NÃO pode remover campos existentes
+* NÃO pode alterar nomes atuais
+* NÃO pode mudar comportamento atual
+* Apenas EXTENDER com melhorias
+
+---
+
+OBJETIVO:
+
+Melhorar robustez, rastreabilidade e consistência com os demais agentes (ex: suporte), preparando para escala SaaS.
+
+---
+
+IMPLEMENTAÇÕES OBRIGATÓRIAS:
+
+1. INTENT DINÂMICO (CRÍTICO)
+
+Substituir valor fixo por:
+
+intent: $("Code: Contexto + SDR").item.json.intent ?? "FINANCEIRO"
+
+IMPORTANTE:
+
+* Sempre priorizar SDR
+* Não manter valor fixo
+
+---
+
+2. PROTEÇÃO DA RESPOSTA DA IA
+
+Garantir que assistant_message:
+
+* Nunca seja vazio, null ou undefined
+* Sempre seja string
+
+Se inválido, usar fallback:
+
+"Erro ao gerar resposta financeira"
+
+Implementar validação defensiva
+
+---
+
+3. REGISTRAR TIPO DE INPUT
+
+Adicionar:
+
+tipo_input: $("Code: Contexto + SDR").item.json.tipo_input ?? "texto"
+
+---
+
+4. REGISTRAR MUDANÇA DE INTENÇÃO
+
+Adicionar:
+
+mudou_intencao: $("Code: Contexto + SDR").item.json.mudou_intencao ?? false
+
+---
+
+5. CONSISTÊNCIA DE IDENTIFICAÇÃO
+
+Garantir que session_updates inclua:
+
+identificado: true
+
+IMPORTANTE:
+
+* Manter padrão igual ao suporte
+
+---
+
+6. NORMALIZAÇÃO DO CLIENTE ERP
+
+Garantir que:
+
+cliente_id_erp seja sempre string:
+
+cliente_id_erp: String($("Code: Contexto + SDR").item.json.cliente?.id ?? "")
+
+---
+
+7. METADADOS (ESSENCIAL PARA ANALYTICS)
+
+Adicionar:
+
+meta: {
+origem: "n8n",
+agente: "financeiro",
+timestamp: new Date().toISOString()
+}
+
+IMPORTANTE:
+
+* Não substituir nada existente
+* Apenas adicionar
+
+---
+
+8. PRESERVAR session_updates
+
+NÃO alterar estrutura atual, apenas garantir que contenha:
+
+* fluxo_atual: "financeiro"
+* identificado: true
+* cliente_nome
+* cliente_id_erp
+
+---
+
+9. CÓDIGO DEFENSIVO
+
+Garantir:
+
+* null safety em todos os campos
+* fallback seguro
+* nenhuma exceção em runtime
+
+---
+
+10. ESTRUTURA FINAL (REFERÊNCIA)
+
+O payload final deve ser equivalente a:
+
+{
+workspace_id,
+conversation_id,
+telefone,
+user_message,
+assistant_message,
+intent,
+tipo_input,
+mudou_intencao,
+session_updates,
+meta
+}
+
+---
+
+IMPORTANTE:
+
+Se houver qualquer dúvida:
+
+* NÃO simplificar
+* NÃO refatorar
+* NÃO remover campos existentes
+* NÃO alterar comportamento atual
+
+Apenas EXTENDER com segurança.
+
+---
+
+RESULTADO ESPERADO:
+
+* consistência entre agentes
+* logs confiáveis
+* base para métricas e analytics
+* controle real de intenção
+* pronto para múltiplos provedores

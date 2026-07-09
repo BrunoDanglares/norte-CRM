@@ -1,0 +1,80 @@
+Você está corrigindo um problema crítico de performance no ChatBanana.
+
+PROBLEMA: Os métodos getLeads(), getContacts(), getConversations() e getMessages() em server/storage.ts retornam TODOS os registros sem limit/offset. Em workspaces grandes isso causa timeout e estouro de memória.
+
+TAREFA: Adicionar suporte a paginação nesses 4 métodos e garantir que os endpoints que os consomem repassem os parâmetros.
+
+PARTE 1 — Atualizar as interfaces de filtro em server/storage.ts (ou shared/types.ts, onde estiverem definidas):
+
+Adicione `limit` e `offset` opcionais em cada interface de filtro:
+
+```typescript
+interface LeadFilters {
+  // ... campos existentes ...
+  limit?: number;
+  offset?: number;
+}
+
+interface ContactFilters {
+  // ... campos existentes ...
+  limit?: number;
+  offset?: number;
+}
+
+interface ConversationFilters {
+  // ... campos existentes ...
+  limit?: number;
+  offset?: number;
+}
+
+interface MessageFilters {
+  // ... campos existentes ...
+  limit?: number;
+  offset?: number;
+}
+```
+
+PARTE 2 — Atualizar os 4 métodos em server/storage.ts:
+
+Para CADA método, adicione `.limit()` e `.offset()` no final da query, com defaults seguros:
+
+```typescript
+// Padrão a aplicar nos 4 métodos:
+const pageLimit = filters?.limit ?? 100;
+const pageOffset = filters?.offset ?? 0;
+
+return query.limit(pageLimit).offset(pageOffset);
+```
+
+Valores padrão recomendados:
+- getLeads: limit 100
+- getContacts: limit 100
+- getConversations: limit 50
+- getMessages: limit 100 (já ordenado por created_at DESC)
+
+PARTE 3 — Atualizar os endpoints REST em server/routes/:
+
+Nos arquivos de rotas que chamam esses 4 métodos, extraia `limit` e `offset` da query string e repasse:
+
+```typescript
+// Exemplo para rota GET /api/leads:
+const limit = parseInt(req.query.limit as string) || 100;
+const offset = parseInt(req.query.offset as string) || 0;
+
+const result = await storage.getLeads(workspaceId, {
+  ...outrosFiltros,
+  limit,
+  offset,
+});
+```
+
+PARTE 4 — Verificar se há chamadas internas que precisam de todos os registros:
+
+Faça um grep por `getLeads(`, `getContacts(`, `getConversations(` e `getMessages(` em todo o projeto. Para chamadas internas (ex: crons, automações, ISP schedulers) que precisam processar todos os registros, adicione um comentário `// internal - sem paginação intencional` e passe `limit: 10000` explicitamente em vez de depender do comportamento anterior sem limite.
+
+NÃO altere chamadas de automações, crons ou ISP schedulers sem confirmar comigo antes — apenas sinaliza quais são para eu revisar.
+
+VALIDAÇÃO: Após as alterações:
+1. GET /api/leads deve aceitar ?limit=50&offset=0 e retornar no máximo 50 registros
+2. GET /api/leads sem parâmetros deve retornar no máximo 100 registros (default)
+3. Nenhuma chamada interna deve ter sido quebrada

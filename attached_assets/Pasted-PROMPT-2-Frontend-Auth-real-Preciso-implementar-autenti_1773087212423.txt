@@ -1,0 +1,184 @@
+PROMPT 2 — Frontend (Auth real)Preciso implementar autenticação real no frontend deste projeto React/TypeScript.
+
+CONTEXTO DO QUE EXISTE HOJE:
+- login.tsx usa setTimeout de 800ms e redireciona sem validar nada
+- Não existe nenhum token armazenado (sem localStorage, sem cookie, sem contexto)
+- App.tsx só esconde a sidebar na rota /login mas não verifica autenticação
+- Não existe proteção de rotas — qualquer URL é acessível sem login
+
+---
+
+PASSO 1 — Criar serviço de autenticação
+
+Crie o arquivo client/src/services/auth.ts:
+
+export const authService = {
+  login: async (email: string, senha: string) => {
+    const res = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, senha }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Erro ao fazer login");
+    return data;
+  },
+
+  me: async () => {
+    const token = localStorage.getItem("flowcrm_token");
+    if (!token) throw new Error("Sem token");
+    const res = await fetch("/api/auth/me", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Não autenticado");
+    return data;
+  },
+
+  logout: () => {
+    localStorage.removeItem("flowcrm_token");
+    localStorage.removeItem("flowcrm_user");
+    window.location.href = "/login";
+  },
+
+  getToken: () => localStorage.getItem("flowcrm_token"),
+
+  getUser: () => {
+    const u = localStorage.getItem("flowcrm_user");
+    return u ? JSON.parse(u) : null;
+  },
+
+  isAuthenticated: () => !!localStorage.getItem("flowcrm_token"),
+};
+
+---
+
+PASSO 2 — Atualizar login.tsx
+
+Substitua o handleSubmit atual (que usa setTimeout) por:
+
+const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault();
+  setError("");
+  if (!email || !senha) {
+    setError("Preencha todos os campos");
+    return;
+  }
+  setLoading(true);
+  try {
+    const res = await authService.login(email, senha);
+    localStorage.setItem("flowcrm_token", res.data.token);
+    localStorage.setItem("flowcrm_user", JSON.stringify(res.data.user));
+    setLocation("/");
+  } catch (err: any) {
+    setError(err.message || "Email ou senha incorretos");
+  } finally {
+    setLoading(false);
+  }
+};
+
+Exiba o erro em vermelho abaixo do formulário quando `error` estiver preenchido.
+Mantenha todo o visual atual — apenas substitua a lógica do handleSubmit.
+Remova as credenciais fixas exibidas na tela (joao@empresa.com / senha123).
+
+---
+
+PASSO 3 — Criar componente ProtectedRoute
+
+Crie client/src/components/ProtectedRoute.tsx:
+
+import { useEffect, useState } from "react";
+import { authService } from "../services/auth";
+
+export function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  const [checking, setChecking] = useState(true);
+  const [authenticated, setAuthenticated] = useState(false);
+
+  useEffect(() => {
+    const check = async () => {
+      if (!authService.isAuthenticated()) {
+        window.location.href = "/login";
+        return;
+      }
+      try {
+        await authService.me();
+        setAuthenticated(true);
+      } catch {
+        authService.logout();
+      } finally {
+        setChecking(false);
+      }
+    };
+    check();
+  }, []);
+
+  if (checking) {
+    return (
+      <div style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        height: "100vh",
+        background: "var(--bg)",
+        color: "var(--muted)",
+        flexDirection: "column",
+        gap: 16,
+        fontFamily: "'Plus Jakarta Sans', sans-serif"
+      }}>
+        <div style={{ fontSize: 40 }}>⚡</div>
+        <div style={{ fontSize: 14, fontWeight: 600 }}>Verificando sessão...</div>
+      </div>
+    );
+  }
+
+  return authenticated ? <>{children}</> : null;
+}
+
+---
+
+PASSO 4 — Atualizar App.tsx
+
+Importe ProtectedRoute e envolva todas as rotas privadas.
+A rota /login permanece pública.
+
+Estrutura esperada:
+- /login → público → <Login />
+- Todas as outras rotas → <ProtectedRoute> envolvendo o layout completo com sidebar
+
+---
+
+PASSO 5 — Criar helper apiFetch com token automático
+
+Crie ou atualize client/src/services/api.ts:
+
+export async function apiFetch(path: string, options: RequestInit = {}) {
+  const token = localStorage.getItem("flowcrm_token");
+  const res = await fetch(`/api${path}`, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(options.headers || {}),
+    },
+  });
+  if (res.status === 401) {
+    localStorage.removeItem("flowcrm_token");
+    localStorage.removeItem("flowcrm_user");
+    window.location.href = "/login";
+    throw new Error("Sessão expirada");
+  }
+  return res;
+}
+
+Atualize todas as chamadas fetch existentes no projeto para usar
+apiFetch em vez de fetch direto, garantindo que o token JWT
+seja enviado automaticamente em todas as requisições.
+
+---
+
+Confirme ao final:
+- authService criado com todos os métodos
+- login.tsx chama API real e salva token no localStorage
+- ProtectedRoute criado e aplicado no App.tsx
+- apiFetch criado e aplicado nas chamadas existentes
+- Logout limpa localStorage e redireciona para /login

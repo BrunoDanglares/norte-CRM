@@ -1,0 +1,189 @@
+PROMPT — Verificar e completar o fluxo OAuth Instagram
+Verifique o arquivo que trata a conexão Instagram no frontend 
+(provavelmente em `client/src/pages/Conexoes.tsx` ou similar) 
+e o backend em `server/routes/instagram.ts`.
+
+Confirme se existem as seguintes rotas no backend e, se não existirem, crie-as:
+```ts
+// GET /api/instagram/auth-url — gera a URL de OAuth do Meta para o cliente clicar
+router.get('/auth-url', requireAuth, (req, res) => {
+  const clientId = process.env.META_APP_ID;
+  const redirectUri = encodeURIComponent(process.env.META_REDIRECT_URI || 
+    'https://seudominio.com/api/instagram/callback');
+
+  const scopes = [
+    'instagram_basic',
+    'instagram_manage_messages',
+    'instagram_manage_comments',
+    'pages_manage_metadata',
+    'pages_read_engagement',
+    'pages_show_list',
+  ].join(',');
+
+  const state = Buffer.from(JSON.stringify({
+    workspaceId: resolveWorkspaceId(req),
+    ts: Date.now(),
+  })).toString('base64');
+
+  const url = `https://www.facebook.com/v19.0/dialog/oauth?client_id=${clientId}&redirect_uri=${redirectUri}&scope=${scopes}&state=${state}&response_type=code`;
+
+  res.json({ url });
+});
+
+// GET /api/instagram/callback — Meta redireciona aqui após o cliente autorizar
+router.get('/callback', async (req, res) => {
+  const { code, state, error } = req.query;
+
+  if (error) {
+    return res.redirect(`${process.env.FRONTEND_URL}/conexoes?ig_error=${error}`);
+  }
+
+  try {
+    const { workspaceId } = JSON.parse(Buffer.from(state as string, 'base64').toString());
+
+    const redirectUri = process.env.META_REDIRECT_URI || 'https://seudominio.com/api/instagram/callback';
+
+    // Trocar code por access token
+    const tokenRes = await fetch(
+      `https://graph.facebook.com/v19.0/oauth/access_token?` +
+      `client_id=${process.env.META_APP_ID}&` +
+      `client_secret=${process.env.META_APP_SECRET}&` +
+      `redirect_uri=${encodeURIComponent(redirectUri)}&` +
+      `code=${code}`
+    );
+    const tokenData = await tokenRes.json();
+    const shortToken = tokenData.access_token;
+
+    // Trocar por token de longa duração (60 dias)
+    const longTokenRes = await fetch(
+      `https://graph.facebook.com/v19.0/oauth/access_token?` +
+      `grant_type=fb_exchange_token&` +
+      `client_id=${process.env.META_APP_ID}&` +
+      `client_secret=${process.env.META_APP_SECRET}&` +
+      `fb_exchange_token=${shortToken}`
+    );
+    const longTokenData = await longTokenRes.json();
+    const longToken = longTokenData.access_token;
+
+    // Buscar páginas do Facebook que o usuário administra
+    const pagesRes = await fetch(
+      `https://graph.facebook.com/v19.0/me/accounts?access_token=${longToken}`
+    );
+    const pagesData = await pagesRes.json();
+    const page = pagesData.data?.[0];
+    if (!page) throw new Error('Nenhuma Página do Facebook encontrada');
+
+    const pageToken = page.access_token;
+    const pageId = page.id;
+
+    // Buscar conta Instagram Business vinculada à Página
+    const igRes = await fetch(
+      `https://graph.facebook.com/v19.0/${pageId}?fields=instagram_business_account&access_token=${pageToken}`
+    );
+    const igData = await igRes.json();
+    const igUserId = igData.instagram_business_account?.id;
+    if (!igUserId) throw new Error('Nenhuma conta Instagram Business vinculada à Página');
+
+    // Buscar username do Instagram
+    const igProfileRes = await fetch(
+      `https://graph.facebook.com/v19.0/${igUserId}?fields=username,profile_picture_url&access_token=${pageToken}`
+    );
+    const igProfile = await igProfileRes.json();
+
+    // Salvar ou atualizar conexão no banco
+    const existing = await db.query.instagramConnections?.findFirst({
+      where: (t, { eq, and }) => and(
+        eq(t.workspaceId, workspaceId),
+        eq(t.igUserId, igUserId)
+      ),
+    });
+
+    const expiresAt = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000); // 60 dias
+
+    if (existing) {
+      await db.update(instagramConnections)
+        .set({
+          accessToken: pageToken,
+          igUsername: igProfile.username,
+          pageId,
+          pageName: page.name,
+          tokenExpiresAt: expiresAt,
+          isActive: true,
+          webhookVerified: true,
+          updatedAt: new Date(),
+        })
+        .where(eq(instagramConnections.id, existing.id));
+    } else {
+      await db.insert(instagramConnections).values({
+        workspaceId,
+        igUserId,
+        igUsername: igProfile.username,
+        accessToken: pageToken,
+        pageId,
+        pageName: page.name,
+        tokenExpiresAt: expiresAt,
+        webhookVerified: true,
+        isActive: true,
+      });
+    }
+
+    // Assinar o webhook para esta conta
+    await fetch(
+      `https://graph.facebook.com/v19.0/${pageId}/subscribed_apps?` +
+      `subscribed_fields=messages,messaging_postbacks,comments,mention&` +
+      `access_token=${pageToken}`,
+      { method: 'POST' }
+    );
+
+    res.redirect(`${process.env.FRONTEND_URL}/conexoes?ig_success=true`);
+  } catch (err: any) {
+    console.error('[Instagram OAuth] Erro:', err.message);
+    res.redirect(`${process.env.FRONTEND_URL}/conexoes?ig_error=${encodeURIComponent(err.message)}`);
+  }
+});
+
+// GET /api/instagram/status — verificar status da conexão atual
+router.get('/status', requireAuth, async (req, res) => {
+  const workspaceId = resolveWorkspaceId(req);
+  const conn = await db.query.instagramConnections?.findFirst({
+    where: (t, { eq, and }) => and(
+      eq(t.workspaceId, workspaceId),
+      eq(t.isActive, true)
+    ),
+  });
+
+  if (!conn) return res.json({ connected: false });
+
+  const daysUntilExpiry = conn.tokenExpiresAt
+    ? Math.floor((new Date(conn.tokenExpiresAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+    : null;
+
+  res.json({
+    connected: true,
+    username: conn.igUsername,
+    pageId: conn.pageId,
+    pageName: conn.pageName,
+    tokenExpiresAt: conn.tokenExpiresAt,
+    daysUntilExpiry,
+    webhookVerified: conn.webhookVerified,
+  });
+});
+
+// DELETE /api/instagram/disconnect — desconectar
+router.delete('/disconnect', requireAuth, async (req, res) => {
+  const workspaceId = resolveWorkspaceId(req);
+  await db.update(instagramConnections)
+    .set({ isActive: false, updatedAt: new Date() })
+    .where(eq(instagramConnections.workspaceId, workspaceId));
+  res.json({ ok: true });
+});
+```
+
+Adicione as seguintes variáveis de ambiente no `.env` e no EasyPanel:
+META_APP_ID=seu_app_id_aqui
+META_APP_SECRET=seu_app_secret_aqui
+META_REDIRECT_URI=https://seudominio.com/api/instagram/callback
+INSTAGRAM_WEBHOOK_VERIFY_TOKEN=um_token_secreto_qualquer
+FRONTEND_URL=https://seudominio.com
+
+Reporte se as rotas foram criadas e se as variáveis de ambiente já existem no projeto.

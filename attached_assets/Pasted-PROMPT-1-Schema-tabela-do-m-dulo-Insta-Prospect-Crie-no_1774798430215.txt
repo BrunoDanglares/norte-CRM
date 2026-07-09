@@ -1,0 +1,70 @@
+PROMPT 1 — Schema: tabela do módulo Insta Prospect
+Crie no arquivo shared/schema.ts a tabela `insta_prospect_flows`:
+```ts
+export const instaProspectFlows = pgTable('insta_prospect_flows', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  workspaceId: uuid('workspace_id').notNull().references(() => workspaces.id, { onDelete: 'cascade' }),
+  nome: text('nome').notNull(),
+  tipo: text('tipo').notNull(), // 'comment_to_dm' | 'dm_received' | 'story_mention'
+  ativo: boolean('ativo').default(false),
+
+  // Gatilho
+  keyword: text('keyword'),
+  keywordMatchType: text('keyword_match_type').default('contains'), // 'contains' | 'exact' | 'any'
+  postId: text('post_id'),
+
+  // Resposta pública no comentário (só comment_to_dm)
+  publicReply: text('public_reply'),
+
+  // Primeira mensagem antes da IA assumir
+  firstMessage: text('first_message'),
+
+  // Configuração da IA
+  aiPersona: text('ai_persona').default('vendedor'), // 'vendedor' | 'consultor' | 'suporte' | 'personalizado'
+  aiSystemPrompt: text('ai_system_prompt').notNull(),
+  aiObjective: text('ai_objective'), // 'coletar_endereco' | 'qualificar_lead' | 'agendar_visita' | 'reativar_cliente'
+
+  // Ação final após qualificação
+  finalAction: text('final_action').default('atribuir_agente'), // 'atribuir_agente' | 'criar_deal' | 'apenas_salvar'
+  assignStrategy: text('assign_strategy').default('disponivel'),
+
+  // Tags automáticas
+  autoTags: jsonb('auto_tags').default([]),
+
+  // Stats
+  totalTriggers: integer('total_triggers').default(0),
+  totalLeads: integer('total_leads').default(0),
+  totalConverted: integer('total_converted').default(0),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (t) => ({
+  workspaceIdx: index('insta_prospect_workspace_idx').on(t.workspaceId),
+  tipoIdx: index('insta_prospect_tipo_idx').on(t.tipo),
+}));
+```
+
+Crie também a tabela de execuções para rastrear cada conversa gerada pelo módulo:
+```ts
+export const instaProspectSessions = pgTable('insta_prospect_sessions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  workspaceId: uuid('workspace_id').notNull().references(() => workspaces.id, { onDelete: 'cascade' }),
+  flowId: uuid('flow_id').notNull().references(() => instaProspectFlows.id, { onDelete: 'cascade' }),
+  leadId: uuid('lead_id').references(() => leads.id),
+  igUserId: text('ig_user_id').notNull(),
+  igUsername: text('ig_username'),
+  status: text('status').default('em_andamento'), // 'em_andamento' | 'qualificado' | 'sem_interesse' | 'transferido'
+  conversationHistory: jsonb('conversation_history').default([]), // [{role, content, timestamp}]
+  triggerType: text('trigger_type'), // 'comment' | 'dm' | 'story'
+  triggerContent: text('trigger_content'),
+  collectedData: jsonb('collected_data').default({}), // dados coletados pela IA: endereço, interesse, etc
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (t) => ({
+  workspaceIdx: index('insta_prospect_sessions_workspace_idx').on(t.workspaceId),
+  flowIdx: index('insta_prospect_sessions_flow_idx').on(t.flowId),
+  igUserIdx: index('insta_prospect_sessions_ig_user_idx').on(t.igUserId),
+}));
+```
+
+Rode `npm run db:push` e reporte o que foi criado.

@@ -1,0 +1,97 @@
+Add a new automation node 'isp_unlock' to the ChatBanana automation engine and canvas.
+
+## Context
+- Automation engine already has 'isp_action' node
+- Follow exact same pattern as isp_action node
+- This node handles payment confirmation and trust unlock flows
+
+## Backend: Add isp_unlock case to automation engine
+
+In the automation engine switch/case, add after isp_action:
+```typescriptcase 'isp_unlock': {
+const workspaceId = context.workspaceId;
+const action = node.config.action;
+const resolve = (val: string) => val?.replace(/{{(\w+)}}/g, (_, k) => context.variables[k] ?? '');try {
+switch (action) {  case 'trust_unlock': {
+    // Execute trust unlock using variables set by previous isp_action nodes
+    const result = await executeTrustUnlock({
+      workspaceId,
+      customerId: resolve(node.config.customer_id_variable || '{{isp_customer_id}}'),
+      contractId: resolve(node.config.contract_id_variable || '{{isp_contract_id}}'),
+      customerName: resolve('{{isp_customer_nome}}'),
+      customerPhone: context.variables.customerPhone || '',
+      invoiceId: resolve('{{isp_invoice_id}}'),
+      invoiceValue: parseFloat(String(context.variables.isp_invoice_valor_raw || '0')) || undefined,
+      invoiceDueDate: resolve('{{isp_invoice_vencimento_raw}}'),
+      invoiceDaysOverdue: parseInt(String(context.variables.isp_invoice_dias_atraso || '0')) || 0,
+      invoiceLink: resolve('{{isp_link_boleto}}'),
+      unlockType: 'trust'
+    });    context.variables.isp_unlock_success = result.success;
+    context.variables.isp_unlock_message = result.message;
+    context.variables.isp_unlock_restricted = !!result.restrictedReason;
+    context.variables.isp_unlock_restriction_reason = result.restrictedReason || '';
+    context.variables.isp_already_unlocked = !!result.alreadyUnlocked;
+    break;
+  }  case 'confirm_payment': {
+    const result = await executePaymentConfirmation({
+      workspaceId,
+      customerId: resolve(node.config.customer_id_variable || '{{isp_customer_id}}'),
+      contractId: resolve(node.config.contract_id_variable || '{{isp_contract_id}}'),
+      customerName: resolve('{{isp_customer_nome}}'),
+      customerPhone: context.variables.customerPhone || '',
+      invoiceId: resolve(node.config.invoice_id_variable || '{{isp_invoice_id}}'),
+      invoiceValue: parseFloat(String(context.variables.isp_invoice_valor_raw || '0')) || undefined,
+      unlockType: 'payment_confirmed'
+    });    context.variables.isp_payment_success = result.success;
+    context.variables.isp_payment_message = result.message;
+    break;
+  }
+}context.variables.isp_success = true;
+} catch (err: any) {
+context.variables.isp_success = false;
+context.variables.isp_error = err.message;
+console.error('[ISP Unlock Node] Error:', err.message);
+}
+break;
+}
+
+Import executeTrustUnlock and executePaymentConfirmation from '../services/isp-unlock'.
+
+## Frontend: Add isp_unlock node to canvas
+
+Add to node types array:
+```typescript{
+type: 'isp_unlock',
+label: 'Desbloqueio ISP',
+icon: 'ShieldCheck',
+color: '#10b981',  // green
+category: 'Integrações',
+description: 'Desbloqueio de confiança e confirmação de pagamento no SGP/IXC',
+defaultConfig: {
+action: 'trust_unlock',
+customer_id_variable: '{{isp_customer_id}}',
+contract_id_variable: '{{isp_contract_id}}',
+invoice_id_variable: '{{isp_invoice_id}}'
+}
+}
+
+Create config panel ISPUnlockNodeConfig with:
+- Select "Ação":
+  - trust_unlock → "🔓 Desbloqueio de Confiança"
+  - confirm_payment → "✅ Confirmar Pagamento + Desbloquear"
+
+- Text inputs for variable names (pre-filled with defaults)
+
+- Info box showing variables SET after execution:
+  - trust_unlock: {{isp_unlock_success}}, {{isp_unlock_message}}, {{isp_unlock_restricted}}, {{isp_unlock_restriction_reason}}, {{isp_already_unlocked}}
+  - confirm_payment: {{isp_payment_success}}, {{isp_payment_message}}
+
+- Warning: "Este nó deve ser usado após um nó 'Buscar Cliente por CPF' e 'Listar Boletos em Aberto'"
+
+Register in canvas alongside isp_action node.
+
+## After implementing:
+1. Open automation canvas
+2. Confirm "Desbloqueio ISP" appears in Integrações category
+3. Confirm config panel shows correctly
+4. TypeScript compiles without errors

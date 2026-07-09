@@ -1,0 +1,144 @@
+Preciso atualizar o frontend do FlowCRM com duas novas
+funcionalidades: integração real com N8n na página de
+Integrações, e uma seção de gerenciamento de Prompts de IA.
+
+Use o padrão visual do projeto: variáveis CSS (--bg, --card,
+--border, --text, --muted, --accent, --accent2, --green,
+--yellow, --red), fonte Plus Jakarta Sans, dark theme.
+
+---
+
+PARTE 1 — Card N8n na página de Integrações
+
+Localize a página de Integrações (integracoes.tsx ou similar).
+Atualize ou adicione o card do N8n para que ao clicar
+abra um modal completo com 4 abas:
+
+ABA 1 — CONEXÃO:
+- Campo "URL do Webhook N8n"
+  placeholder: "https://meu-n8n.com/webhook/abc123"
+  dica abaixo: "Cole aqui a URL do nó Webhook Trigger do seu fluxo N8n"
+- Campo "Secret de Segurança" (opcional)
+  placeholder: "Chave para verificar autenticidade dos eventos"
+  tipo: password com botão mostrar/ocultar
+- Botão "Testar Conexão" → POST /api/webhooks/:id/testar
+  Resultado: badge verde "✅ N8n respondeu (200ms)" ou vermelho "❌ Sem resposta"
+- Botão "Salvar"
+  Se não existe webhook N8n: POST /api/webhooks
+  Se já existe: PUT /api/webhooks/:id
+- Status geral no topo do modal:
+  badge verde "Conectado" ou cinza "Não configurado"
+
+ABA 2 — EVENTOS:
+Título: "Selecione quais eventos do CRM serão enviados ao N8n"
+Lista de checkboxes em 2 colunas:
+  ☑ Lead criado           (lead.created)
+  ☑ Lead atualizado       (lead.updated)
+  ☑ Lead ganho            (lead.won)
+  ☐ Lead perdido          (lead.lost)
+  ☑ Mensagem recebida     (message.received)
+  ☐ Mensagem enviada      (message.sent)
+  ☑ Lead movido pipeline  (deal.moved)
+  ☐ Contato criado        (contact.created)
+Botão "Salvar Eventos" → PUT /api/webhooks/:id com { eventos }
+
+ABA 3 — API TOKENS:
+Título: "Tokens para o N8n acessar a API do FlowCRM"
+Subtítulo menor: "Use estes tokens no nó HTTP Request do N8n"
+
+Lista de tokens existentes (GET /api/tokens):
+Cada item: nome | token_preview... | permissões | criado em | botão Revogar
+Botão Revogar → confirmação → DELETE /api/tokens/:id
+
+Botão "Gerar Novo Token" → abre mini modal:
+  - Campo: Nome do token (ex: "N8n Produção")
+  - Checkboxes de permissões:
+    ☑ Leitura de leads (leads:read)
+    ☑ Escrita de leads (leads:write)
+    ☑ Enviar mensagens (messages:send)
+    ☑ Leitura de contatos (contacts:read)
+    ☐ Escrita de contatos (contacts:write)
+    ☑ Leitura de prompts (prompts:read)
+  - Botão "Gerar"
+
+Após gerar token → modal de alerta especial:
+  ⚠️ título: "Copie seu token agora"
+  texto: "Este token não será exibido novamente por segurança."
+  campo readonly com o token completo
+  botão "📋 Copiar Token"
+  botão "Fechar" (só habilita após 5 segundos para garantir que copiou)
+
+ABA 4 — LOGS:
+Tabela com os últimos 20 disparos (GET /api/webhooks/:id/logs):
+Colunas: Evento | Data/Hora | Status HTTP | Sucesso
+Badge colorido: verde para sucesso, vermelho para erro
+Botão "Limpar logs" → DELETE /api/webhooks/:id/logs
+
+---
+
+PARTE 2 — Nova Seção: Gerenciador de Prompts de IA
+
+Crie um novo componente/página acessível em /ia ou
+como uma aba dentro da página de Integrações ou Configurações
+(escolha o que fizer mais sentido na estrutura atual do projeto).
+
+HEADER:
+- Título: "🤖 Prompts de IA"
+- Subtítulo: "Configure como a IA se comporta em cada fluxo do N8n"
+- Botão "Novo Prompt"
+
+LISTA DE PROMPTS (GET /api/ia/prompts):
+Cards para cada prompt mostrando:
+- Ícone 🤖 + Nome do prompt em destaque
+- Descrição em texto menor
+- Badge do modelo: "GPT-4o Mini", "GPT-4o", etc.
+- Badge de temperatura: "🌡 0.7"
+- Badge de status: verde "Ativo" ou cinza "Inativo"
+- Linha inferior: "Versão 3 · Atualizado há 2 dias"
+- Botões: ✏️ Editar | 📋 Histórico | (🗑 Excluir só para não-padrão)
+
+MODAL "EDITAR PROMPT":
+Título: nome do prompt
+Aviso se for prompt padrão: "⚠️ Este é um prompt padrão do sistema"
+
+Campos:
+- Nome (text input)
+- Descrição (text input)
+- Slug (readonly se for prompt padrão, editável se novo)
+- Modelo (select):
+  - GPT-4o Mini (rápido e econômico)
+  - GPT-4o (mais capaz)
+  - Claude 3 Haiku
+  - Claude 3 Sonnet
+- Temperatura (slider 0.0 a 1.0 com step 0.1):
+  label dinâmica: 0.0-0.3 "Preciso e determinístico"
+                  0.4-0.6 "Balanceado"
+                  0.7-1.0 "Criativo e variado"
+- Max Tokens (number input, min 100, max 4000)
+- Prompt (textarea grande, mínimo 200px altura, monospace):
+  placeholder: "Você é um assistente de..."
+  contador de caracteres abaixo
+- Toggle "Ativo"
+
+Rodapé do modal:
+- Botão "Cancelar"
+- Botão "Salvar Prompt" → PUT /api/ia/prompts/:id
+
+Após salvar: notificação "✅ Prompt atualizado — versão X"
+O N8n usará o novo prompt na próxima execução automaticamente.
+
+MODAL "HISTÓRICO DE VERSÕES":
+GET /api/ia/prompts/:id/historico
+Lista de versões: "Versão 3 · 01/01/2025 14:30 · por João"
+Cada versão tem botão "👁 Ver" que mostra o prompt antigo em textarea readonly
+e botão "↩ Restaurar esta versão" → POST /api/ia/prompts/:id/restaurar/:versao
+
+MODAL "NOVO PROMPT":
+Mesmos campos do modal de edição, todos editáveis
+Slug: campo livre com validação (só letras minúsculas, números e hífens)
+Botão "Criar Prompt"
+
+---
+
+Use apiFetch (ou o método de chamada configurado no projeto)
+para todas as requisições com token JWT no header.

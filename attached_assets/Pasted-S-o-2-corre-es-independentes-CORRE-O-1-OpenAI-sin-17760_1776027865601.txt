@@ -1,0 +1,78 @@
+São 2 correções independentes.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CORREÇÃO 1 — OpenAI singleton (sem new OpenAI() a cada execução)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Abra server/services/automationEngine.ts.
+
+Localize todos os lugares onde existe:
+  new OpenAI({ apiKey: ... })
+ou
+  new OpenAI()
+
+dentro de funções (não no topo do arquivo).
+
+PASSO 1 — Crie server/services/openaiClient.ts:
+
+import OpenAI from 'openai';
+
+let _client: OpenAI | null = null;
+
+export function getOpenAIClient(apiKey?: string): OpenAI {
+  // Se uma chave específica foi passada (tenant com chave própria),
+  // cria instância dedicada — não usa o singleton global
+  if (apiKey) {
+    return new OpenAI({ apiKey });
+  }
+
+  // Singleton para a chave global
+  if (!_client) {
+    const key = process.env.OPENAI_API_KEY;
+    if (!key) throw new Error('[openaiClient] OPENAI_API_KEY não configurada');
+    _client = new OpenAI({ apiKey: key });
+  }
+  return _client;
+}
+
+PASSO 2 — Em automationEngine.ts:
+- Importe getOpenAIClient de './openaiClient'
+- Substitua cada new OpenAI({ apiKey }) por getOpenAIClient(apiKey)
+- Substituta new OpenAI() por getOpenAIClient()
+
+PASSO 3 — Verifique se n8nAiService.ts e outros serviços também
+instanciam new OpenAI() dentro de funções. Se sim, aplique o mesmo
+padrão — substitua por getOpenAIClient(apiKey).
+
+Busque no projeto:
+  grep -rn "new OpenAI(" server/
+
+Para cada ocorrência dentro de função (não no topo de módulo como
+constante), substitua por getOpenAIClient().
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CORREÇÃO 2 — Remover pipeline.tsx (arquivo morto)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Confirme primeiro que o arquivo existe e não é referenciado:
+
+  grep -rn "pipeline" client/src/App.tsx client/src/router* \
+    client/src/routes* 2>/dev/null | grep -i "import\|route\|component"
+
+Se pipeline.tsx NÃO aparecer em nenhuma rota ativa do frontend
+(o Kanban real está em leads.tsx conforme o mapeamento), delete:
+
+  rm client/src/pages/pipeline.tsx
+
+Se aparecer referenciado em alguma rota, NÃO delete — me mostre
+o resultado do grep antes.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Confirme:
+1. server/services/openaiClient.ts criado com singleton
+2. Todas as instâncias new OpenAI() dentro de funções substituídas
+3. grep "new OpenAI(" retorna apenas ocorrências no topo de módulo
+   (como constante) ou dentro do próprio openaiClient.ts
+4. pipeline.tsx deletado (ou motivo para não deletar)
+5. Servidor sem erros de TypeScript

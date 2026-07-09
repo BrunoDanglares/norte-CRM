@@ -1,0 +1,1381 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FlowCRM - Estrutura Completa do Sistema</title>
+  <style>
+    :root {
+      --bg: #0f0a1a;
+      --bg2: #1a1128;
+      --bg3: #231a33;
+      --card: #1e1533;
+      --border: #3d2d5c;
+      --primary: #8b5cf6;
+      --primary-light: #a78bfa;
+      --accent: #c084fc;
+      --text: #e8e0f0;
+      --text-muted: #9b8bb8;
+      --success: #34d399;
+      --warning: #fbbf24;
+      --danger: #f87171;
+      --info: #60a5fa;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+    }
+    .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+
+    /* Header */
+    .header {
+      background: linear-gradient(135deg, var(--bg2), var(--bg3));
+      border-bottom: 1px solid var(--border);
+      padding: 40px 0;
+      text-align: center;
+    }
+    .header h1 {
+      font-size: 2.8rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, var(--primary), var(--accent));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 8px;
+    }
+    .header p { color: var(--text-muted); font-size: 1.1rem; }
+    .header .date { color: var(--primary-light); font-size: 0.85rem; margin-top: 6px; opacity: 0.8; }
+
+    /* Stats bar */
+    .stats-bar {
+      display: flex;
+      gap: 16px;
+      justify-content: center;
+      flex-wrap: wrap;
+      margin: 24px 0;
+    }
+    .stat-pill {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 99px;
+      padding: 8px 20px;
+      font-size: 0.85rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .stat-pill .num {
+      font-weight: 700;
+      color: var(--primary-light);
+      font-size: 1.1rem;
+    }
+
+    /* Section */
+    .section {
+      margin: 32px 0;
+    }
+    .section-title {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--primary-light);
+      border-bottom: 2px solid var(--border);
+      padding-bottom: 8px;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .section-title .icon { font-size: 1.3rem; }
+
+    /* Cards grid */
+    .cards-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+      gap: 16px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      transition: border-color 0.2s;
+    }
+    .card:hover { border-color: var(--primary); }
+    .card h3 {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .card .route {
+      font-size: 0.78rem;
+      color: var(--primary);
+      font-family: 'Fira Code', 'Consolas', monospace;
+      background: rgba(139, 92, 246, 0.1);
+      padding: 2px 8px;
+      border-radius: 4px;
+      display: inline-block;
+      margin-bottom: 8px;
+    }
+    .card .desc {
+      font-size: 0.88rem;
+      color: var(--text-muted);
+      margin-bottom: 10px;
+    }
+    .card .features-list {
+      list-style: none;
+      padding: 0;
+    }
+    .card .features-list li {
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      padding: 3px 0;
+      padding-left: 18px;
+      position: relative;
+    }
+    .card .features-list li::before {
+      content: "&#x2713;";
+      position: absolute;
+      left: 0;
+      color: var(--success);
+      font-weight: 700;
+    }
+    .card .lines {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      opacity: 0.6;
+      margin-top: 8px;
+    }
+
+    /* Table */
+    .tbl-wrap {
+      overflow-x: auto;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+    }
+    th {
+      background: var(--bg3);
+      color: var(--primary-light);
+      font-weight: 600;
+      text-align: left;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+    td {
+      padding: 8px 14px;
+      border-bottom: 1px solid rgba(61,45,92,0.4);
+      color: var(--text-muted);
+    }
+    tr:hover td { background: rgba(139,92,246,0.04); }
+    code {
+      background: rgba(139,92,246,0.12);
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-family: 'Fira Code', 'Consolas', monospace;
+      font-size: 0.82rem;
+      color: var(--accent);
+    }
+
+    /* Badge */
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 99px;
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .badge-pub { background: rgba(52,211,153,0.15); color: var(--success); }
+    .badge-auth { background: rgba(139,92,246,0.15); color: var(--primary-light); }
+    .badge-token { background: rgba(251,191,36,0.15); color: var(--warning); }
+
+    /* Automation nodes */
+    .nodes-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 10px;
+    }
+    .node-item {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.85rem;
+    }
+    .node-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    /* Category section */
+    .cat-header {
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin: 16px 0 8px;
+      padding-left: 4px;
+    }
+
+    /* Landing page section */
+    .lp-section {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+    .lp-section h4 {
+      color: var(--primary-light);
+      font-size: 1rem;
+      margin-bottom: 8px;
+    }
+    .lp-section p {
+      color: var(--text-muted);
+      font-size: 0.88rem;
+    }
+
+    /* Architecture diagram */
+    .arch-box {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+      font-family: 'Fira Code', 'Consolas', monospace;
+      font-size: 0.78rem;
+      line-height: 1.8;
+      color: var(--text-muted);
+      overflow-x: auto;
+      white-space: pre;
+    }
+
+    /* TOC */
+    .toc {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px 24px;
+      margin: 24px 0;
+    }
+    .toc h3 {
+      color: var(--primary-light);
+      margin-bottom: 12px;
+      font-size: 1.1rem;
+    }
+    .toc ol {
+      padding-left: 20px;
+    }
+    .toc li {
+      margin: 4px 0;
+    }
+    .toc a {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.9rem;
+      transition: color 0.2s;
+    }
+    .toc a:hover { color: var(--primary-light); }
+
+    @media (max-width: 768px) {
+      .cards-grid { grid-template-columns: 1fr; }
+      .nodes-grid { grid-template-columns: repeat(2, 1fr); }
+      .header h1 { font-size: 1.8rem; }
+      .stats-bar { flex-direction: column; align-items: center; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- HEADER -->
+  <div class="header">
+    <div class="container">
+      <h1>FlowCRM PRO</h1>
+      <p>Documentacao Completa da Estrutura do Sistema</p>
+      <div class="date">Gerado em 17 de Marco de 2026 &bull; Versao Atual</div>
+
+      <div class="stats-bar">
+        <div class="stat-pill"><span class="num">22</span> Paginas</div>
+        <div class="stat-pill"><span class="num">31</span> Tabelas DB</div>
+        <div class="stat-pill"><span class="num">120+</span> Endpoints API</div>
+        <div class="stat-pill"><span class="num">25+</span> Nos Automacao</div>
+        <div class="stat-pill"><span class="num">21.500+</span> Linhas Frontend</div>
+        <div class="stat-pill"><span class="num">8.900+</span> Linhas Backend</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="container">
+
+    <!-- TOC -->
+    <div class="toc">
+      <h3>Indice</h3>
+      <ol>
+        <li><a href="#arch">Arquitetura do Sistema</a></li>
+        <li><a href="#landing">Landing Page</a></li>
+        <li><a href="#pages">Todas as Paginas (22)</a></li>
+        <li><a href="#sidebar">Navegacao Sidebar</a></li>
+        <li><a href="#db">Banco de Dados (31 tabelas)</a></li>
+        <li><a href="#api">API REST (120+ endpoints)</a></li>
+        <li><a href="#automation">Motor de Automacao (25+ nos)</a></li>
+        <li><a href="#services">Servicos Backend</a></li>
+        <li><a href="#integrations">Integracoes Externas</a></li>
+        <li><a href="#components">Componentes UI (shadcn/ui)</a></li>
+        <li><a href="#files">Estrutura de Arquivos</a></li>
+        <li><a href="#auth">Autenticacao & Multi-Tenant</a></li>
+        <li><a href="#realtime">WebSocket & Tempo Real</a></li>
+      </ol>
+    </div>
+
+    <!-- ===== 1. ARQUITETURA ===== -->
+    <div class="section" id="arch">
+      <div class="section-title"><span class="icon">&#x1F3D7;</span> Arquitetura do Sistema</div>
+      <div class="arch-box">
+&#x250C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2510;
+&#x2502;                           FLOWCRM PRO - STACK                              &#x2502;
+&#x251C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x252C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2524;
+&#x2502;          FRONTEND                    &#x2502;           BACKEND                     &#x2502;
+&#x2502;  React + TypeScript + Vite           &#x2502;  Express.js + TypeScript              &#x2502;
+&#x2502;  Tailwind CSS + shadcn/ui            &#x2502;  Drizzle ORM + PostgreSQL             &#x2502;
+&#x2502;  TanStack React Query                &#x2502;  JWT Auth + Multi-Tenant              &#x2502;
+&#x2502;  wouter (SPA routing)                &#x2502;  WebSocket (ws) para real-time        &#x2502;
+&#x251C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2534;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2524;
+&#x2502;                        INTEGRACOES EXTERNAS                                 &#x2502;
+&#x2502;  WhatsApp (Z-API + Baileys)  |  OpenAI GPT-4o  |  Google Gemini             &#x2502;
+&#x2502;  Google Calendar  |  Mercado Pago  |  Stripe  |  Zapier  |  N8n             &#x2502;
+&#x2502;  RD Station  |  Webhooks customizados                                      &#x2502;
+&#x2514;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2518;</div>
+
+      <div class="cards-grid" style="margin-top: 20px;">
+        <div class="card">
+          <h3>Frontend</h3>
+          <ul class="features-list">
+            <li>React 18 + TypeScript + Vite</li>
+            <li>Tailwind CSS com tema violet/purple escuro</li>
+            <li>shadcn/ui (70+ componentes)</li>
+            <li>TanStack React Query v5 (staleTime: 2min)</li>
+            <li>wouter para SPA routing</li>
+            <li>Lazy loading com React.lazy + Suspense</li>
+            <li>Prefetch de rotas no hover do sidebar</li>
+            <li>Fonte: Plus Jakarta Sans</li>
+            <li>Dark mode com classe CSS</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Backend</h3>
+          <ul class="features-list">
+            <li>Express.js + TypeScript</li>
+            <li>PostgreSQL + Drizzle ORM</li>
+            <li>JWT (jsonwebtoken) para autenticacao</li>
+            <li>crypto.scryptSync para hash de senhas</li>
+            <li>WebSocket nativo (ws) para tempo real</li>
+            <li>Multer para upload de arquivos</li>
+            <li>Multi-tenant via workspaceId</li>
+            <li>Rate limiting e protecao de loops</li>
+            <li>3.830 linhas de rotas API</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Design System</h3>
+          <ul class="features-list">
+            <li>Tema: Dark purple/violet</li>
+            <li>Primary: #8b5cf6 (violet-500)</li>
+            <li>Gradientes: gradient-accent, gradient-accent-glow</li>
+            <li>Cards com bordas arredondadas (12px)</li>
+            <li>Sidebar fixa 216px</li>
+            <li>TopBar 54px</li>
+            <li>Animacoes suaves (transition)</li>
+            <li>icones: lucide-react + react-icons</li>
+            <li>Idioma: Portugues BR completo</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 2. LANDING PAGE ===== -->
+    <div class="section" id="landing">
+      <div class="section-title"><span class="icon">&#x1F310;</span> Landing Page</div>
+      <p style="color: var(--text-muted); margin-bottom: 16px; font-size: 0.9rem;">
+        Pagina publica acessivel em <code>/landing</code>. Usuarios nao autenticados sao redirecionados automaticamente para ela.
+        Contém formulario de login integrado e todas as secoes de marketing.
+      </p>
+
+      <div class="lp-section">
+        <h4>1. Hero Section</h4>
+        <p>Titulo principal com gradiente violet, subtitulo descritivo, dois CTAs ("Comecar gratis" e "Ver demo"), e indicadores de confianca ("+500 empresas", "Suporte 24/7", "99.9% uptime").</p>
+      </div>
+      <div class="lp-section">
+        <h4>2. Formulario de Login/Cadastro</h4>
+        <p>Formulario integrado na landing com campos email e senha. Login via JWT com redirecionamento automatico para o dashboard apos autenticacao. Link para registro de nova conta.</p>
+      </div>
+      <div class="lp-section">
+        <h4>3. Secao de Features (8 funcionalidades)</h4>
+        <p>Cards com icones mostrando: Pipeline Visual (Kanban drag-and-drop), Inbox Omnichannel (WhatsApp + Instagram), Automacoes IA (fluxos visuais com GPT), Relatorios (dashboards em tempo real), Gestao de Equipe (permissoes granulares), Seguranca (criptografia ponta-a-ponta), Chatbot IA (respostas automaticas), Integracao APIs (webhooks + N8n + Zapier).</p>
+      </div>
+      <div class="lp-section">
+        <h4>4. Secao "Como Funciona" (3 passos)</h4>
+        <p>Passos numerados: 1) Conecte seus canais (WhatsApp em 2 minutos), 2) Configure automacoes (fluxos com IA), 3) Gerencie resultados (dashboards e relatorios).</p>
+      </div>
+      <div class="lp-section">
+        <h4>5. Tabela de Precos (3 planos)</h4>
+        <p><strong>Starter:</strong> R$197/mes (R$131/ano) - 2 usuarios, 1.000 contatos, WhatsApp basico, 5 automacoes.<br>
+        <strong>Pro:</strong> R$497/mes (R$331/ano) - 10 usuarios, contatos ilimitados, omnichannel, IA, campanhas. Badge "POPULAR".<br>
+        <strong>Enterprise:</strong> Sob consulta - usuarios ilimitados, API REST, SLA 1h, white-label, onboarding dedicado.</p>
+      </div>
+      <div class="lp-section">
+        <h4>6. Secao de Depoimentos</h4>
+        <p>Cards com avatares, nomes, cargos e depoimentos de clientes satisfeitos com estrelas de avaliacao.</p>
+      </div>
+      <div class="lp-section">
+        <h4>7. FAQ (Perguntas Frequentes)</h4>
+        <p>Accordion expansivel com perguntas e respostas sobre o sistema, integracao, suporte, etc.</p>
+      </div>
+      <div class="lp-section">
+        <h4>8. Footer</h4>
+        <p>Links do sistema, contato, redes sociais e copyright. Design consistente com tema violet.</p>
+      </div>
+    </div>
+
+    <!-- ===== 3. TODAS AS PAGINAS ===== -->
+    <div class="section" id="pages">
+      <div class="section-title"><span class="icon">&#x1F4C4;</span> Todas as Paginas (22)</div>
+
+      <!-- Publicas -->
+      <div class="cat-header">Paginas Publicas (3)</div>
+      <div class="cards-grid">
+        <div class="card">
+          <h3>Landing Page</h3>
+          <div class="route">/landing</div>
+          <div class="desc">Pagina de marketing com hero, features, precos, depoimentos, FAQ e formulario de login integrado.</div>
+          <ul class="features-list">
+            <li>Hero com gradiente e CTAs</li>
+            <li>8 cards de funcionalidades</li>
+            <li>3 planos de preco com toggle mensal/anual</li>
+            <li>Depoimentos de clientes</li>
+            <li>FAQ expansivel</li>
+            <li>Formulario de login/cadastro integrado</li>
+          </ul>
+          <div class="lines">691 linhas | landing.tsx</div>
+        </div>
+        <div class="card">
+          <h3>Login</h3>
+          <div class="route">/login</div>
+          <div class="desc">Tela de autenticacao com email e senha. JWT com persistencia em localStorage.</div>
+          <ul class="features-list">
+            <li>Campos email + senha</li>
+            <li>Validacao de erros inline</li>
+            <li>Redirect para dashboard apos login</li>
+            <li>Link para registro</li>
+          </ul>
+          <div class="lines">130 linhas | login.tsx</div>
+        </div>
+        <div class="card">
+          <h3>Registro</h3>
+          <div class="route">/register</div>
+          <div class="desc">Cadastro de nova conta com criacao automatica de workspace e usuario admin.</div>
+          <ul class="features-list">
+            <li>Campos: nome, email, senha, empresa</li>
+            <li>Cria workspace + usuario admin</li>
+            <li>Validacao de campos obrigatorios</li>
+            <li>Redirect para login apos cadastro</li>
+          </ul>
+          <div class="lines">269 linhas | register.tsx</div>
+        </div>
+      </div>
+
+      <!-- Principais -->
+      <div class="cat-header" style="margin-top:24px;">Paginas Principais (11)</div>
+      <div class="cards-grid">
+        <div class="card">
+          <h3>Dashboard</h3>
+          <div class="route">/</div>
+          <div class="desc">Painel principal com KPIs, graficos de vendas, atividades recentes, metas da equipe e metricas em tempo real.</div>
+          <ul class="features-list">
+            <li>Cards de KPIs (leads, conversoes, receita, tickets)</li>
+            <li>Grafico de vendas por periodo</li>
+            <li>Pipeline overview com barras</li>
+            <li>Atividades recentes feed</li>
+            <li>Meta mensal por usuario</li>
+            <li>Performance da equipe</li>
+            <li>Tabs: Geral, Vendas, Equipe</li>
+          </ul>
+          <div class="lines">621 linhas | dashboard.tsx</div>
+        </div>
+        <div class="card">
+          <h3>CRM (Pipeline + Contatos + Agenda)</h3>
+          <div class="route">/crm</div>
+          <div class="desc">Hub CRM unificado com 3 tabs internas: Pipeline Kanban, Contatos e Agenda. Multiplos pipelines customizados.</div>
+          <ul class="features-list">
+            <li>Pipeline Kanban drag-and-drop</li>
+            <li>Pipelines customizados (Vendas, Suporte, Pos-Venda...)</li>
+            <li>Gerenciador de pipelines com accordion</li>
+            <li>Leads com tags, atendente, valor</li>
+            <li>Tab Contatos com tabela</li>
+            <li>Tab Agenda com calendario visual</li>
+            <li>Slot de disponibilidade por profissional</li>
+            <li>Integracao Google Calendar bidirecional</li>
+          </ul>
+          <div class="lines">leads: 1.821 + pipeline: 517 + contatos: 443 + agenda: 648 linhas</div>
+        </div>
+        <div class="card">
+          <h3>Inbox (Chat Omnichannel)</h3>
+          <div class="route">/inbox</div>
+          <div class="desc">Caixa de entrada unificada com layout 3 colunas: lista de conversas, chat e detalhes do lead.</div>
+          <ul class="features-list">
+            <li>Layout 3 colunas responsivo</li>
+            <li>Lista de conversas com busca e filtros</li>
+            <li>Chat com bolhas de mensagem estilizadas</li>
+            <li>Envio de texto, imagem, audio, documentos</li>
+            <li>Respostas rapidas (/atalhos)</li>
+            <li>Atribuicao de atendente</li>
+            <li>Tags e status por conversa</li>
+            <li>Painel lateral com detalhes do lead</li>
+            <li>Indicador de digitacao e status online</li>
+          </ul>
+          <div class="lines">1.896 linhas | inbox.tsx</div>
+        </div>
+        <div class="card">
+          <h3>Gestao de Conversas</h3>
+          <div class="route">/gestao-conversas</div>
+          <div class="desc">Hub de gestao com 4 sub-areas: Respostas Rapidas, Campanhas em Massa, Disparos Programados e Anotacoes.</div>
+          <ul class="features-list">
+            <li>Respostas rapidas com categorias e atalhos</li>
+            <li>Campanhas WhatsApp em massa (draft/envio)</li>
+            <li>Disparos programados com recorrencia mensal</li>
+            <li>Anotacoes internas por conversa</li>
+            <li>Rate limiting e batch size configuravel</li>
+          </ul>
+          <div class="lines">67 + campanhas: 833 + disparos: 479 + respostas: 667 linhas</div>
+        </div>
+        <div class="card">
+          <h3>Automacoes (Flow Editor)</h3>
+          <div class="route">/automacoes</div>
+          <div class="desc">Editor visual de fluxos de automacao com canvas drag-and-drop, 25+ tipos de nos e motor de execucao real.</div>
+          <ul class="features-list">
+            <li>Canvas visual com zoom/pan</li>
+            <li>25+ tipos de nos (ver secao dedicada)</li>
+            <li>Sidebar arrastar com categorias colapsaveis</li>
+            <li>Popup picker categorizado (Basicos, Avancados, Integracoes)</li>
+            <li>Painel de configuracao por no</li>
+            <li>Duplicar, ativar/desativar automacoes</li>
+            <li>Logs de execucao em tempo real</li>
+            <li>Variavel resolution {{lead.nome}}, {{var.x}}</li>
+            <li>Upload de arquivos (imagens + PDF) nos nos</li>
+            <li>Execucao manual com selecao de lead</li>
+          </ul>
+          <div class="lines">4.996 linhas | automacoes.tsx</div>
+        </div>
+        <div class="card">
+          <h3>Financeiro</h3>
+          <div class="route">/financeiro</div>
+          <div class="desc">Dashboard financeiro com receitas, despesas, transacoes e indicadores de saude financeira.</div>
+          <ul class="features-list">
+            <li>Cards de receita, despesa, saldo</li>
+            <li>Lista de transacoes com filtros</li>
+            <li>Criar nova transacao (entrada/saida)</li>
+            <li>Categorias de transacao</li>
+            <li>Graficos de evolucao financeira</li>
+          </ul>
+          <div class="lines">300 linhas | financeiro.tsx</div>
+        </div>
+        <div class="card">
+          <h3>Conexoes (WhatsApp)</h3>
+          <div class="route">/conexoes</div>
+          <div class="desc">Gerenciamento de multiplas conexoes WhatsApp com suporte a Z-API e Baileys (WhatsApp Web direto).</div>
+          <ul class="features-list">
+            <li>Criar conexao Z-API ou Baileys</li>
+            <li>QR Code para Baileys nativo</li>
+            <li>Status em tempo real (conectado/desconectado)</li>
+            <li>Configurar webhook automaticamente</li>
+            <li>Sincronizar contatos do WhatsApp</li>
+            <li>Enviar mensagem de teste</li>
+            <li>Multiplas conexoes por workspace</li>
+          </ul>
+          <div class="lines">1.361 linhas | conexoes.tsx</div>
+        </div>
+        <div class="card">
+          <h3>Integracoes</h3>
+          <div class="route">/integracoes</div>
+          <div class="desc">Central de integracoes com terceiros: Webhooks, Tokens API, IA Prompts, Zapier, N8n, Mercado Pago, Google Calendar.</div>
+          <ul class="features-list">
+            <li>Tabs: Webhooks, Tokens, IA Prompts, Zapier, N8n, Mercado Pago, GCal</li>
+            <li>CRUD de webhooks com logs</li>
+            <li>Geracao de tokens API com expiracoes</li>
+            <li>Prompts IA com versionamento</li>
+            <li>Configuracao Zapier</li>
+            <li>API N8n endpoints</li>
+            <li>Mercado Pago conexao</li>
+            <li>Google Calendar OAuth global</li>
+          </ul>
+          <div class="lines">1.746 linhas | integracoes.tsx</div>
+        </div>
+        <div class="card">
+          <h3>Configuracoes</h3>
+          <div class="route">/configuracoes</div>
+          <div class="desc">Central de configuracoes com sub-tabs: Empresa, Equipe, Equipes, Permissoes e Performance.</div>
+          <ul class="features-list">
+            <li>Empresa: identidade, logo, URL</li>
+            <li>Equipe: lista de usuarios do workspace</li>
+            <li>Equipes: criar/editar equipes com membros</li>
+            <li>Permissoes: roles granulares (admin/manager/agent)</li>
+            <li>Performance: metas e metricas por usuario</li>
+          </ul>
+          <div class="lines">425 + usuarios: 1.711 linhas</div>
+        </div>
+        <div class="card">
+          <h3>Perfil do Usuario</h3>
+          <div class="route">/perfil</div>
+          <div class="desc">Pagina de perfil pessoal com edicao de dados, avatar, senha, preferencias de tema e integracoes pessoais.</div>
+          <ul class="features-list">
+            <li>Edicao de dados pessoais</li>
+            <li>Upload de avatar</li>
+            <li>Alteracao de senha</li>
+            <li>Preferencias: tema dark/light, color preset</li>
+            <li>Notificacoes: toggle por tipo</li>
+            <li>Credenciais: JWT secret display</li>
+            <li>Google Calendar pessoal (OAuth)</li>
+            <li>Exclusao de conta</li>
+          </ul>
+          <div class="lines">1.118 linhas | perfil.tsx</div>
+        </div>
+        <div class="card">
+          <h3>Planos & Faturamento</h3>
+          <div class="route">/billing</div>
+          <div class="desc">Pagina de planos com comparacao de features, uso atual e upgrade/downgrade.</div>
+          <ul class="features-list">
+            <li>3 planos: Starter, Pro, Enterprise</li>
+            <li>Comparacao de features lado a lado</li>
+            <li>Uso atual (usuarios, contatos, automacoes)</li>
+            <li>Historico de faturas</li>
+          </ul>
+          <div class="lines">512 linhas | billing.tsx</div>
+        </div>
+      </div>
+
+      <!-- Auxiliares -->
+      <div class="cat-header" style="margin-top:24px;">Paginas Auxiliares (3)</div>
+      <div class="cards-grid">
+        <div class="card">
+          <h3>Workspace</h3>
+          <div class="route">/workspace</div>
+          <div class="desc">Selecao e gerenciamento de workspaces para multi-tenancy.</div>
+          <div class="lines">287 linhas | workspace.tsx</div>
+        </div>
+        <div class="card">
+          <h3>Usuarios (Redirect)</h3>
+          <div class="route">/usuarios</div>
+          <div class="desc">Redireciona para /configuracoes?tab=workspace. Exporta componentes de equipe reutilizados.</div>
+          <div class="lines">1.711 linhas | usuarios.tsx</div>
+        </div>
+        <div class="card">
+          <h3>404 - Not Found</h3>
+          <div class="route">/*</div>
+          <div class="desc">Pagina padrao para rotas inexistentes com link de retorno ao dashboard.</div>
+          <div class="lines">21 linhas | not-found.tsx</div>
+        </div>
+      </div>
+
+      <!-- Redirects -->
+      <div class="cat-header" style="margin-top:24px;">Redirects Configurados (5)</div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Rota Antiga</th><th>Destino</th><th>Motivo</th></tr></thead>
+          <tbody>
+            <tr><td><code>/leads</code></td><td><code>/crm</code></td><td>Unificado no CRM hub</td></tr>
+            <tr><td><code>/pipeline</code></td><td><code>/crm</code></td><td>Unificado no CRM hub</td></tr>
+            <tr><td><code>/contatos</code></td><td><code>/crm?tab=contatos</code></td><td>Tab interna do CRM</td></tr>
+            <tr><td><code>/agenda</code></td><td><code>/crm?tab=agenda</code></td><td>Tab interna do CRM</td></tr>
+            <tr><td><code>/campanhas</code></td><td><code>/gestao-conversas?tab=campanhas</code></td><td>Consolidado em Gestao</td></tr>
+            <tr><td><code>/respostas-rapidas</code></td><td><code>/gestao-conversas</code></td><td>Consolidado em Gestao</td></tr>
+            <tr><td><code>/relatorios</code></td><td><code>/?tab=vendas</code></td><td>Absorvido pelo Dashboard</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ===== 4. SIDEBAR ===== -->
+    <div class="section" id="sidebar">
+      <div class="section-title"><span class="icon">&#x1F4CB;</span> Navegacao Sidebar</div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Grupo</th><th>Item</th><th>Rota</th><th>Icone</th></tr></thead>
+          <tbody>
+            <tr><td rowspan="2"><strong>Principal</strong></td><td>Dashboard</td><td><code>/</code></td><td>LayoutDashboard</td></tr>
+            <tr><td>CRM</td><td><code>/crm</code></td><td>Kanban</td></tr>
+            <tr><td rowspan="2"><strong>Comunicacao</strong></td><td>Chat</td><td><code>/inbox</code></td><td>MessageSquare</td></tr>
+            <tr><td>Gestao de Conversa</td><td><code>/gestao-conversas</code></td><td>MessagesSquare</td></tr>
+            <tr><td><strong>Automacao & IA</strong></td><td>Automacoes</td><td><code>/automacoes</code></td><td>Zap</td></tr>
+            <tr><td><strong>Gestao</strong></td><td>Financeiro</td><td><code>/financeiro</code></td><td>DollarSign</td></tr>
+            <tr><td rowspan="2"><strong>Config</strong></td><td>Conexoes</td><td><code>/conexoes</code></td><td>Radio</td></tr>
+            <tr><td>Integracoes</td><td><code>/integracoes</code></td><td>Link2</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p style="color:var(--text-muted); font-size:0.82rem; margin-top:8px;">
+        TopBar adicional: Titulo da pagina, busca, notificacoes (bell com polling 15s), tema dark/light, e menu de usuario com links para Perfil, Configuracoes, Billing e Logout.
+      </p>
+    </div>
+
+    <!-- ===== 5. BANCO DE DADOS ===== -->
+    <div class="section" id="db">
+      <div class="section-title"><span class="icon">&#x1F5C4;</span> Banco de Dados PostgreSQL (31 tabelas)</div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>#</th><th>Tabela</th><th>Descricao</th><th>Multi-Tenant</th></tr></thead>
+          <tbody>
+            <tr><td>1</td><td><code>users</code></td><td>Usuarios do sistema com roles, preferencias, GCal token</td><td>workspaceId</td></tr>
+            <tr><td>2</td><td><code>teams</code></td><td>Equipes (Vendas, Suporte, etc.)</td><td>workspaceId</td></tr>
+            <tr><td>3</td><td><code>team_members</code></td><td>Relacao N:N entre teams e users</td><td>-</td></tr>
+            <tr><td>4</td><td><code>permissions</code></td><td>Permissoes granulares por role (admin/manager/agent)</td><td>workspaceId</td></tr>
+            <tr><td>5</td><td><code>planos</code></td><td>Planos de assinatura (Starter, Pro, Enterprise)</td><td>-</td></tr>
+            <tr><td>6</td><td><code>workspaces</code></td><td>Workspaces para multi-tenancy</td><td>-</td></tr>
+            <tr><td>7</td><td><code>leads</code></td><td>Leads/contatos com pipeline, estagio, valor, tags</td><td>workspaceId</td></tr>
+            <tr><td>8</td><td><code>lead_tags</code></td><td>Tags de leads com cores (VIP, Quente, Urgente...)</td><td>workspaceId</td></tr>
+            <tr><td>9</td><td><code>pipelines</code></td><td>Pipelines customizados (Vendas, Suporte, Pos-Venda)</td><td>workspaceId</td></tr>
+            <tr><td>10</td><td><code>pipeline_stages</code></td><td>Estagios de cada pipeline com cores e ordem</td><td>workspaceId</td></tr>
+            <tr><td>11</td><td><code>contacts</code></td><td>Contatos do CRM (nome, email, telefone, empresa)</td><td>workspaceId</td></tr>
+            <tr><td>12</td><td><code>deals</code></td><td>Negocios/oportunidades com valores</td><td>workspaceId</td></tr>
+            <tr><td>13</td><td><code>conversations</code></td><td>Conversas omnichannel (WhatsApp, Instagram, Chat, Email)</td><td>workspaceId</td></tr>
+            <tr><td>14</td><td><code>messages</code></td><td>Mensagens das conversas (texto, imagem, audio, doc)</td><td>-</td></tr>
+            <tr><td>15</td><td><code>appointments</code></td><td>Agendamentos com sync Google Calendar</td><td>workspaceId</td></tr>
+            <tr><td>16</td><td><code>transactions</code></td><td>Transacoes financeiras (receita/despesa)</td><td>workspaceId</td></tr>
+            <tr><td>17</td><td><code>automacoes</code></td><td>Automacoes com nodes JSON e configuracao de fluxo</td><td>workspaceId</td></tr>
+            <tr><td>18</td><td><code>automacao_logs</code></td><td>Logs de execucao de automacoes</td><td>-</td></tr>
+            <tr><td>19</td><td><code>automation_pending_inputs</code></td><td>Inputs pendentes (lista_opcoes, wait_event)</td><td>workspaceId</td></tr>
+            <tr><td>20</td><td><code>automation_variables</code></td><td>Variaveis de automacao (session/lead/global)</td><td>workspaceId</td></tr>
+            <tr><td>21</td><td><code>disponibilidade</code></td><td>Regras de disponibilidade por dia/hora/profissional</td><td>workspaceId</td></tr>
+            <tr><td>22</td><td><code>conexoes</code></td><td>Conexoes WhatsApp (Z-API, Baileys) com credenciais</td><td>workspaceId</td></tr>
+            <tr><td>23</td><td><code>mensagens_log</code></td><td>Log de mensagens enviadas/recebidas via WhatsApp</td><td>workspaceId</td></tr>
+            <tr><td>24</td><td><code>webhook_endpoints</code></td><td>Endpoints webhook customizados</td><td>workspaceId</td></tr>
+            <tr><td>25</td><td><code>webhook_logs</code></td><td>Logs de chamadas webhook</td><td>-</td></tr>
+            <tr><td>26</td><td><code>api_tokens</code></td><td>Tokens API para acesso externo (N8n, Zapier)</td><td>workspaceId</td></tr>
+            <tr><td>27</td><td><code>ia_prompts</code></td><td>Prompts IA com versionamento e modelo</td><td>workspaceId</td></tr>
+            <tr><td>28</td><td><code>ia_prompt_historico</code></td><td>Historico de versoes de prompts</td><td>-</td></tr>
+            <tr><td>29</td><td><code>campanhas</code></td><td>Campanhas em massa (WhatsApp) com metricas</td><td>workspaceId</td></tr>
+            <tr><td>30</td><td><code>zapier_config</code></td><td>Configuracao Zapier por workspace</td><td>workspaceId</td></tr>
+            <tr><td>31</td><td><code>respostas_rapidas</code></td><td>Respostas rapidas com atalho e categoria</td><td>workspaceId</td></tr>
+            <tr><td>32</td><td><code>anotacoes</code></td><td>Anotacoes internas por conversa</td><td>workspaceId</td></tr>
+            <tr><td>33</td><td><code>integration_configs</code></td><td>Configs de integracoes (GCal global, etc.)</td><td>workspaceId</td></tr>
+            <tr><td>34</td><td><code>notificacoes</code></td><td>Notificacoes in-app com tipo, titulo, lida/nao-lida</td><td>workspaceId</td></tr>
+            <tr><td>35</td><td><code>disparos_programados</code></td><td>Disparos agendados com recorrencia</td><td>workspaceId</td></tr>
+            <tr><td>36</td><td><code>document_templates</code></td><td>Templates HTML para gerar documentos</td><td>workspaceId</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ===== 6. API REST ===== -->
+    <div class="section" id="api">
+      <div class="section-title"><span class="icon">&#x1F517;</span> API REST (120+ Endpoints)</div>
+
+      <div class="cat-header">Autenticacao & Perfil</div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Metodo</th><th>Endpoint</th><th>Descricao</th><th>Auth</th></tr></thead>
+          <tbody>
+            <tr><td>POST</td><td><code>/api/auth/login</code></td><td>Login com email + senha, retorna JWT</td><td><span class="badge badge-pub">Publico</span></td></tr>
+            <tr><td>POST</td><td><code>/api/auth/register</code></td><td>Cadastro + workspace + seed</td><td><span class="badge badge-pub">Publico</span></td></tr>
+            <tr><td>GET</td><td><code>/api/auth/me</code></td><td>Dados do usuario autenticado</td><td><span class="badge badge-auth">JWT</span></td></tr>
+            <tr><td>POST</td><td><code>/api/auth/logout</code></td><td>Limpa cookie de sessao</td><td><span class="badge badge-pub">Publico</span></td></tr>
+            <tr><td>GET</td><td><code>/api/perfil/me</code></td><td>Perfil completo do usuario</td><td><span class="badge badge-auth">JWT</span></td></tr>
+            <tr><td>PUT</td><td><code>/api/perfil/me</code></td><td>Atualizar perfil</td><td><span class="badge badge-auth">JWT</span></td></tr>
+            <tr><td>POST</td><td><code>/api/perfil/alterar-senha</code></td><td>Alterar senha</td><td><span class="badge badge-auth">JWT</span></td></tr>
+            <tr><td>POST</td><td><code>/api/perfil/avatar</code></td><td>Upload de avatar</td><td><span class="badge badge-auth">JWT</span></td></tr>
+            <tr><td>DELETE</td><td><code>/api/perfil/conta</code></td><td>Excluir conta</td><td><span class="badge badge-auth">JWT</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="cat-header">Leads & Pipeline</div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Metodo</th><th>Endpoint</th><th>Descricao</th></tr></thead>
+          <tbody>
+            <tr><td>GET/POST</td><td><code>/api/leads</code></td><td>Listar / criar leads</td></tr>
+            <tr><td>GET/PATCH/DELETE</td><td><code>/api/leads/:id</code></td><td>Detalhes / atualizar / excluir lead</td></tr>
+            <tr><td>GET/POST</td><td><code>/api/lead-tags</code></td><td>Listar / criar tags</td></tr>
+            <tr><td>PATCH/DELETE</td><td><code>/api/lead-tags/:id</code></td><td>Atualizar / excluir tag</td></tr>
+            <tr><td>GET/POST</td><td><code>/api/pipelines</code></td><td>Listar / criar pipelines</td></tr>
+            <tr><td>PATCH/DELETE</td><td><code>/api/pipelines/:id</code></td><td>Atualizar / excluir pipeline</td></tr>
+            <tr><td>GET/POST</td><td><code>/api/pipeline-stages</code></td><td>Listar / criar estagios</td></tr>
+            <tr><td>PATCH/DELETE</td><td><code>/api/pipeline-stages/:id</code></td><td>Atualizar / excluir estagio</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="cat-header">Contatos & Negocios</div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Metodo</th><th>Endpoint</th><th>Descricao</th></tr></thead>
+          <tbody>
+            <tr><td>GET/POST</td><td><code>/api/contacts</code></td><td>Listar / criar contatos</td></tr>
+            <tr><td>PATCH/DELETE</td><td><code>/api/contacts/:id</code></td><td>Atualizar / excluir contato</td></tr>
+            <tr><td>GET/POST</td><td><code>/api/deals</code></td><td>Listar / criar negocios</td></tr>
+            <tr><td>PATCH</td><td><code>/api/deals/:id</code></td><td>Atualizar negocio</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="cat-header">Conversas & Mensagens</div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Metodo</th><th>Endpoint</th><th>Descricao</th></tr></thead>
+          <tbody>
+            <tr><td>GET</td><td><code>/api/conversations</code></td><td>Listar conversas (filtros: status, canal, busca)</td></tr>
+            <tr><td>PATCH</td><td><code>/api/conversations/:id/tags</code></td><td>Atualizar tags da conversa</td></tr>
+            <tr><td>PATCH</td><td><code>/api/conversations/:id/assign</code></td><td>Atribuir atendente</td></tr>
+            <tr><td>DELETE</td><td><code>/api/conversations/:id</code></td><td>Excluir conversa</td></tr>
+            <tr><td>GET</td><td><code>/api/conversations/:id/messages</code></td><td>Listar mensagens de uma conversa</td></tr>
+            <tr><td>POST</td><td><code>/api/conversations/:id/messages</code></td><td>Enviar mensagem (texto/imagem/audio/doc)</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="cat-header">Agenda & Google Calendar</div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Metodo</th><th>Endpoint</th><th>Descricao</th></tr></thead>
+          <tbody>
+            <tr><td>GET/POST</td><td><code>/api/appointments</code></td><td>Listar / criar agendamentos</td></tr>
+            <tr><td>DELETE</td><td><code>/api/appointments/:id</code></td><td>Excluir agendamento</td></tr>
+            <tr><td>GET/POST</td><td><code>/api/disponibilidade</code></td><td>Regras de disponibilidade</td></tr>
+            <tr><td>GET</td><td><code>/api/disponibilidade/slots/:userId</code></td><td>Slots disponiveis por data/profissional</td></tr>
+            <tr><td>GET</td><td><code>/api/google-calendar/oauth/start</code></td><td>Iniciar OAuth global GCal</td></tr>
+            <tr><td>GET</td><td><code>/api/google-calendar/oauth/callback</code></td><td>Callback OAuth global</td></tr>
+            <tr><td>GET</td><td><code>/api/google-calendar/user/oauth/start</code></td><td>OAuth pessoal do usuario</td></tr>
+            <tr><td>GET</td><td><code>/api/google-calendar/user/oauth/callback</code></td><td>Callback OAuth pessoal</td></tr>
+            <tr><td>GET</td><td><code>/api/google-calendar/user/status</code></td><td>Status da conexao pessoal</td></tr>
+            <tr><td>DELETE</td><td><code>/api/google-calendar/user/disconnect</code></td><td>Desconectar GCal pessoal</td></tr>
+            <tr><td>POST</td><td><code>/api/google-calendar/sync</code></td><td>Sincronizar eventos</td></tr>
+            <tr><td>GET</td><td><code>/api/google-calendar/events</code></td><td>Listar eventos do calendario</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="cat-header">Automacoes</div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Metodo</th><th>Endpoint</th><th>Descricao</th></tr></thead>
+          <tbody>
+            <tr><td>GET</td><td><code>/api/automacoes</code></td><td>Listar automacoes</td></tr>
+            <tr><td>GET</td><td><code>/api/automacoes/stats</code></td><td>Estatisticas gerais</td></tr>
+            <tr><td>GET</td><td><code>/api/automacoes/:id</code></td><td>Detalhes de automacao</td></tr>
+            <tr><td>POST</td><td><code>/api/automacoes</code></td><td>Criar automacao</td></tr>
+            <tr><td>PUT</td><td><code>/api/automacoes/:id</code></td><td>Atualizar automacao (nodes JSON)</td></tr>
+            <tr><td>PATCH</td><td><code>/api/automacoes/:id/toggle</code></td><td>Ativar/desativar</td></tr>
+            <tr><td>POST</td><td><code>/api/automacoes/:id/duplicate</code></td><td>Duplicar automacao</td></tr>
+            <tr><td>POST</td><td><code>/api/automacoes/:id/execute</code></td><td>Executar manualmente</td></tr>
+            <tr><td>DELETE</td><td><code>/api/automacoes/:id</code></td><td>Excluir automacao</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="cat-header">Usuarios & Equipes</div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Metodo</th><th>Endpoint</th><th>Descricao</th></tr></thead>
+          <tbody>
+            <tr><td>GET</td><td><code>/api/usuarios</code></td><td>Listar usuarios do workspace</td></tr>
+            <tr><td>GET</td><td><code>/api/usuarios/:id</code></td><td>Detalhes do usuario</td></tr>
+            <tr><td>POST</td><td><code>/api/usuarios/invite</code></td><td>Convidar usuario por email</td></tr>
+            <tr><td>POST</td><td><code>/api/usuarios/aceitar-convite</code></td><td>Aceitar convite</td></tr>
+            <tr><td>PUT</td><td><code>/api/usuarios/:id</code></td><td>Atualizar usuario</td></tr>
+            <tr><td>PATCH</td><td><code>/api/usuarios/:id/status</code></td><td>Ativar/desativar</td></tr>
+            <tr><td>PATCH</td><td><code>/api/usuarios/:id/online</code></td><td>Toggle online</td></tr>
+            <tr><td>DELETE</td><td><code>/api/usuarios/:id</code></td><td>Remover usuario</td></tr>
+            <tr><td>GET/POST</td><td><code>/api/equipes</code></td><td>Listar / criar equipes</td></tr>
+            <tr><td>PUT</td><td><code>/api/equipes/:id</code></td><td>Atualizar equipe</td></tr>
+            <tr><td>POST</td><td><code>/api/equipes/:id/membros</code></td><td>Adicionar membro</td></tr>
+            <tr><td>DELETE</td><td><code>/api/equipes/:id/membros/:userId</code></td><td>Remover membro</td></tr>
+            <tr><td>DELETE</td><td><code>/api/equipes/:id</code></td><td>Excluir equipe</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="cat-header">Conexoes WhatsApp</div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Metodo</th><th>Endpoint</th><th>Descricao</th></tr></thead>
+          <tbody>
+            <tr><td>GET/POST</td><td><code>/api/conexoes</code></td><td>Listar / criar conexao</td></tr>
+            <tr><td>GET</td><td><code>/api/conexoes/:id/status</code></td><td>Status da conexao</td></tr>
+            <tr><td>GET</td><td><code>/api/conexoes/:id/qrcode</code></td><td>QR Code (Baileys)</td></tr>
+            <tr><td>POST</td><td><code>/api/conexoes/:id/disconnect</code></td><td>Desconectar</td></tr>
+            <tr><td>POST</td><td><code>/api/conexoes/:id/send</code></td><td>Enviar mensagem via conexao</td></tr>
+            <tr><td>PATCH</td><td><code>/api/conexoes/:id</code></td><td>Atualizar credenciais</td></tr>
+            <tr><td>DELETE</td><td><code>/api/conexoes/:id</code></td><td>Excluir conexao</td></tr>
+            <tr><td>POST</td><td><code>/api/conexoes/:id/configurar-webhook</code></td><td>Auto-configurar webhook Z-API</td></tr>
+            <tr><td>POST</td><td><code>/api/conexoes/:id/sync-contacts</code></td><td>Sync contatos WhatsApp</td></tr>
+            <tr><td>POST</td><td><code>/api/webhook/zapi</code></td><td>Webhook receptor Z-API</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="cat-header">Integracoes, Webhooks & Tokens</div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Metodo</th><th>Endpoint</th><th>Descricao</th></tr></thead>
+          <tbody>
+            <tr><td>GET/POST</td><td><code>/api/webhooks</code></td><td>CRUD webhooks</td></tr>
+            <tr><td>PUT/DELETE</td><td><code>/api/webhooks/:id</code></td><td>Atualizar / excluir webhook</td></tr>
+            <tr><td>POST</td><td><code>/api/webhooks/:id/testar</code></td><td>Testar webhook</td></tr>
+            <tr><td>GET/DELETE</td><td><code>/api/webhooks/:id/logs</code></td><td>Logs de webhook</td></tr>
+            <tr><td>GET/POST</td><td><code>/api/tokens</code></td><td>CRUD tokens API</td></tr>
+            <tr><td>DELETE</td><td><code>/api/tokens/:id</code></td><td>Revogar token</td></tr>
+            <tr><td>GET/POST</td><td><code>/api/integrations/config</code></td><td>Configuracoes de integracoes</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="cat-header">IA & Prompts</div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Metodo</th><th>Endpoint</th><th>Descricao</th></tr></thead>
+          <tbody>
+            <tr><td>GET/POST</td><td><code>/api/ia/prompts</code></td><td>CRUD prompts IA</td></tr>
+            <tr><td>GET</td><td><code>/api/ia/prompts/by-slug/:slug</code></td><td>Buscar prompt por slug</td></tr>
+            <tr><td>GET/PUT/DELETE</td><td><code>/api/ia/prompts/:id</code></td><td>Detalhes / atualizar / excluir</td></tr>
+            <tr><td>GET</td><td><code>/api/ia/prompts/:id/historico</code></td><td>Historico de versoes</td></tr>
+            <tr><td>POST</td><td><code>/api/ia/prompts/:id/restaurar/:versao</code></td><td>Restaurar versao anterior</td></tr>
+            <tr><td>POST</td><td><code>/api/ai/check-balance</code></td><td>Verificar saldo IA</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="cat-header">API Externa (N8n / Zapier)</div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Metodo</th><th>Endpoint</th><th>Auth</th><th>Descricao</th></tr></thead>
+          <tbody>
+            <tr><td>POST</td><td><code>/api/n8n/lead</code></td><td><span class="badge badge-token">Token</span></td><td>Criar lead via N8n</td></tr>
+            <tr><td>POST</td><td><code>/api/n8n/mensagem</code></td><td><span class="badge badge-token">Token</span></td><td>Enviar mensagem via N8n</td></tr>
+            <tr><td>POST</td><td><code>/api/n8n/lead/:id/mover</code></td><td><span class="badge badge-token">Token</span></td><td>Mover lead de estagio</td></tr>
+            <tr><td>PATCH</td><td><code>/api/n8n/lead/:id</code></td><td><span class="badge badge-token">Token</span></td><td>Atualizar lead via N8n</td></tr>
+            <tr><td>GET</td><td><code>/api/n8n/leads</code></td><td><span class="badge badge-token">Token</span></td><td>Listar leads via N8n</td></tr>
+            <tr><td>GET</td><td><code>/api/n8n/lead/:id</code></td><td><span class="badge badge-token">Token</span></td><td>Detalhes lead via N8n</td></tr>
+            <tr><td>GET/POST</td><td><code>/api/zapier/config</code></td><td><span class="badge badge-auth">JWT</span></td><td>Config Zapier</td></tr>
+            <tr><td>POST</td><td><code>/api/zapier/test</code></td><td><span class="badge badge-auth">JWT</span></td><td>Testar webhook Zapier</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="cat-header">Outros Endpoints</div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Metodo</th><th>Endpoint</th><th>Descricao</th></tr></thead>
+          <tbody>
+            <tr><td>GET/POST</td><td><code>/api/transactions</code></td><td>Transacoes financeiras</td></tr>
+            <tr><td>GET/POST</td><td><code>/api/campanhas</code></td><td>Campanhas em massa</td></tr>
+            <tr><td>PATCH/DELETE</td><td><code>/api/campanhas/:id</code></td><td>Atualizar / excluir campanha</td></tr>
+            <tr><td>GET/POST</td><td><code>/api/respostas-rapidas</code></td><td>Respostas rapidas</td></tr>
+            <tr><td>PATCH/DELETE</td><td><code>/api/respostas-rapidas/:id</code></td><td>Atualizar / excluir</td></tr>
+            <tr><td>GET/POST</td><td><code>/api/anotacoes</code></td><td>Anotacoes internas</td></tr>
+            <tr><td>PATCH/DELETE</td><td><code>/api/anotacoes/:id</code></td><td>Atualizar / excluir</td></tr>
+            <tr><td>GET</td><td><code>/api/notificacoes</code></td><td>Listar notificacoes</td></tr>
+            <tr><td>POST</td><td><code>/api/notificacoes/:id/read</code></td><td>Marcar como lida</td></tr>
+            <tr><td>POST</td><td><code>/api/notificacoes/read-all</code></td><td>Marcar todas como lidas</td></tr>
+            <tr><td>GET/POST</td><td><code>/api/disparos-programados</code></td><td>Disparos agendados</td></tr>
+            <tr><td>GET/POST</td><td><code>/api/billing/usage</code></td><td>Uso e limites do plano</td></tr>
+            <tr><td>GET</td><td><code>/api/planos</code></td><td>Listar planos</td></tr>
+            <tr><td>GET/POST</td><td><code>/api/workspaces</code></td><td>Listar / criar workspaces</td></tr>
+            <tr><td>GET/PUT</td><td><code>/api/permissoes</code></td><td>Permissoes por role</td></tr>
+            <tr><td>GET/POST</td><td><code>/api/mercadopago/*</code></td><td>Mercado Pago status e teste</td></tr>
+            <tr><td>POST</td><td><code>/api/upload</code></td><td>Upload de arquivos generico</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ===== 7. MOTOR DE AUTOMACAO ===== -->
+    <div class="section" id="automation">
+      <div class="section-title"><span class="icon">&#x26A1;</span> Motor de Automacao (25+ Nos)</div>
+      <p style="color:var(--text-muted); margin-bottom:16px; font-size:0.9rem;">
+        Motor de execucao real em <code>server/services/automationEngine.ts</code> (3.319 linhas).
+        Processa fluxos JSON com resolucao de variaveis <code>{{lead.nome}}</code>, <code>{{var.x}}</code>,
+        pausas, retomadas, fuzzy matching e integracao com IA.
+      </p>
+
+      <div class="cat-header">Basicos (9 nos)</div>
+      <div class="nodes-grid">
+        <div class="node-item"><div class="node-dot" style="background:#60a5fa"></div> <strong>trigger</strong> - Gatilho inicial</div>
+        <div class="node-item"><div class="node-dot" style="background:#818cf8"></div> <strong>send_message</strong> - Enviar mensagem</div>
+        <div class="node-item"><div class="node-dot" style="background:#6366f1"></div> <strong>send_image</strong> - Enviar imagem/PDF</div>
+        <div class="node-item"><div class="node-dot" style="background:#a78bfa"></div> <strong>delay</strong> - Aguardar (segundos)</div>
+        <div class="node-item"><div class="node-dot" style="background:#f59e0b"></div> <strong>condition</strong> - Condicao if/else</div>
+        <div class="node-item"><div class="node-dot" style="background:#10b981"></div> <strong>tag_lead</strong> - Marcar lead com tag</div>
+        <div class="node-item"><div class="node-dot" style="background:#ec4899"></div> <strong>assign_agent</strong> - Atribuir atendente</div>
+        <div class="node-item"><div class="node-dot" style="background:#14b8a6"></div> <strong>update_lead</strong> - Atualizar pipeline/estagio</div>
+        <div class="node-item"><div class="node-dot" style="background:#6b7280"></div> <strong>lista_opcoes</strong> - Menu de opcoes</div>
+        <div class="node-item"><div class="node-dot" style="background:#f87171"></div> <strong>end</strong> - Fim do fluxo</div>
+      </div>
+
+      <div class="cat-header">Avancados (8 nos)</div>
+      <div class="nodes-grid">
+        <div class="node-item"><div class="node-dot" style="background:#8b5cf6"></div> <strong>ai_response</strong> - Resposta IA (GPT/Gemini)</div>
+        <div class="node-item"><div class="node-dot" style="background:#f97316"></div> <strong>advanced_condition</strong> - Condicao AND/OR</div>
+        <div class="node-item"><div class="node-dot" style="background:#06b6d4"></div> <strong>split_ia</strong> - Classificacao IA por intencao</div>
+        <div class="node-item"><div class="node-dot" style="background:#22c55e"></div> <strong>set_variable</strong> - Definir variavel</div>
+        <div class="node-item"><div class="node-dot" style="background:#eab308"></div> <strong>wait_event</strong> - Esperar evento externo</div>
+        <div class="node-item"><div class="node-dot" style="background:#a855f7"></div> <strong>loop</strong> - Repetir com condicao</div>
+        <div class="node-item"><div class="node-dot" style="background:#ef4444"></div> <strong>alerta_interno</strong> - Alerta para usuarios</div>
+        <div class="node-item"><div class="node-dot" style="background:#64748b"></div> <strong>gerar_documento</strong> - Gerar doc HTML</div>
+      </div>
+
+      <div class="cat-header">Integracoes (6 nos)</div>
+      <div class="nodes-grid">
+        <div class="node-item"><div class="node-dot" style="background:#3b82f6"></div> <strong>webhook</strong> - Chamar URL externa</div>
+        <div class="node-item"><div class="node-dot" style="background:#ff4a00"></div> <strong>zapier_trigger</strong> - Disparar Zapier/Make</div>
+        <div class="node-item"><div class="node-dot" style="background:#00c853"></div> <strong>n8n_trigger</strong> - Disparar N8n</div>
+        <div class="node-item"><div class="node-dot" style="background:#635bff"></div> <strong>stripe_payment</strong> - Cobrar via Stripe</div>
+        <div class="node-item"><div class="node-dot" style="background:#4285f4"></div> <strong>google_calendar</strong> - Agendar no GCal</div>
+        <div class="node-item"><div class="node-dot" style="background:#00b2e3"></div> <strong>pagamento</strong> - Mercado Pago PIX</div>
+      </div>
+
+      <div style="margin-top:20px;">
+        <div class="card">
+          <h3>Funcionalidades do Motor</h3>
+          <ul class="features-list">
+            <li>Resolucao de variaveis: {{lead.nome}}, {{lead.telefone}}, {{var.minha_var}}, {{ctx.last_ai_response}}</li>
+            <li>Escopos de variavel: session (fluxo atual), lead (persistente no lead), global (workspace inteiro)</li>
+            <li>Pausa e retomada: lista_opcoes (fuzzy matching), wait_event (client_reply, payment, webhook, timeout)</li>
+            <li>Loop com max_attempts e condicao de parada</li>
+            <li>Split IA com categorias dinamicas e roteamento por branch</li>
+            <li>Alerta interno com fan-out para todos os usuarios</li>
+            <li>Limpeza final de {{placeholders}} nao resolvidos</li>
+            <li>Protecao contra loops (debounce, fromMe/fromApi filter)</li>
+            <li>AI Response com multimidia (imagem, audio, PDF via GPT-4o Vision + Whisper)</li>
+            <li>AI File Attachments e AI Webhooks</li>
+            <li>Upload de arquivos para send_image (imagens + PDF servidos estaticamente)</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 8. SERVICOS BACKEND ===== -->
+    <div class="section" id="services">
+      <div class="section-title"><span class="icon">&#x2699;</span> Servicos Backend</div>
+      <div class="cards-grid">
+        <div class="card">
+          <h3>automationEngine.ts</h3>
+          <div class="desc">Motor principal de automacao com 25+ handlers de nos, resolucao de variaveis, pausa/retomada e integracoes.</div>
+          <div class="lines">3.319 linhas</div>
+        </div>
+        <div class="card">
+          <h3>googleCalendar.ts</h3>
+          <div class="desc">Servico de integracao Google Calendar: OAuth, criacao de eventos, sincronizacao bidirecional, slots de disponibilidade.</div>
+        </div>
+        <div class="card">
+          <h3>whatsappWebJS.ts</h3>
+          <div class="desc">Servico Baileys (WhatsApp Web): conexao WebSocket nativa, geracao QR, envio de mensagens, auto-reconnect.</div>
+        </div>
+        <div class="card">
+          <h3>webhookDispatcher.ts</h3>
+          <div class="desc">Disparo de webhooks com retry, logging e validacao de respostas.</div>
+        </div>
+        <div class="card">
+          <h3>zapierWebhook.ts</h3>
+          <div class="desc">Integracao Zapier com envio de eventos e configuracao de URLs.</div>
+        </div>
+        <div class="card">
+          <h3>middleware/auth.ts</h3>
+          <div class="desc">Middleware JWT com requireAuth, requireAuthOrToken e requireApiToken para N8n/Zapier.</div>
+        </div>
+        <div class="card">
+          <h3>storage.ts (IStorage)</h3>
+          <div class="desc">Interface de storage com operacoes CRUD para todas as entidades. 1.150 linhas.</div>
+        </div>
+        <div class="card">
+          <h3>seed.ts</h3>
+          <div class="desc">Seed de dados iniciais: pipelines, estagios, tags, leads, conversas, appointments e permissoes.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 9. INTEGRACOES EXTERNAS ===== -->
+    <div class="section" id="integrations">
+      <div class="section-title"><span class="icon">&#x1F50C;</span> Integracoes Externas</div>
+      <div class="cards-grid">
+        <div class="card">
+          <h3>WhatsApp (Z-API)</h3>
+          <div class="desc">Integracao completa via Z-API com webhook receptor, envio de mensagens, status de conexao e configuracao automatica.</div>
+          <ul class="features-list">
+            <li>Envio: texto, imagem, audio, documento</li>
+            <li>Webhook receptor com filtros anti-loop</li>
+            <li>Status em tempo real</li>
+            <li>Multiplas instancias por workspace</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>WhatsApp (Baileys)</h3>
+          <div class="desc">Conexao direta via WebSocket sem Chrome. QR Code nativo, auto-reconnect, sessoes persistentes.</div>
+          <ul class="features-list">
+            <li>@whiskeysockets/baileys</li>
+            <li>QR Code gerado em base64 PNG</li>
+            <li>Sessoes em /tmp/baileys-sessions</li>
+            <li>Auto-reconnect em desconexao</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>OpenAI (GPT-4o)</h3>
+          <div class="desc">Via Replit AI Integrations. Usado no ai_response, split_ia, check-balance e processamento multimidia.</div>
+          <ul class="features-list">
+            <li>GPT-4o com Vision (imagens)</li>
+            <li>Whisper para transcricao de audio</li>
+            <li>Historico de conversa no contexto</li>
+            <li>AI File Attachments e AI Webhooks</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Google Gemini</h3>
+          <div class="desc">Provider alternativo de IA no ai_response. Suporte a texto e imagem com API nativa.</div>
+        </div>
+        <div class="card">
+          <h3>Google Calendar</h3>
+          <div class="desc">Sync bidirecional com OAuth. Modo global (workspace) e pessoal (por usuario). Slots de disponibilidade.</div>
+          <ul class="features-list">
+            <li>OAuth 2.0 com refresh token</li>
+            <li>Criar, editar, excluir eventos</li>
+            <li>Sync automatica</li>
+            <li>Disponibilidade por profissional</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Mercado Pago</h3>
+          <div class="desc">Geracao de links de pagamento PIX/checkout via Preferences API. Integrado no no "pagamento" do motor.</div>
+        </div>
+        <div class="card">
+          <h3>Stripe</h3>
+          <div class="desc">Processamento de pagamentos e assinaturas. Integrado no no "stripe_payment" do motor de automacao.</div>
+        </div>
+        <div class="card">
+          <h3>Zapier / Make</h3>
+          <div class="desc">Disparo de webhooks para Zapier com eventos customizados. Configuracao por workspace.</div>
+        </div>
+        <div class="card">
+          <h3>N8n</h3>
+          <div class="desc">API REST dedicada para N8n: criar leads, enviar mensagens, mover leads entre estagios. Auth via API Token.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 10. COMPONENTES UI ===== -->
+    <div class="section" id="components">
+      <div class="section-title"><span class="icon">&#x1F3A8;</span> Componentes UI (shadcn/ui)</div>
+      <p style="color:var(--text-muted); margin-bottom:16px; font-size:0.9rem;">
+        70+ componentes da biblioteca shadcn/ui adaptados ao tema violet/purple escuro do FlowCRM.
+      </p>
+      <div class="nodes-grid" style="grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));">
+        <div class="node-item">Accordion</div>
+        <div class="node-item">Alert / AlertDialog</div>
+        <div class="node-item">Avatar</div>
+        <div class="node-item">Badge</div>
+        <div class="node-item">Breadcrumb</div>
+        <div class="node-item">Button</div>
+        <div class="node-item">Calendar</div>
+        <div class="node-item">Card</div>
+        <div class="node-item">Carousel</div>
+        <div class="node-item">Chart</div>
+        <div class="node-item">Checkbox</div>
+        <div class="node-item">Collapsible</div>
+        <div class="node-item">Command</div>
+        <div class="node-item">Context Menu</div>
+        <div class="node-item">Dialog</div>
+        <div class="node-item">Drawer</div>
+        <div class="node-item">Dropdown Menu</div>
+        <div class="node-item">Form</div>
+        <div class="node-item">Hover Card</div>
+        <div class="node-item">Input / Input OTP</div>
+        <div class="node-item">Label</div>
+        <div class="node-item">Menubar</div>
+        <div class="node-item">Navigation Menu</div>
+        <div class="node-item">Pagination</div>
+        <div class="node-item">Popover</div>
+        <div class="node-item">Progress</div>
+        <div class="node-item">Radio Group</div>
+        <div class="node-item">Resizable</div>
+        <div class="node-item">Scroll Area</div>
+        <div class="node-item">Select</div>
+        <div class="node-item">Separator</div>
+        <div class="node-item">Sheet</div>
+        <div class="node-item">Sidebar</div>
+        <div class="node-item">Skeleton</div>
+        <div class="node-item">Slider</div>
+        <div class="node-item">Switch</div>
+        <div class="node-item">Table</div>
+        <div class="node-item">Tabs</div>
+        <div class="node-item">Textarea</div>
+        <div class="node-item">Toast / Toaster</div>
+        <div class="node-item">Toggle / Toggle Group</div>
+        <div class="node-item">Tooltip</div>
+      </div>
+
+      <div style="margin-top:16px;">
+        <div class="cat-header">Componentes Custom</div>
+        <div class="nodes-grid" style="grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));">
+          <div class="node-item">AppSidebar (navegacao principal)</div>
+          <div class="node-item">ProtectedRoute (guard JWT)</div>
+          <div class="node-item">ThemeProvider (dark/light)</div>
+          <div class="node-item">StatCard (KPI cards)</div>
+          <div class="node-item">BrandIcons (logos empresas)</div>
+          <div class="node-item">SidebarPalette (automacoes)</div>
+          <div class="node-item">CategorizedPickerPopup</div>
+          <div class="node-item">CategorizedInlineList</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 11. ESTRUTURA DE ARQUIVOS ===== -->
+    <div class="section" id="files">
+      <div class="section-title"><span class="icon">&#x1F4C1;</span> Estrutura de Arquivos</div>
+      <div class="arch-box">
+flowcrm/
+&#x251C;&#x2500;&#x2500; client/
+&#x2502;   &#x251C;&#x2500;&#x2500; src/
+&#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; pages/               (22 paginas)
+&#x2502;   &#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; landing.tsx        (691 linhas) - Landing page publica
+&#x2502;   &#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; login.tsx          (130 linhas) - Tela de login
+&#x2502;   &#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; register.tsx       (269 linhas) - Cadastro
+&#x2502;   &#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; dashboard.tsx      (621 linhas) - Dashboard principal
+&#x2502;   &#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; leads.tsx          (1.821 linhas) - CRM Pipeline
+&#x2502;   &#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; pipeline.tsx       (517 linhas) - Pipeline Kanban
+&#x2502;   &#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; contatos.tsx       (443 linhas) - Contatos
+&#x2502;   &#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; agenda.tsx         (648 linhas) - Agenda
+&#x2502;   &#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; inbox.tsx          (1.896 linhas) - Chat Omnichannel
+&#x2502;   &#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; gestao-conversas.tsx (67 linhas) - Hub gestao
+&#x2502;   &#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; campanhas.tsx      (833 linhas) - Campanhas massa
+&#x2502;   &#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; disparos-programados.tsx (479 linhas)
+&#x2502;   &#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; respostas-rapidas.tsx (667 linhas)
+&#x2502;   &#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; automacoes.tsx     (4.996 linhas) - Flow editor
+&#x2502;   &#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; financeiro.tsx     (300 linhas) - Financeiro
+&#x2502;   &#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; conexoes.tsx       (1.361 linhas) - WhatsApp
+&#x2502;   &#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; integracoes.tsx    (1.746 linhas) - Hub integracoes
+&#x2502;   &#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; configuracoes.tsx  (425 linhas) - Configuracoes
+&#x2502;   &#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; usuarios.tsx       (1.711 linhas) - Usuarios/equipe
+&#x2502;   &#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; perfil.tsx         (1.118 linhas) - Perfil pessoal
+&#x2502;   &#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; billing.tsx        (512 linhas) - Planos
+&#x2502;   &#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; workspace.tsx      (287 linhas) - Workspaces
+&#x2502;   &#x2502;   &#x2502;   &#x2514;&#x2500;&#x2500; not-found.tsx      (21 linhas) - 404
+&#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; components/
+&#x2502;   &#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; ui/               (42 componentes shadcn)
+&#x2502;   &#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; app-sidebar.tsx   - Sidebar principal
+&#x2502;   &#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; ProtectedRoute.tsx - Guard JWT
+&#x2502;   &#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; theme-provider.tsx - Dark/light mode
+&#x2502;   &#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; stat-card.tsx     - Cards de KPI
+&#x2502;   &#x2502;   &#x2502;   &#x2514;&#x2500;&#x2500; brand-icons.tsx   - Logos de empresas
+&#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; lib/
+&#x2502;   &#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; queryClient.ts    - TanStack Query config + apiRequest
+&#x2502;   &#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; prefetch.ts       - Route/data prefetching
+&#x2502;   &#x2502;   &#x2502;   &#x2514;&#x2500;&#x2500; utils.ts          - Utilidades (cn, etc.)
+&#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; services/
+&#x2502;   &#x2502;   &#x2502;   &#x2514;&#x2500;&#x2500; auth.ts           - authService (token, login, logout)
+&#x2502;   &#x2502;   &#x251C;&#x2500;&#x2500; hooks/
+&#x2502;   &#x2502;   &#x2502;   &#x2514;&#x2500;&#x2500; use-toast.ts      - Hook de toast
+&#x2502;   &#x2502;   &#x2514;&#x2500;&#x2500; App.tsx              - Router principal + layout
+&#x2502;   &#x2514;&#x2500;&#x2500; index.html
+&#x251C;&#x2500;&#x2500; server/
+&#x2502;   &#x251C;&#x2500;&#x2500; index.ts              - Entry point + scheduler
+&#x2502;   &#x251C;&#x2500;&#x2500; routes.ts             (3.830 linhas) - 120+ endpoints
+&#x2502;   &#x251C;&#x2500;&#x2500; storage.ts            (1.150 linhas) - IStorage interface
+&#x2502;   &#x251C;&#x2500;&#x2500; db.ts                 - Drizzle DB connection
+&#x2502;   &#x251C;&#x2500;&#x2500; seed.ts               - Seed de dados iniciais
+&#x2502;   &#x251C;&#x2500;&#x2500; vite.ts               - Vite dev server config
+&#x2502;   &#x251C;&#x2500;&#x2500; static.ts             - Servir arquivos estaticos
+&#x2502;   &#x251C;&#x2500;&#x2500; middleware/
+&#x2502;   &#x2502;   &#x2514;&#x2500;&#x2500; auth.ts           - JWT middleware
+&#x2502;   &#x2514;&#x2500;&#x2500; services/
+&#x2502;       &#x251C;&#x2500;&#x2500; automationEngine.ts  (3.319 linhas) - Motor de automacao
+&#x2502;       &#x251C;&#x2500;&#x2500; googleCalendar.ts    - Google Calendar service
+&#x2502;       &#x251C;&#x2500;&#x2500; whatsappWebJS.ts     - Baileys WhatsApp
+&#x2502;       &#x251C;&#x2500;&#x2500; webhookDispatcher.ts - Webhook dispatch
+&#x2502;       &#x2514;&#x2500;&#x2500; zapierWebhook.ts     - Zapier integration
+&#x251C;&#x2500;&#x2500; shared/
+&#x2502;   &#x251C;&#x2500;&#x2500; schema.ts             (687 linhas) - Drizzle schema + Zod
+&#x2502;   &#x2514;&#x2500;&#x2500; models/
+&#x2502;       &#x2514;&#x2500;&#x2500; chat.ts           - Chat models
+&#x251C;&#x2500;&#x2500; drizzle.config.ts
+&#x251C;&#x2500;&#x2500; vite.config.ts
+&#x251C;&#x2500;&#x2500; tailwind.config.ts
+&#x251C;&#x2500;&#x2500; tsconfig.json
+&#x2514;&#x2500;&#x2500; package.json</div>
+    </div>
+
+    <!-- ===== 12. AUTH & MULTI-TENANT ===== -->
+    <div class="section" id="auth">
+      <div class="section-title"><span class="icon">&#x1F512;</span> Autenticacao & Multi-Tenant</div>
+      <div class="cards-grid">
+        <div class="card">
+          <h3>Autenticacao JWT</h3>
+          <ul class="features-list">
+            <li>Login via POST /api/auth/login (email + senha)</li>
+            <li>Senha hasheada com crypto.scryptSync</li>
+            <li>JWT com jsonwebtoken (expira em 7 dias)</li>
+            <li>Token armazenado em localStorage</li>
+            <li>Bearer token em todos os requests</li>
+            <li>3 middlewares: requireAuth, requireAuthOrToken, requireApiToken</li>
+            <li>ProtectedRoute component no frontend</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Multi-Tenant (Workspaces)</h3>
+          <ul class="features-list">
+            <li>Tabela workspaces com UUID</li>
+            <li>Cada usuario pertence a um workspace</li>
+            <li>Todas as queries filtram por workspaceId</li>
+            <li>Isolamento completo de dados entre tenants</li>
+            <li>Convite de usuarios com token temporario</li>
+            <li>Permissoes granulares: admin, manager, agent</li>
+            <li>Registro cria workspace + usuario admin + seed</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 13. WEBSOCKET ===== -->
+    <div class="section" id="realtime">
+      <div class="section-title"><span class="icon">&#x1F4E1;</span> WebSocket & Tempo Real</div>
+      <div class="card" style="max-width: 700px;">
+        <h3>WebSocket Server (/ws)</h3>
+        <ul class="features-list">
+          <li>Servidor ws nativo na rota /ws</li>
+          <li>Autenticacao JWT no handshake</li>
+          <li>Broadcasting por workspace (isolamento multi-tenant)</li>
+          <li>Eventos: new_message, conversation_updated, lead_updated</li>
+          <li>Auto-connect/reconnect no cliente</li>
+          <li>Hook useWebSocket no frontend</li>
+          <li>Notificacoes em tempo real via polling (15s) + WebSocket</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div style="text-align:center; padding:40px 0; border-top:1px solid var(--border); margin-top:40px;">
+      <p style="color:var(--primary-light); font-weight:700; font-size:1.2rem;">FlowCRM PRO</p>
+      <p style="color:var(--text-muted); font-size:0.85rem; margin-top:4px;">
+        Plataforma CRM SaaS completa em Portugues<br>
+        Documentacao gerada automaticamente em 17/03/2026
+      </p>
+      <p style="color:var(--text-muted); font-size:0.75rem; margin-top:12px; opacity:0.5;">
+        Total: ~30.500 linhas de codigo | 22 paginas | 36 tabelas | 120+ endpoints | 25+ nos de automacao
+      </p>
+    </div>
+
+  </div>
+</body>
+</html>

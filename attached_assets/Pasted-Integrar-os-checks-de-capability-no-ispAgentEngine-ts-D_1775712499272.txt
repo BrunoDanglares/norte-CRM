@@ -1,0 +1,169 @@
+Integrar os checks de capability no ispAgentEngine.ts.
+Dois pontos de verificação: antes do dispatch do agente
+e antes de injetar o situationCode na IA.
+
+══ PASSO 1 — Imports ══
+
+No topo de server/services/ispAgentEngine.ts, adicione:
+
+  import {
+    isAgentEnabled,
+    isSituationEnabled,
+  } from '../tenantSettingsService';
+
+══ PASSO 2 — Check de agente antes do dispatch ══
+
+Localize o bloco de dispatch dos agentes (o switch/if-else
+que decide qual agente.handle() chamar baseado no fluxo_atual).
+
+Antes de chamar handleComGuard() para cada agente, envolva
+com o seguinte padrão:
+
+  const capabilities = businessRules.agent_capabilities;
+
+  // Para FINANCEIRO:
+  if (!isAgentEnabled(capabilities, 'FINANCEIRO')) {
+    const cap = capabilities?.FINANCEIRO;
+    if (cap?.escalate_to_human_if_disabled) {
+      sessionState.fluxo_atual = 'HUMANO';
+      sessionState.dados_coletados.motivo_humano =
+        'Setor financeiro indisponível — encaminhado para atendente';
+      return await humanoAgent.handle(input);
+    }
+    return {
+      message:
+        'No momento o setor financeiro não está disponível. ' +
+        'Entre em contato com nossa equipe pelo canal de atendimento.',
+    };
+  }
+
+  // Para SUPORTE_TECNICO:
+  if (!isAgentEnabled(capabilities, 'SUPORTE_TECNICO')) {
+    const cap = capabilities?.SUPORTE_TECNICO;
+    if (cap?.escalate_to_human_if_disabled) {
+      sessionState.fluxo_atual = 'HUMANO';
+      sessionState.dados_coletados.motivo_humano =
+        'Suporte técnico indisponível — encaminhado para atendente';
+      return await humanoAgent.handle(input);
+    }
+    return {
+      message:
+        'No momento o suporte técnico não está disponível. ' +
+        'Tente novamente mais tarde.',
+    };
+  }
+
+  // Para VENDAS:
+  if (!isAgentEnabled(capabilities, 'VENDAS')) {
+    return {
+      message:
+        'No momento não estamos realizando novos atendimentos comerciais. ' +
+        'Entre em contato pelo nosso site ou ligue para nossa central.',
+    };
+  }
+
+  // Para CANCELAMENTO:
+  if (!isAgentEnabled(capabilities, 'CANCELAMENTO')) {
+    const cap = capabilities?.CANCELAMENTO;
+    if (cap?.escalate_to_human_if_disabled) {
+      sessionState.fluxo_atual = 'HUMANO';
+      sessionState.dados_coletados.motivo_humano =
+        'Cancelamento solicitado — encaminhado para retenção humana';
+      return await humanoAgent.handle(input);
+    }
+  }
+
+══ PASSO 3 — Check de situação antes da IA ══
+
+Em server/services/n8nAiService.ts, na função gerarResposta,
+localize onde o situationCode é usado para buscar o template
+em isp_situation_prompts.
+
+Antes de injetar o context_template da situação, adicione:
+
+  if (situationCode && agentName) {
+    const capabilities = await getTenantCapabilities(workspaceId);
+    const agentKey = mapFluxoToCapabilityKey(agentName);
+
+    if (!isSituationEnabled(capabilities, agentKey, situationCode)) {
+      // Situação desativada: não injeta contexto específico
+      // mas continua com o prompt geral do agente
+      situationCode = undefined;
+      console.info(
+        `[Capabilities] Situação ${situationCode} desativada ` +
+        `para workspace ${workspaceId} — usando prompt geral`
+      );
+    }
+  }
+
+Implemente a função auxiliar mapFluxoToCapabilityKey:
+
+  function mapFluxoToCapabilityKey(fluxo: string): string {
+    const map: Record<string, string> = {
+      financeiro:      'FINANCEIRO',
+      suporte:         'SUPORTE_TECNICO',
+      comercial:       'VENDAS',
+      cancelamento:    'CANCELAMENTO',
+      financeiroAgent: 'FINANCEIRO',
+      suporteAgent:    'SUPORTE_TECNICO',
+      comercialAgent:  'VENDAS',
+    };
+    return map[fluxo] ?? fluxo.toUpperCase();
+  }
+
+E getTenantCapabilities:
+
+  async function getTenantCapabilities(
+    workspaceId: string
+  ): Promise<AgentCapabilities | undefined> {
+    const settings = await tenantSettingsService.getByWorkspace(workspaceId);
+    return settings?.businessRules?.agent_capabilities;
+  }
+
+══ PASSO 4 — Check no resolveIntent ══
+
+Em server/services/agents/priorityResolver.ts, atualize
+a função resolveIntent para aceitar capabilities:
+
+  export function resolveIntent(
+    vector: IntentVector,
+    tenantPriorities?: Record<string, number>,
+    capabilities?: AgentCapabilities
+  ): string {
+    const priorities = {
+      ...DEFAULT_PRIORITIES,
+      ...(tenantPriorities ?? {}),
+    };
+
+    const candidates = vector.intents
+      .filter(i => i.confidence >= 0.3)
+      .filter(i => {
+        // Excluir intents cujo agente está desativado
+        if (!capabilities) return true;
+        const key = i.intent as keyof AgentCapabilities;
+        const agentIntent = key === 'SUPORTE_TECNICO'
+          ? 'SUPORTE_TECNICO' : key;
+        return capabilities[agentIntent]?.enabled !== false;
+      })
+      .sort((a, b) => {
+        const pa = priorities[a.intent] ?? 99;
+        const pb = priorities[b.intent] ?? 99;
+        if (pa !== pb) return pa - pb;
+        return b.confidence - a.confidence;
+      });
+
+    // Se todos os candidatos foram filtrados,
+    // fallback para HUMANO (agente sempre disponível)
+    if (candidates.length === 0) return 'HUMANO';
+
+    return candidates[0]?.intent ?? vector.dominant;
+  }
+
+Atualize a chamada ao resolveIntent no ispAgentEngine.ts
+para passar capabilities:
+
+  const intentResolvido = resolveIntent(
+    intentVector,
+    tenantPriorities,
+    businessRules.agent_capabilities
+  );

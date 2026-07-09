@@ -1,0 +1,106 @@
+Criar página de métricas ISP e rotas de dados.
+Arquivos: server/routes/isp.ts + nova página no frontend.
+
+══ PASSO 1 — Rotas de métricas ══
+
+Em server/routes/isp.ts adicione:
+
+GET /api/isp/metrics/overview
+  Query params: days=7 (default), workspaceId (super_admin)
+  Retorna:
+
+  {
+    period: { start, end, days },
+    sessions: {
+      total: number,
+      resolved: number,
+      escalated: number,
+      resolution_rate: number
+    },
+    inputs: {
+      text: number,
+      button: number,
+      audio: number
+    },
+    guard: {
+      total_blocks: number,
+      total_redirects: number,
+      most_blocked_action: string
+    },
+    fluid_swaps: number,
+    top_situations: [
+      { code, name, agent, activations, escalations }
+    ] // top 10 por activations
+  }
+
+  SQL principal:
+    SELECT
+      COUNT(*) as total,
+      SUM(CASE WHEN resolved THEN 1 ELSE 0 END) as resolved,
+      SUM(CASE WHEN escalou_humano THEN 1 ELSE 0 END) as escalated,
+      SUM(guard_blocks) as guard_blocks,
+      SUM(guard_redirects) as guard_redirects,
+      SUM(fluid_swaps) as fluid_swaps
+    FROM isp_session_metrics
+    WHERE workspace_id = $1
+      AND created_at >= NOW() - ($2 || ' days')::interval
+
+GET /api/isp/metrics/situations
+  Query params: days=30, agent (filtro opcional)
+  Retorna array de isp_situation_stats agrupado por
+  situation_code, somando activations, escalations, guard_blocks.
+  Join com isp_situation_prompts para trazer situation_name.
+
+GET /api/isp/metrics/timeline
+  Query params: days=14
+  Retorna uma linha por dia com total de sessões,
+  escalações e fluid_swaps. Para o gráfico de linha.
+
+══ PASSO 2 — CRIAR client/src/pages/isp-metrics.tsx ══
+
+Página nova. Rota: /isp/metrics.
+Adicionar no menu de navegação do módulo ISP
+ao lado de /isp/prompts.
+
+Layout em 3 seções:
+
+─── Seção 1: Cards de overview (topo) ───
+
+4 cards lado a lado:
+┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
+│ Sessões      │ │ Resolvidas   │ │ Escaladas    │ │ Fluid swaps  │
+│ 142          │ │ 89%          │ │ 23           │ │ 47           │
+│ últimos 7d   │ │              │ │ humano       │ │ trocas setor │
+└──────────────┘ └──────────────┘ └──────────────┘ └──────────────┘
+
+Selector de período: [7d] [14d] [30d] — atualiza todos os dados.
+
+─── Seção 2: Situações mais ativadas ───
+
+Tabela com colunas:
+Código | Situação | Agente | Ativações | Escalações | Bloqueios Guard
+
+Ordenada por Ativações desc.
+Badge colorido por agente:
+  Financeiro = amber, Suporte = blue, Comercial = teal
+
+Linha com escalate_always = true: ícone de seta indicando
+"sempre escala" ao lado do nome da situação.
+
+─── Seção 3: Timeline de sessões ───
+
+Gráfico de linha simples (pode usar recharts se já usado
+no projeto, ou tabela de dados se não houver):
+- Linha azul: total de sessões por dia
+- Linha coral: escalações por dia
+- Linha cinza: fluid swaps por dia
+
+Período: últimos 14 dias.
+
+══ PASSO 3 — Adicionar no menu ISP ══
+
+No componente de navegação do módulo ISP,
+adicione item "Métricas" com ícone de gráfico
+apontando para /isp/metrics.
+
+Coloque entre "Prompts" e qualquer outro item existente.

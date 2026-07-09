@@ -1,0 +1,42 @@
+PROMPT 4 — Validação Final
+Faça a revisão e validação final do módulo de Usuários:
+
+1. FLUXO DE CONVITE — Teste e confirme:
+   [ ] POST /api/usuarios/invite cria usuário com status INVITED no banco
+   [ ] invite_token é gerado e salvo
+   [ ] invite_expires_at é 48h a partir de agora
+   [ ] POST /api/usuarios/aceitar-convite valida o token corretamente
+   [ ] Após aceitar, status muda para ACTIVE e token é limpo
+   [ ] JWT é retornado e o usuário já fica logado
+
+2. LIMITE DE PLANO — Implemente se não existir:
+   [ ] Ao convidar, verifique quantos usuários ACTIVE + INVITED existem
+   [ ] Compare com o limite do plano da conta (3, 6 ou 10)
+   [ ] Se atingiu o limite, retorne erro 403 com mensagem:
+       "Limite de usuários do plano atingido. Faça upgrade para continuar."
+   [ ] Na UI, o botão "Convidar" deve ficar desabilitado quando limite atingido
+   [ ] O indicador de uso deve mudar de cor (verde → amarelo → vermelho)
+
+3. CONGELAMENTO DE LEADS — Verifique:
+   [ ] Ao desativar usuário, leads com owner_id dele são marcados como congelados
+   [ ] Leads congelados não aparecem no Pipeline ativo
+   [ ] Leads congelados aparecem em uma aba "Congelados" ou com badge visual
+   [ ] Ao reativar, leads voltam ao estado normal
+
+4. STATUS ONLINE — Verifique:
+   [ ] PATCH /api/usuarios/:id/online atualiza o campo no banco
+   [ ] O indicador visual na lista reflete o status real
+   [ ] ultimo_acesso é atualizado quando online = true
+
+5. PERMISSÕES — Verifique:
+   [ ] Toggles da aba Permissões salvam corretamente via PUT /api/permissoes/:role
+   [ ] Admin sempre aparece com tudo habilitado e não editável
+   [ ] Mudanças em permissões são refletidas imediatamente na UI
+
+6. EDGE CASES:
+   [ ] Não permitir excluir o único admin da conta
+   [ ] Não permitir que um usuário mude seu próprio role
+   [ ] Token de convite expirado retorna erro claro na tela de aceite
+   [ ] Usuário sem foto mostra inicial do nome com cor gerada a partir do nome
+
+Relate cada item verificado e o que foi corrigido.

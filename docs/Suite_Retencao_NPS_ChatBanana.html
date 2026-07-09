@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Suíte Retenção & NPS Inteligente — ChatBanana</title>
+<style>
+  :root{
+    --ink:#16161d; --muted:#5b6472; --line:#e6e8ee;
+    --banana:#FFC107; --banana-d:#E0A200; --banana-t:#fff8e1; --banana-2:#ffdd57;
+    --green:#16a34a; --green-d:#0f7a37; --green-t:#ecfdf5;
+    --blue:#2563eb; --blue-d:#1e4fc2; --blue-t:#eff6ff;
+    --red:#e11d48; --red-d:#be123c; --red-t:#fff1f2;
+    --orange:#f97316; --orange-d:#b4530c; --orange-t:#fff7ed;
+    --purple:#7c3aed; --purple-d:#6d28d9; --purple-t:#f5f3ff;
+    /* dashboard escuro */
+    --dk:#0e1626; --dk2:#162033; --dk3:#1d2a42; --dkln:#27344e;
+    --dktx:#e8eef7; --dkmut:#8ea0bd;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    font-family:"Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif;
+    color:var(--ink); font-size:13px; line-height:1.55; background:#fff;
+    -webkit-print-color-adjust:exact; print-color-adjust:exact;
+  }
+  @page{ size:A4; margin:14mm 13mm; }
+  .page{ page-break-after:always; position:relative; }
+  .page:last-child{ page-break-after:auto; }
+  h1,h2,h3,h4{ line-height:1.2; margin:0 0 .4em; }
+  h2{ font-size:20px; color:var(--ink); border-bottom:3px solid var(--banana); padding-bottom:6px; margin-top:2px; display:flex; align-items:center;}
+  h2 .n{ color:#3a2c00; background:var(--banana); font-weight:800; border-radius:7px; padding:1px 9px; margin-right:10px; font-size:15px;}
+  h3{ font-size:15px; margin-top:16px; color:#222;}
+  p{ margin:.45em 0; }
+  small{ color:var(--muted); }
+  .lead{ font-size:14px; color:#33373f; }
+  .muted{ color:var(--muted); }
+  strong{ color:#0d0d12; }
+  table{ width:100%; border-collapse:collapse; margin:10px 0; font-size:12px; }
+  th,td{ text-align:left; padding:7px 9px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th{ background:#fafafa; color:#3a3f49; font-weight:700; font-size:11px; text-transform:uppercase; letter-spacing:.3px;}
+  tr:nth-child(even) td{ background:#fcfcfd; }
+  code{ background:#f3f4f6; padding:1px 5px; border-radius:4px; font-family:"Cascadia Code",Consolas,monospace; font-size:11.5px; color:#b1003e;}
+  .pill{ display:inline-block; padding:1px 8px; border-radius:20px; font-size:10.5px; font-weight:700; letter-spacing:.2px;}
+  .pill.sgp{ background:var(--blue-t); color:var(--blue); border:1px solid #c7dbff;}
+  .pill.radar{ background:var(--purple-t); color:var(--purple); border:1px solid #ddd0fb;}
+  .pill.crm{ background:var(--green-t); color:var(--green); border:1px solid #bbf0cf;}
+  .pill.ext{ background:var(--orange-t); color:var(--orange-d); border:1px solid #fed7aa;}
+  .grid2{ display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  .grid3{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; }
+  .grid4{ display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:10px; }
+  .card{ border:1px solid var(--line); border-radius:12px; padding:14px 16px; background:#fff; break-inside:avoid;}
+  .card.tint{ background:var(--banana-t); border-color:#f3e3a8;}
+  .card.green{ background:var(--green-t); border-color:#bbf0cf;}
+  .card.red{ background:var(--red-t); border-color:#fbcfd8;}
+  .card.blue{ background:var(--blue-t); border-color:#c7dbff;}
+  .card.purple{ background:var(--purple-t); border-color:#ddd0fb;}
+  .card.orange{ background:var(--orange-t); border-color:#fed7aa;}
+  .card h4{ font-size:13.5px; margin-bottom:4px;}
+  .callout{ border-left:4px solid var(--banana); background:var(--banana-t); padding:11px 15px; border-radius:0 10px 10px 0; margin:12px 0;}
+  .callout.green{ border-color:var(--green); background:var(--green-t);}
+  .callout.red{ border-color:var(--red); background:var(--red-t);}
+  .callout.blue{ border-color:var(--blue); background:var(--blue-t);}
+  .callout.purple{ border-color:var(--purple); background:var(--purple-t);}
+  .num{ display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px; border-radius:50%; background:var(--banana); color:#3a2c00; font-weight:800; font-size:13px; margin-right:8px;}
+  ul{ margin:.4em 0; padding-left:20px;} li{ margin:.2em 0;}
+  .kicker{ text-transform:uppercase; letter-spacing:2px; font-size:11px; font-weight:700; color:var(--banana-d);}
+  .svgwrap{ width:100%; margin:6px 0 2px;}
+  .legend{ display:flex; gap:16px; flex-wrap:wrap; font-size:11px; color:var(--muted); margin-top:4px;}
+  .legend span{ display:inline-flex; align-items:center; gap:5px;}
+  .sw{ width:11px;height:11px;border-radius:3px; display:inline-block;}
+  .stat{ font-size:26px; font-weight:800; line-height:1;}
+  .toc li{ margin:.3em 0; font-size:13px;}
+  .toc b{ color:var(--banana-d);}
+
+  /* mascote flutuante por seção */
+  .mascot-fab{ position:absolute; top:-4px; right:0; width:84px; opacity:.97; }
+  .mascot-sm{ width:64px; vertical-align:middle; }
+
+  /* COVER */
+  .cover{ height:262mm; display:flex; flex-direction:column; justify-content:center; position:relative; overflow:hidden;}
+  .cover .bg{ position:absolute; inset:0; background:
+     radial-gradient(900px 520px at 82% -8%, #fff0b0 0%, rgba(255,255,255,0) 58%),
+     radial-gradient(760px 520px at -12% 112%, #fef0bf 0%, rgba(255,255,255,0) 55%);}
+  .cover .inner{ position:relative; z-index:2;}
+  .cover .logo{ width:260px; margin-bottom:8px;}
+  .cover h1{ font-size:43px; margin:18px 0 8px; letter-spacing:-1px;}
+  .cover h1 .hl{ color:var(--banana-d);}
+  .cover .sub{ font-size:17px; color:#3a3f49; max-width:540px;}
+  .cover .tagchips{ margin-top:26px; display:flex; gap:8px; flex-wrap:wrap; max-width:560px;}
+  .chip{ background:#fff; border:1px solid var(--line); border-radius:30px; padding:6px 14px; font-size:12px; font-weight:600; box-shadow:0 1px 2px rgba(0,0,0,.03);}
+  .cover .meta{ margin-top:42px; font-size:12px; color:var(--muted);}
+  .cover .mascot-cover{ position:absolute; right:-10px; bottom:24px; width:300px; z-index:1; filter:drop-shadow(0 10px 22px rgba(180,140,0,.20));}
+  .rule{ height:6px; width:80px; background:var(--banana); border-radius:6px; margin:14px 0 18px;}
+
+  /* dashboard escuro (mockups BI) */
+  .dash{ background:var(--dk); border-radius:14px; padding:14px; color:var(--dktx); break-inside:avoid; box-shadow:inset 0 0 0 1px var(--dkln);}
+  .dash .dhead{ display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;}
+  .dash .dhead .ttl{ font-weight:800; font-size:13px; letter-spacing:.3px;}
+  .dash .dhead .upd{ font-size:10px; color:var(--dkmut);}
+  .kpis{ display:grid; gap:9px; }
+  .kpi{ background:var(--dk2); border:1px solid var(--dkln); border-radius:11px; padding:10px 12px;}
+  .kpi .lbl{ font-size:9.5px; text-transform:uppercase; letter-spacing:.6px; color:var(--dkmut);}
+  .kpi .val{ font-size:23px; font-weight:800; line-height:1.1; margin-top:3px;}
+  .kpi.crit{ box-shadow:inset 0 0 0 1px #7f1d1d; background:linear-gradient(180deg,#2a1115,#19121a);}
+  .kpi.crit .val{ color:#fb7185;}
+  .kpi.hi{ box-shadow:inset 0 0 0 1px #7c2d12;} .kpi.hi .val{ color:#fb923c;}
+  .kpi.md{ box-shadow:inset 0 0 0 1px #78350f;} .kpi.md .val{ color:#fbbf24;}
+  .kpi.lo{ box-shadow:inset 0 0 0 1px #14532d;} .kpi.lo .val{ color:#4ade80;}
+  .kpi.money .val{ color:#fb7185;}
+  .dtable{ width:100%; border-collapse:collapse; font-size:10.5px; color:var(--dktx); margin:0;}
+  .dtable th{ background:transparent; color:var(--dkmut); border-bottom:1px solid var(--dkln); text-transform:uppercase; font-size:8.5px; letter-spacing:.4px; padding:5px 6px; text-align:center;}
+  .dtable td{ border-bottom:1px solid #1c2740; padding:5px 6px; text-align:center; background:transparent;}
+  .dtable td.l{ text-align:left;}
+  .dtable tr:nth-child(even) td{ background:#121b2d;}
+  .ck{ color:#4ade80; font-weight:800;} .xk{ color:#3b4763;}
+  .rb{ display:inline-block; padding:1px 7px; border-radius:6px; font-size:9px; font-weight:800; letter-spacing:.3px;}
+  .rb.crit{ background:#7f1d1d; color:#fecaca;}
+  .rb.hi{ background:#9a3412; color:#fed7aa;}
+  .rb.md{ background:#854d0e; color:#fde68a;}
+  .rb.st-sus{ background:#3f1d2b; color:#fda4af;}
+  .rb.st-at{ background:#14352a; color:#86efac;}
+  .canc{ font-weight:800;} .canc.c50{ color:#fb7185;} .canc.c37{ color:#fbbf24;}
+  .barwrap{ background:#121b2d; border-radius:6px; height:13px; overflow:hidden; display:inline-block; width:100%;}
+  .footer-line{ margin-top:30px; text-align:center; color:#aab; font-size:11px; display:flex; align-items:center; justify-content:center; gap:8px;}
+  .footer-line img{ width:120px; opacity:.9;}
+</style>
+</head>
+<body>
+
+<!-- ============ COVER ============ -->
+<section class="page cover">
+  <div class="bg"></div>
+  <div class="inner">
+    <img class="logo" src="img/logo.png" alt="ChatBanana">
+    <div class="rule"></div>
+    <div class="kicker">Arquitetura de Produto · Provedores de Internet (ISP)</div>
+    <h1>Suíte <span class="hl">Retenção &amp; NPS</span><br>Inteligente</h1>
+    <div class="sub">A plataforma que <strong>prevê</strong> quem vai cancelar, <strong>resolve</strong> com o agente antes do churn e <strong>fideliza</strong> transformando cliente satisfeito em avaliação e indicação.</div>
+    <div class="tagchips">
+      <span class="chip">🩺 Health Score por cliente</span>
+      <span class="chip">📡 Radar de churn via SGP</span>
+      <span class="chip">🤖 Agente que resolve</span>
+      <span class="chip">📊 BI de cancelamento</span>
+      <span class="chip">⭐ Reputação &amp; indicações</span>
+    </div>
+    <div class="meta">Documento de arquitetura — desenho funcional definitivo · 20/06/2026 · v2</div>
+  </div>
+  <img class="mascot-cover" src="img/mascot-notebook.png" alt="">
+</section>
+
+<!-- ============ 00 — A IDEIA + ÍNDICE ============ -->
+<section class="page">
+  <h2><span class="n">00</span> A ideia em uma frase</h2>
+  <img class="mascot-fab" src="img/mascot-phone.png" alt="">
+  <div class="callout">
+    <strong>NPS não é a pergunta — é o gatilho.</strong> A nota, os sinais do ERP e a saúde da rede acendem um <strong>ciclo de recuperação</strong>: descobrir a causa real, acionar o agente certo, resolver, e voltar pra confirmar — convertendo o cliente em risco <em>antes</em> que ele vire churn, e o cliente feliz em <strong>avaliação no Google e indicação</strong>.
+  </div>
+
+  <div class="grid2">
+    <div class="card red">
+      <h4>❌ NPS comum (o que existe desligado hoje)</h4>
+      <p>Pergunta “de 0 a 10, quanto recomenda?”, guarda a nota, mostra a média. A nota baixa vira <strong>uma linha perdida no relatório</strong>. O cliente insatisfeito continua insatisfeito — e cancela. É <em>vaidade</em>, não retenção.</p>
+    </div>
+    <div class="card green">
+      <h4>✅ Suíte resolutiva (este projeto)</h4>
+      <p>Cada nota baixa e cada sinal de risco <strong>abre um caso</strong>. O sistema entende o motivo, o agente resolve (ou escala com contexto pronto) e mede se o cliente foi <strong>recuperado</strong>. Retenção vira <strong>máquina</strong> — e o promotor vira <strong>receita nova</strong>.</p>
+    </div>
+  </div>
+
+  <h3>O que você vai encontrar neste documento</h3>
+  <div class="grid2">
+    <ul class="toc">
+      <li><b>1.</b> Visão geral — o loop fechado de ponta a ponta</li>
+      <li><b>2.</b> As peças da suíte — o que cada uma faz</li>
+      <li><b>3.</b> O combustível: o que o ERP (SGP) entrega</li>
+      <li><b>4.</b> O Radar de Retenção — varredura e memória</li>
+      <li><b>5.</b> O Health Score — flags explicáveis</li>
+    </ul>
+    <ul class="toc">
+      <li><b>6.</b> Painel proativo — Health Score da base</li>
+      <li><b>7.</b> Painel retrospectivo — BI de cancelamento</li>
+      <li><b>8.</b> O loop de aprendizado (BI calibra o Radar)</li>
+      <li><b>9.</b> Módulos que blindam a base — Reputação, CSAT de técnico, Indicações</li>
+      <li><b>10.</b> Faseamento, pacotes &amp; especificações fechadas</li>
+    </ul>
+  </div>
+
+  <div class="callout blue">
+    <strong>Legenda de origem dos dados</strong> (usada no documento inteiro):<br>
+    <span class="pill sgp">SGP</span> lido direto do ERP &nbsp;·&nbsp;
+    <span class="pill radar">RADAR</span> calculado pela nossa camada de histórico &nbsp;·&nbsp;
+    <span class="pill crm">CRM</span> conversas, tags e NPS do ChatBanana &nbsp;·&nbsp;
+    <span class="pill ext">EXTERNO</span> Google &amp; reputação
+  </div>
+</section>
+
+<!-- ============ 1. FLUXO ============ -->
+<section class="page">
+  <h2><span class="n">01</span> Visão geral do fluxo</h2>
+  <p class="lead">Dois caminhos alimentam o mesmo motor: o cliente <strong>responde</strong> um NPS, <em>ou</em> o Radar <strong>detecta</strong> risco sozinho no ERP. Convergem no caso de recuperação — e o desfecho realimenta o painel.</p>
+
+  <div class="svgwrap">
+  <svg viewBox="0 0 1000 470" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI,sans-serif">
+    <defs>
+      <marker id="arr" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill="#9aa3b2"/></marker>
+      <marker id="arrG" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill="#16a34a"/></marker>
+    </defs>
+    <rect x="20" y="20" width="200" height="64" rx="11" fill="#fff8e1" stroke="#f3e3a8"/>
+    <text x="120" y="46" text-anchor="middle" font-size="14" font-weight="700">Atendimento resolvido</text>
+    <text x="120" y="66" text-anchor="middle" font-size="11" fill="#5b6472">CSAT na hora + NPS depois</text>
+
+    <rect x="20" y="110" width="200" height="64" rx="11" fill="#f5f3ff" stroke="#ddd0fb"/>
+    <text x="120" y="136" text-anchor="middle" font-size="14" font-weight="700">📡 Radar de Retenção</text>
+    <text x="120" y="156" text-anchor="middle" font-size="11" fill="#5b6472">varre o SGP e pontua risco</text>
+
+    <rect x="270" y="20" width="190" height="64" rx="11" fill="#fff" stroke="#e6e8ee"/>
+    <text x="365" y="42" text-anchor="middle" font-size="13" font-weight="700">Pergunta NPS</text>
+    <text x="365" y="60" text-anchor="middle" font-size="11" fill="#5b6472">nota 0–10 + “por quê?”</text>
+    <text x="365" y="76" text-anchor="middle" font-size="11" fill="#5b6472">Detrator · Neutro · Promotor</text>
+
+    <rect x="510" y="20" width="190" height="64" rx="11" fill="#fff" stroke="#e6e8ee"/>
+    <text x="605" y="46" text-anchor="middle" font-size="13" font-weight="700">Causa-raiz</text>
+    <text x="605" y="66" text-anchor="middle" font-size="11" fill="#5b6472">motivo ISP estruturado</text>
+
+    <rect x="510" y="110" width="190" height="64" rx="11" fill="#f5f3ff" stroke="#ddd0fb"/>
+    <text x="605" y="130" text-anchor="middle" font-size="13" font-weight="700">🩺 Health Score</text>
+    <text x="605" y="149" text-anchor="middle" font-size="11" fill="#5b6472">flags do ERP +</text>
+    <text x="605" y="164" text-anchor="middle" font-size="11" fill="#5b6472">comportamento</text>
+
+    <rect x="380" y="220" width="240" height="74" rx="13" fill="#16161d"/>
+    <text x="500" y="252" text-anchor="middle" font-size="15" font-weight="800" fill="#FFC107">CASO DE RECUPERAÇÃO</text>
+    <text x="500" y="274" text-anchor="middle" font-size="11.5" fill="#e8eaf0">fila com SLA · prioridade por MRR×risco</text>
+
+    <rect x="690" y="210" width="285" height="48" rx="11" fill="#ecfdf5" stroke="#bbf0cf"/>
+    <text x="832" y="231" text-anchor="middle" font-size="13" font-weight="700" fill="#0f7a37">🤖 Agente resolve (playbook)</text>
+    <text x="832" y="248" text-anchor="middle" font-size="10.5" fill="#0f7a37">2ª via · promessa · OS · oferta de retenção</text>
+
+    <rect x="690" y="266" width="285" height="40" rx="11" fill="#fff7ed" stroke="#fed7aa"/>
+    <text x="832" y="291" text-anchor="middle" font-size="12" font-weight="700" fill="#b4530c">⚠ Escala p/ humano com contexto pronto</text>
+
+    <rect x="380" y="345" width="240" height="58" rx="11" fill="#ecfdf5" stroke="#bbf0cf"/>
+    <text x="500" y="370" text-anchor="middle" font-size="13" font-weight="700" fill="#0f7a37">Fechamento do loop</text>
+    <text x="500" y="389" text-anchor="middle" font-size="11" fill="#0f7a37">re-pergunta → virou promotor?</text>
+
+    <rect x="40" y="345" width="290" height="58" rx="11" fill="#eff6ff" stroke="#c7dbff"/>
+    <text x="185" y="370" text-anchor="middle" font-size="13" font-weight="700" fill="#1e4fc2">📊 Painéis + ⭐ Reputação</text>
+    <text x="185" y="389" text-anchor="middle" font-size="11" fill="#1e4fc2">MRR em risco · recuperado · avaliações</text>
+
+    <line x1="220" y1="52" x2="268" y2="52" stroke="#9aa3b2" stroke-width="2" marker-end="url(#arr)"/>
+    <line x1="460" y1="52" x2="508" y2="52" stroke="#9aa3b2" stroke-width="2" marker-end="url(#arr)"/>
+    <line x1="220" y1="142" x2="508" y2="142" stroke="#9aa3b2" stroke-width="2" marker-end="url(#arr)"/>
+    <line x1="605" y1="84" x2="605" y2="108" stroke="#9aa3b2" stroke-width="2" marker-end="url(#arr)"/>
+    <path d="M605,174 C605,200 540,205 520,219" fill="none" stroke="#9aa3b2" stroke-width="2" marker-end="url(#arr)"/>
+    <path d="M620,257 C655,257 660,234 688,234" fill="none" stroke="#9aa3b2" stroke-width="2" marker-end="url(#arr)"/>
+    <path d="M832,258 L832,266" stroke="#9aa3b2" stroke-width="2" marker-end="url(#arr)"/>
+    <path d="M760,306 C740,335 640,360 622,372" fill="none" stroke="#16a34a" stroke-width="2" marker-end="url(#arrG)"/>
+    <path d="M500,403 C500,430 250,432 185,405" fill="none" stroke="#16a34a" stroke-width="2" stroke-dasharray="5,4" marker-end="url(#arrG)"/>
+    <text x="300" y="448" text-anchor="middle" font-size="10.5" fill="#16a34a" font-style="italic">loop fechado: o desfecho realimenta o painel e a próxima medição</text>
+    <line x1="380" y1="374" x2="332" y2="374" stroke="#9aa3b2" stroke-width="2" marker-end="url(#arr)"/>
+  </svg>
+  </div>
+  <div class="legend">
+    <span><i class="sw" style="background:#fff8e1;border:1px solid #f3e3a8"></i> Coleta / NPS</span>
+    <span><i class="sw" style="background:#f5f3ff;border:1px solid #ddd0fb"></i> Radar / Score</span>
+    <span><i class="sw" style="background:#ecfdf5;border:1px solid #bbf0cf"></i> Resolução</span>
+    <span><i class="sw" style="background:#eff6ff;border:1px solid #c7dbff"></i> Análise</span>
+    <span><i class="sw" style="background:#16161d"></i> Caso de recuperação</span>
+  </div>
+
+  <div class="callout green">
+    <strong>A diferença que importa:</strong> hoje o provedor descobre o cliente em risco <em>quando ele liga pra cancelar</em>. Com o Radar + Health Score, ele aparece <strong>semanas antes</strong> — e o agente já age.
+  </div>
+</section>
+
+<!-- ============ 2. PEÇAS ============ -->
+<section class="page">
+  <h2><span class="n">02</span> As peças da suíte</h2>
+  <p class="lead">O <strong>núcleo</strong> prevê e resolve. A <strong>expansão</strong> blinda a base e gera receita. As peças que tocam o agente seguem a regra de ouro: <em>agente propõe, humano aprova o sensível</em>.</p>
+
+  <h3>Núcleo — prever &amp; resolver</h3>
+  <div class="grid3">
+    <div class="card tint">
+      <h4><span class="num">1</span>Coleta</h4>
+      <p>CSAT logo após o atendimento (“resolveu?”) + NPS relacional a cada ~90 dias. <strong>Anti-fadiga duro:</strong> não pergunta se a conversa reabriu, se há protocolo aberto, se está em cobrança crítica ou se respondeu há pouco.</p>
+    </div>
+    <div class="card">
+      <h4><span class="num">2</span>Causa-raiz</h4>
+      <p>A resposta do detrator vira <strong>motivo estruturado</strong> (lentidão, queda, wi-fi, visita, cobrança, preço/concorrente, mudança de endereço…). Botão/numerado, nunca texto livre obrigatório, cruzado com tags e ERP.</p>
+    </div>
+    <div class="card purple">
+      <h4><span class="num">3</span>Health Score</h4>
+      <p>Roda <strong>continuamente</strong>, com ou sem NPS. Soma <strong>flags explicáveis</strong> do ERP e do comportamento num número 0–100. Cada cliente mostra <em>por que</em> está em risco. Seção 5.</p>
+    </div>
+    <div class="card">
+      <h4><span class="num">4</span>Caso de recuperação</h4>
+      <p>Nota baixa / risco crítico <strong>vira tarefa</strong>, não linha de relatório. Fila: <em>Críticos · Aguardando cliente · Em tratativa · Recuperados · Perdidos</em>. Reusa o motor de protocolo do time.</p>
+    </div>
+    <div class="card green">
+      <h4><span class="num">5</span>Agente resolutivo</h4>
+      <p>Playbook por motivo. Lentidão → triagem ONU + OS. Preço → oferta de retenção. Cobrança → 2ª via/contestação. Depois de tratar, <strong>re-pergunta</strong> pra medir recuperação.</p>
+    </div>
+    <div class="card blue">
+      <h4><span class="num">6</span>Painéis</h4>
+      <p>Dois: o <strong>proativo</strong> (Health Score da base, quem está em risco agora) e o <strong>retrospectivo</strong> (BI de quem já cancelou e por quê). Seções 6 e 7.</p>
+    </div>
+  </div>
+
+  <h3>Expansão — blindar &amp; crescer na própria base</h3>
+  <div class="grid3">
+    <div class="card orange">
+      <h4><span class="num">7</span>Reputação</h4>
+      <p>Promotor é empurrado pro <strong>Google</strong>; detrator é resolvido <strong>antes</strong> de reclamar publicamente. Painel de avaliações com <strong>benchmark de concorrentes</strong>. Seção 9.</p>
+    </div>
+    <div class="card orange">
+      <h4><span class="num">8</span>CSAT de pós-visita</h4>
+      <p>Ao fechar uma OS no SGP, dispara pesquisa que avalia <strong>a visita e o técnico</strong> (conduta, resolutividade). Gera <strong>scorecard por técnico</strong>. Seção 9.</p>
+    </div>
+    <div class="card orange">
+      <h4><span class="num">9</span>Indique &amp; Ganhe</h4>
+      <p>O promotor recebe link de indicação com landing e controle de etapas. Retenção vira <strong>aquisição</strong> a custo quase zero. Seção 9.</p>
+    </div>
+  </div>
+
+  <div class="callout">
+    <strong>Princípio herdado do agente ISP:</strong> determinismo antes de IA, intenção do cliente é soberana, e <strong>nada que toca o fluxo do agente é mexido sem aprovação prévia</strong>.
+  </div>
+</section>
+
+<!-- ============ 3. SGP ============ -->
+<section class="page">
+  <h2><span class="n">03</span> O combustível: o que o SGP entrega</h2>
+  <p class="lead">Verificado direto no código do adapter. <span class="pill sgp">SGP</span> Estes sinais já são lidos e normalizados hoje — são a matéria-prima do Health Score.</p>
+
+  <table>
+    <thead><tr><th>Sinal</th><th>Campo no SGP</th><th>O que prevê de churn</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Status do contrato</strong></td><td>status + motivo</td><td>suspenso/cortado = risco imediato</td></tr>
+      <tr><td><strong>MRR do cliente</strong></td><td>valorMensal</td><td>quanto você perde se ele sair (impacto)</td></tr>
+      <tr><td><strong>Dívida em aberto</strong></td><td>valorAberto + nº de faturas</td><td>tamanho do problema financeiro</td></tr>
+      <tr><td><strong>Atraso</strong></td><td>diasAtraso por título</td><td>inadimplência escalonada (5/15/30+)</td></tr>
+      <tr><td><strong>Promessas quebradas</strong></td><td>promessasPagamentoMes</td><td>promete e não paga = sinal forte</td></tr>
+      <tr><td><strong>Fidelidade + multa</strong></td><td>fidelidade (início/fim/multa)</td><td><em>janela de fuga</em>: fidelidade acabando = pode sair sem multa</td></tr>
+      <tr><td><strong>Tempo de casa</strong></td><td>clienteSince</td><td>cliente novo (&lt;6m) tem churn precoce</td></tr>
+      <tr><td><strong>Qualidade do sinal</strong></td><td>rx / rxQuality, online</td><td>risco técnico real, medido na ONU</td></tr>
+      <tr><td><strong>Ordens de serviço</strong></td><td>OS / chamados</td><td>reincidência técnica = principal preditor</td></tr>
+      <tr><td><strong>Elemento de rede + endereço</strong></td><td>olt, modelo, bairro, rua, UF</td><td>agrupar por região = sinal de infra/concorrente</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout blue">
+    <strong>🃏 O trunfo — varredura da base inteira.</strong> O SGP expõe 3 consultas em massa: <code>getAllCustomers</code> (toda a base), <code>getOverdueCustomers</code> (inadimplentes prontos) e <code>getInvoicesDueSoon</code> (quem vence em X dias). <strong>Consequência:</strong> dá pra pontuar o risco de <em>toda</em> a base proativamente — sem o cliente nunca responder NPS. O ERP é o motor; o NPS é o tempero.
+  </div>
+
+  <h3>E o que o SGP <u>não</u> te dá — por isso existe o Radar</h3>
+  <p>Os preditores mais fortes de churn são <strong>históricos</strong>, e o SGP só dá a <strong>foto do agora</strong>:</p>
+  <table>
+    <thead><tr><th>Falta no SGP</th><th>Por que importa</th><th>Como suprimos <span class="pill radar">RADAR</span></th></tr></thead>
+    <tbody>
+      <tr><td>Histórico de quedas</td><td>melhor preditor técnico</td><td>fotografamos o sinal da ONU periodicamente</td></tr>
+      <tr><td>Reincidência de OS (nº em 90d)</td><td>problema que não resolve = churn</td><td>rastreamos OS e protocolos do nosso lado</td></tr>
+      <tr><td>Eventos de cancelamento</td><td>calcular churn % real</td><td>diferença entre as fotos (ativo→cancelado)</td></tr>
+      <tr><td>Tendência (dívida subindo)</td><td>risco que cresce</td><td>comparar foto de hoje vs ontem</td></tr>
+    </tbody>
+  </table>
+  <p class="muted">Resumo: o SGP é excelente em <em>“como o cliente está agora”</em> e fraco em <em>“como ele vem ficando”</em>. Essa memória é a peça nova — o Radar.</p>
+</section>
+
+<!-- ============ 4. RADAR ============ -->
+<section class="page">
+  <h2><span class="n">04</span> O Radar de Retenção</h2>
+  <img class="mascot-fab" src="img/mascot-notebook.png" alt="">
+  <p class="lead">Um trabalho agendado que dá <strong>memória</strong> ao sistema. É infra pura — <strong>não toca o agente</strong>. Roda em horário de baixa, cacheia o SGP (que é lento) e alimenta os dois painéis.</p>
+
+  <div class="svgwrap">
+  <svg viewBox="0 0 1000 290" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI,sans-serif">
+    <defs><marker id="arr2" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill="#7c3aed"/></marker></defs>
+    <rect x="20" y="95" width="170" height="100" rx="12" fill="#eff6ff" stroke="#c7dbff"/>
+    <text x="105" y="124" text-anchor="middle" font-size="13" font-weight="800" fill="#1e4fc2">SGP (ERP)</text>
+    <text x="105" y="146" text-anchor="middle" font-size="10.5" fill="#1e4fc2">getAllCustomers</text>
+    <text x="105" y="162" text-anchor="middle" font-size="10.5" fill="#1e4fc2">getOverdueCustomers</text>
+    <text x="105" y="178" text-anchor="middle" font-size="10.5" fill="#1e4fc2">getConnectionDiag</text>
+
+    <rect x="250" y="95" width="170" height="100" rx="12" fill="#f5f3ff" stroke="#ddd0fb"/>
+    <text x="335" y="130" text-anchor="middle" font-size="13" font-weight="800" fill="#7c3aed">1 · Varredura</text>
+    <text x="335" y="152" text-anchor="middle" font-size="10.5" fill="#7c3aed">incremental por fatias,</text>
+    <text x="335" y="168" text-anchor="middle" font-size="10.5" fill="#7c3aed">noturna, com throttle</text>
+
+    <rect x="480" y="95" width="170" height="100" rx="12" fill="#f5f3ff" stroke="#ddd0fb"/>
+    <text x="565" y="124" text-anchor="middle" font-size="13" font-weight="800" fill="#7c3aed">2 · Foto diária</text>
+    <text x="565" y="146" text-anchor="middle" font-size="10.5" fill="#7c3aed">snapshot por contrato</text>
+    <text x="565" y="162" text-anchor="middle" font-size="10.5" fill="#7c3aed">(status, dívida, sinal,</text>
+    <text x="565" y="178" text-anchor="middle" font-size="10.5" fill="#7c3aed">fidelidade, OS, OLT)</text>
+
+    <rect x="710" y="50" width="170" height="80" rx="12" fill="#f5f3ff" stroke="#ddd0fb"/>
+    <text x="795" y="84" text-anchor="middle" font-size="13" font-weight="800" fill="#7c3aed">3 · Compara</text>
+    <text x="795" y="106" text-anchor="middle" font-size="10.5" fill="#7c3aed">hoje vs ontem →</text>
+    <text x="795" y="121" text-anchor="middle" font-size="10.5" fill="#7c3aed">eventos &amp; tendência</text>
+
+    <rect x="710" y="160" width="170" height="80" rx="12" fill="#16161d"/>
+    <text x="795" y="194" text-anchor="middle" font-size="13" font-weight="800" fill="#FFC107">4 · Score + fila</text>
+    <text x="795" y="216" text-anchor="middle" font-size="10.5" fill="#e8eaf0">críticos → caso de</text>
+    <text x="795" y="231" text-anchor="middle" font-size="10.5" fill="#e8eaf0">recuperação</text>
+
+    <line x1="190" y1="145" x2="248" y2="145" stroke="#7c3aed" stroke-width="2" marker-end="url(#arr2)"/>
+    <line x1="420" y1="145" x2="478" y2="145" stroke="#7c3aed" stroke-width="2" marker-end="url(#arr2)"/>
+    <path d="M650,130 C680,115 685,100 708,95" fill="none" stroke="#7c3aed" stroke-width="2" marker-end="url(#arr2)"/>
+    <path d="M650,160 C680,180 685,195 708,198" fill="none" stroke="#7c3aed" stroke-width="2" marker-end="url(#arr2)"/>
+    <path d="M795,130 L795,158" stroke="#7c3aed" stroke-width="2" marker-end="url(#arr2)"/>
+  </svg>
+  </div>
+
+  <div class="grid3">
+    <div class="card"><h4>🌙 Leve no ERP</h4><p>Varredura noturna incremental + cache. O SGP tem timeout de 15s e throttle interno — nunca consultamos a base toda ao vivo. O painel lê da foto, não do ERP.</p></div>
+    <div class="card"><h4>🧠 Dá memória</h4><p>Cada foto vira histórico. É o que destrava “caiu de novo”, “dívida subindo” e “cancelou” — o que o SGP sozinho não conta.</p></div>
+    <div class="card"><h4>🎯 Proativo</h4><p>Pontua a base inteira sem depender de pesquisa. O cliente em risco aparece <strong>antes</strong> de pedir cancelamento.</p></div>
+  </div>
+
+  <div class="callout purple">
+    <strong>Arquitetura definida:</strong> varredura <strong>incremental por fatias</strong> (não a base toda de uma vez), priorizando primeiro <strong>inadimplentes, fidelidades vencendo e sinal crítico</strong> — a fatia que concentra o risco. Escala de poucos milhares a dezenas de milhares de assinantes sem sobrecarregar o SGP. Atualização do snapshot <strong>1×/dia</strong> (mais frequente para a fatia de alto risco).
+  </div>
+</section>
+
+<!-- ============ 5. HEALTH SCORE ============ -->
+<section class="page">
+  <h2><span class="n">05</span> O Health Score — flags explicáveis</h2>
+  <p class="lead">Um número de <strong>0 a 100</strong> por cliente (<strong>100 = saudável e fiel</strong>). O risco é o inverso. Não é caixa-preta: o score nasce de <strong>flags visíveis</strong> — sempre dá pra dizer <em>por que</em> aquele cliente está em risco.</p>
+
+  <div class="grid2">
+    <div class="card blue">
+      <h4>Sinais objetivos <span class="pill sgp" style="float:right">SGP via Radar</span></h4>
+      <table style="margin:4px 0">
+        <tr><td>🔴 Suspenso / cortado</td><td style="text-align:right"><strong>peso máx</strong></td></tr>
+        <tr><td>🔴 Inadimplente (5/15/30+ dias)</td><td style="text-align:right">escalonado</td></tr>
+        <tr><td>🔴 2+ promessas quebradas no mês</td><td style="text-align:right">alto</td></tr>
+        <tr><td>🟠 Dívida / nº de faturas crescendo</td><td style="text-align:right">cresce</td></tr>
+        <tr><td>🔴 Sinal ONU crítico / offline agora</td><td style="text-align:right">alto</td></tr>
+        <tr><td>🟠 2+ OS em 90 dias / OS pendente</td><td style="text-align:right">alto</td></tr>
+        <tr><td>🟠 Fidelidade acabando ≤60d</td><td style="text-align:right">alto</td></tr>
+        <tr><td>🟡 Tempo de casa &lt; 6 meses</td><td style="text-align:right">médio</td></tr>
+      </table>
+    </div>
+    <div class="card green">
+      <h4>Sinais comportamentais <span class="pill crm" style="float:right">CRM</span></h4>
+      <table style="margin:4px 0">
+        <tr><td>🔴 Pediu cancelamento (tag C6)</td><td style="text-align:right">alto</td></tr>
+        <tr><td>🔴 Mencionou concorrente / “vou cancelar”</td><td style="text-align:right">alto</td></tr>
+        <tr><td>🟠 2+ atendimentos no período</td><td style="text-align:right">médio</td></tr>
+        <tr><td>🟠 NPS detrator / CSAT baixo</td><td style="text-align:right">médio</td></tr>
+        <tr><td>🔴 Reincidência do mesmo motivo técnico</td><td style="text-align:right">alto</td></tr>
+        <tr><td>🟠 Avaliação pública negativa</td><td style="text-align:right">médio</td></tr>
+      </table>
+      <p style="margin-top:6px"><small>O bloco comportamental só existe quando há interação. O objetivo garante que <strong>ninguém em risco passa despercebido</strong> — mesmo o cliente calado.</small></p>
+      <p style="margin-top:6px"><small><strong>Modificador de impacto:</strong> MRR alto multiplica a prioridade — perder um plano top dói mais.</small></p>
+    </div>
+  </div>
+
+  <h3>As 4 faixas — e a ação de cada uma</h3>
+  <div class="svgwrap">
+  <svg viewBox="0 0 1000 92" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI,sans-serif">
+    <rect x="734" y="20" width="246" height="34" rx="7" fill="#ecfdf5" stroke="#bbf0cf"/>
+    <rect x="496" y="20" width="230" height="34" rx="7" fill="#fff7ed" stroke="#fed7aa"/>
+    <rect x="258" y="20" width="230" height="34" rx="7" fill="#fff1f2" stroke="#fbcfd8"/>
+    <rect x="20"  y="20" width="230" height="34" rx="7" fill="#16161d"/>
+    <text x="135" y="42" text-anchor="middle" font-size="12.5" font-weight="800" fill="#FFC107">0–25 · Crítico → abre caso</text>
+    <text x="373" y="42" text-anchor="middle" font-size="12.5" font-weight="700" fill="#be123c">26–50 · Alto risco</text>
+    <text x="611" y="42" text-anchor="middle" font-size="12.5" font-weight="700" fill="#b4530c">51–75 · Atenção</text>
+    <text x="857" y="42" text-anchor="middle" font-size="12.5" font-weight="700" fill="#0f7a37">76–100 · Saudável</text>
+    <text x="135" y="78" text-anchor="middle" font-size="11" fill="#5b6472">ação imediata + SLA</text>
+    <text x="373" y="78" text-anchor="middle" font-size="11" fill="#5b6472">contato proativo do agente</text>
+    <text x="611" y="78" text-anchor="middle" font-size="11" fill="#5b6472">campanha / observação</text>
+    <text x="857" y="78" text-anchor="middle" font-size="11" fill="#5b6472">empurra p/ avaliação + indicação</text>
+  </svg>
+  </div>
+  <p class="muted" style="text-align:center;margin-top:2px"><small>(escala em Health Score — quanto menor, pior; o cliente <strong>saudável</strong> também é acionado: vira promotor)</small></p>
+
+  <div class="callout">
+    <strong>Exemplo real ISP:</strong> NPS 3/10 + 2 promessas quebradas + sinal crítico na ONU + 2 OS em 90 dias + fidelidade vencendo em 40 dias + plano top = <strong>Health Score 12 → Crítico</strong>. Esse cliente não vira linha no relatório — vira ligação <em>hoje</em>, com todas as flags na tela do atendente.
+  </div>
+</section>
+
+<!-- ============ 6. PAINEL PROATIVO ============ -->
+<section class="page" id="p6">
+  <h2><span class="n">06</span> Painel proativo — Health Score da base</h2>
+  <p class="lead">A pergunta que ele responde: <strong>“quem está em risco AGORA, e por quê?”</strong> O time abre, vê a fila priorizada e cada flag acesa de cada cliente.</p>
+
+  <div class="dash">
+    <div class="dhead"><span class="ttl">🩺 Health Score — Clientes</span><span class="upd">Atualizado às 18:10 · via Radar</span></div>
+    <div class="kpis grid4">
+      <div class="kpi"><div class="lbl">Total no radar</div><div class="val">1.487</div></div>
+      <div class="kpi crit"><div class="lbl">Crítico · abre caso</div><div class="val">5</div></div>
+      <div class="kpi hi"><div class="lbl">Alto risco</div><div class="val">38</div></div>
+      <div class="kpi md"><div class="lbl">Atenção</div><div class="val">187</div></div>
+    </div>
+    <table class="dtable" style="margin-top:11px">
+      <thead><tr>
+        <th class="l">Contrato</th><th class="l">Cliente</th><th>Status</th><th>Risco</th>
+        <th>2+ OS</th><th>OS pend.</th><th>2+ atend.</th><th>Inadimp.</th><th>Susp.</th><th>Offline</th><th>Health</th>
+      </tr></thead>
+      <tbody>
+        <tr><td class="l">19938</td><td class="l">M. Almeida</td><td><span class="rb st-sus">Suspenso</span></td><td><span class="rb crit">Crítico</span></td><td class="ck">✓</td><td class="xk">✕</td><td class="ck">✓</td><td class="ck">✓</td><td class="ck">✓</td><td class="ck">✓</td><td><span class="canc c50">11</span></td></tr>
+        <tr><td class="l">17243</td><td class="l">R. Santos</td><td><span class="rb st-at">Ativo</span></td><td><span class="rb crit">Crítico</span></td><td class="ck">✓</td><td class="ck">✓</td><td class="ck">✓</td><td class="ck">✓</td><td class="xk">✕</td><td class="xk">✕</td><td><span class="canc c50">18</span></td></tr>
+        <tr><td class="l">13521</td><td class="l">P. Costa</td><td><span class="rb st-sus">Suspenso</span></td><td><span class="rb hi">Alto</span></td><td class="xk">✕</td><td class="xk">✕</td><td class="ck">✓</td><td class="ck">✓</td><td class="ck">✓</td><td class="ck">✓</td><td><span class="canc c37">34</span></td></tr>
+        <tr><td class="l">11899</td><td class="l">L. Ferreira</td><td><span class="rb st-sus">Suspenso</span></td><td><span class="rb hi">Alto</span></td><td class="ck">✓</td><td class="xk">✕</td><td class="xk">✕</td><td class="ck">✓</td><td class="ck">✓</td><td class="xk">✕</td><td><span class="canc c37">41</span></td></tr>
+        <tr><td class="l">20176</td><td class="l">C. Oliveira</td><td><span class="rb st-sus">Suspenso</span></td><td><span class="rb md">Atenção</span></td><td class="xk">✕</td><td class="xk">✕</td><td class="xk">✕</td><td class="ck">✓</td><td class="ck">✓</td><td class="ck">✓</td><td><span class="canc c37">58</span></td></tr>
+        <tr><td class="l">15362</td><td class="l">A. Lima</td><td><span class="rb st-at">Ativo</span></td><td><span class="rb md">Atenção</span></td><td class="ck">✓</td><td class="ck">✓</td><td class="xk">✕</td><td class="xk">✕</td><td class="xk">✕</td><td class="xk">✕</td><td><span class="canc c37">62</span></td></tr>
+      </tbody>
+    </table>
+    <div style="text-align:center;margin-top:6px;color:#5f6f8c;font-size:9.5px">— ilustração do painel (dados fictícios) · ordenado por risco × MRR —</div>
+  </div>
+
+  <div class="grid2" style="margin-top:12px">
+    <div class="card purple"><h4>Por que flags em vez de “score mágico”</h4><p>O dono do provedor não confia num número que não entende. Aqui ele lê: <em>“esse cliente está crítico porque tem 2+ OS, está inadimplente, suspenso e offline.”</em> <strong>Transparente, auditável e acionável.</strong></p></div>
+    <div class="card green"><h4>Daqui o agente já age</h4><p>Cada linha tem o botão de <strong>abrir caso</strong> e o <strong>resumo pronto</strong> pro agente: o que houve, o que o ERP diz, o que oferecer. O painel não só mostra — ele <strong>despacha</strong>.</p></div>
+  </div>
+</section>
+
+<!-- ============ 7. PAINEL RETROSPECTIVO (BI) ============ -->
+<section class="page" id="p7">
+  <h2><span class="n">07</span> Painel retrospectivo — BI de cancelamento</h2>
+  <p class="lead">A pergunta que ele responde: <strong>“quem JÁ cancelou, quanto custou e por quê?”</strong> É o post-mortem que vira aprendizado — e a manchete em <strong>dinheiro</strong>.</p>
+
+  <div class="dash">
+    <div class="dhead"><span class="ttl">📉 Dashboard Churn — BI Provedor</span><span class="upd">Este mês até agora</span></div>
+    <div class="kpis grid4" style="grid-template-columns:repeat(5,1fr)">
+      <div class="kpi crit"><div class="lbl">Cancelados</div><div class="val">205</div></div>
+      <div class="kpi"><div class="lbl">Média / dia</div><div class="val">12</div></div>
+      <div class="kpi md"><div class="lbl">Projeção do mês</div><div class="val">374</div></div>
+      <div class="kpi money"><div class="lbl">MRR perdido (deflator)</div><div class="val">R$ 20,4k</div></div>
+      <div class="kpi hi"><div class="lbl">Tinham OS em 90d</div><div class="val">67%</div></div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1.15fr 1fr;gap:12px;margin-top:12px">
+      <div>
+        <div style="font-size:10px;color:var(--dkmut);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Cancelamento por motivo</div>
+        <svg viewBox="0 0 360 168" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI,sans-serif">
+          <g font-size="10.5" fill="#cdd8ea">
+          <text x="0" y="20">Inadimplência</text><rect x="135" y="10" width="200" height="13" rx="3" fill="#ef4444"/><text x="340" y="20" fill="#94a3b8">37%</text>
+          <text x="0" y="44">Mudança de endereço</text><rect x="135" y="34" width="84" height="13" rx="3" fill="#f97316"/><text x="225" y="44" fill="#94a3b8">16%</text>
+          <text x="0" y="68">Mudança de titularidade</text><rect x="135" y="58" width="74" height="13" rx="3" fill="#f97316"/><text x="215" y="68" fill="#94a3b8">14%</text>
+          <text x="0" y="92">Concorrência</text><rect x="135" y="82" width="37" height="13" rx="3" fill="#fbbf24"/><text x="178" y="92" fill="#94a3b8">7%</text>
+          <text x="0" y="116">Insatisfação</text><rect x="135" y="106" width="32" height="13" rx="3" fill="#fbbf24"/><text x="173" y="116" fill="#94a3b8">6%</text>
+          <text x="0" y="140">Demora na execução</text><rect x="135" y="130" width="16" height="13" rx="3" fill="#a3a635"/><text x="157" y="140" fill="#94a3b8">3%</text>
+          </g>
+        </svg>
+      </div>
+      <div>
+        <div style="font-size:10px;color:var(--dkmut);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Churn rate % — 12 meses</div>
+        <svg viewBox="0 0 360 168" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI,sans-serif">
+          <line x1="20" y1="140" x2="350" y2="140" stroke="#27344e"/>
+          <line x1="20" y1="95" x2="350" y2="95" stroke="#1c2740"/>
+          <line x1="20" y1="50" x2="350" y2="50" stroke="#1c2740"/>
+          <polyline fill="none" stroke="#fb7185" stroke-width="2.2"
+            points="20,130 50,118 80,112 110,82 140,120 170,128 200,96 230,108 260,84 290,116 320,138 350,124"/>
+          <g fill="#fb7185">
+            <circle cx="20" cy="130" r="2.4"/><circle cx="50" cy="118" r="2.4"/><circle cx="80" cy="112" r="2.4"/>
+            <circle cx="110" cy="82" r="2.4"/><circle cx="140" cy="120" r="2.4"/><circle cx="170" cy="128" r="2.4"/>
+            <circle cx="200" cy="96" r="2.4"/><circle cx="230" cy="108" r="2.4"/><circle cx="260" cy="84" r="2.4"/>
+            <circle cx="290" cy="116" r="2.4"/><circle cx="320" cy="138" r="2.4"/><circle cx="350" cy="124" r="2.4"/>
+          </g>
+          <text x="110" y="74" font-size="9.5" fill="#fda4af" text-anchor="middle">pico 1,69%</text>
+          <text x="20" y="158" font-size="8.5" fill="#5f6f8c">jul</text>
+          <text x="350" y="158" font-size="8.5" fill="#5f6f8c" text-anchor="end">jun</text>
+        </svg>
+      </div>
+    </div>
+    <div style="text-align:center;margin-top:6px;color:#5f6f8c;font-size:9.5px">— ilustração do painel (dados fictícios) —</div>
+  </div>
+
+  <h3>Os recortes que viram ação</h3>
+  <div class="grid3">
+    <div class="card red"><h4>💸 Deflator (MRR perdido)</h4><p>Soma do <code>valorMensal</code> de quem cancelou — total e <strong>por plano</strong>. A manchete deixa de ser “205 cancelados” e vira <strong>“R$ 20.489 saíram do caixa este mês”</strong>.</p></div>
+    <div class="card orange"><h4>🔧 67% tinham OS em 90 dias</h4><p>A prova viva do elo <strong>problema técnico → cancelamento</strong>. Justifica o Radar inteiro e diz onde mexer: resolver OS de verdade é reter.</p></div>
+    <div class="card blue"><h4>📍 Churn por rua recorrente</h4><p>Rua/bairro com cancelamento repetido = <strong>concorrente passando fibra</strong> ali ou infra crônica. Aciona defesa da região e oferta segmentada antes de perder o quarteirão.</p></div>
+  </div>
+  <p class="muted" style="margin-top:8px">Outros recortes do BI: <strong>dias ativos</strong> e <strong>valor pago (LTV)</strong> de cada cancelado (perder um cliente de 6 anos dói diferente), churn por <strong>cidade/bairro/plano</strong>, e a <strong>projeção</strong> do mês pelo ritmo atual.</p>
+</section>
+
+<!-- ============ 8. LOOP DE APRENDIZADO ============ -->
+<section class="page">
+  <h2><span class="n">08</span> O loop de aprendizado</h2>
+  <p class="lead">É o que separa “dois dashboards bonitos” de <strong>um sistema que fica mais inteligente sozinho</strong>. O painel retrospectivo <strong>calibra</strong> o preditivo.</p>
+
+  <div class="svgwrap">
+  <svg viewBox="0 0 1000 250" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI,sans-serif">
+    <defs><marker id="arr3" markerWidth="10" markerHeight="10" refX="7" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#E0A200"/></marker></defs>
+
+    <rect x="40" y="90" width="210" height="78" rx="13" fill="#f5f3ff" stroke="#ddd0fb"/>
+    <text x="145" y="122" text-anchor="middle" font-size="14" font-weight="800" fill="#7c3aed">🩺 Health Score</text>
+    <text x="145" y="143" text-anchor="middle" font-size="11" fill="#7c3aed">prevê quem vai sair</text>
+
+    <rect x="395" y="90" width="210" height="78" rx="13" fill="#fff1f2" stroke="#fbcfd8"/>
+    <text x="500" y="122" text-anchor="middle" font-size="14" font-weight="800" fill="#be123c">📉 BI de Churn</text>
+    <text x="500" y="143" text-anchor="middle" font-size="11" fill="#be123c">vê quem REALMENTE saiu</text>
+
+    <rect x="750" y="90" width="210" height="78" rx="13" fill="#ecfdf5" stroke="#bbf0cf"/>
+    <text x="855" y="118" text-anchor="middle" font-size="14" font-weight="800" fill="#0f7a37">⚙ Calibragem</text>
+    <text x="855" y="138" text-anchor="middle" font-size="11" fill="#0f7a37">ajusta pesos das flags</text>
+    <text x="855" y="154" text-anchor="middle" font-size="11" fill="#0f7a37">que mais antecederam churn</text>
+
+    <line x1="250" y1="129" x2="393" y2="129" stroke="#E0A200" stroke-width="2.4" marker-end="url(#arr3)"/>
+    <line x1="605" y1="129" x2="748" y2="129" stroke="#E0A200" stroke-width="2.4" marker-end="url(#arr3)"/>
+    <path d="M855,168 C855,215 145,215 145,170" fill="none" stroke="#E0A200" stroke-width="2.4" stroke-dasharray="6,5" marker-end="url(#arr3)"/>
+    <text x="500" y="238" text-anchor="middle" font-size="11.5" fill="#E0A200" font-style="italic" font-weight="600">a cada ciclo, o Radar fica mais preciso — aprende com cada cancelamento real</text>
+  </svg>
+  </div>
+
+  <div class="grid2">
+    <div class="card"><h4>Como funciona na prática</h4><p>O BI mostra que <strong>67% dos cancelados tinham OS recente</strong>. Logo, a flag “2+ OS em 90d” merece <strong>peso maior</strong> no Health Score. O sistema (ou você) ajusta — e o próximo cliente com esse padrão sobe no radar <em>antes</em>.</p></div>
+    <div class="card tint"><h4>Por que isso é o fosso</h4><p>Concorrente entrega <strong>o diagnóstico</strong>. Nós entregamos diagnóstico que <strong>aprende</strong> com o resultado <em>e</em> um agente que <strong>age</strong> no diagnóstico. Painel sem braço resolutivo é painel bonito; aqui o painel fecha o ciclo.</p></div>
+  </div>
+
+  <div class="callout green">
+    <strong>Resultado:</strong> em poucos meses o Health Score de cada provedor reflete <em>o padrão de churn daquela base específica</em> — não uma fórmula genérica de mercado. Retenção sob medida.
+  </div>
+</section>
+
+<!-- ============ 9. MÓDULOS COMPLEMENTARES ============ -->
+<section class="page">
+  <h2><span class="n">09</span> Módulos que blindam a base</h2>
+  <img class="mascot-fab" src="img/mascot.png" alt="">
+  <p class="lead">Três módulos que fecham a experiência do cliente — transformando retenção em <strong>reputação</strong> e <strong>receita nova</strong>.</p>
+
+  <div class="card orange">
+    <h4>⭐ Reputação — interceptar antes da reclamação pública</h4>
+    <div class="grid2" style="gap:14px;margin-top:6px">
+      <div>
+        <p>A jogada de ouro do loop: <strong>promotor → empurra pro Google</strong>; <strong>detrator → resolve antes</strong> dele postar publicamente. Painel de avaliações com nota média, volume e <strong>benchmark contra concorrentes da praça</strong>.</p>
+        <p><small><strong>Por que importa pro ISP:</strong> 56% pesquisam no Google antes de contratar. Avaliação alta = aquisição mais barata. Avaliação ruim interceptada = churn e dano de marca evitados.</small></p>
+      </div>
+      <div>
+        <table style="margin:0">
+          <tr><td>Coleta de avaliação</td><td><span class="pill crm">CRM</span> promotor do NPS</td></tr>
+          <tr><td>Convite ao Google</td><td><span class="pill ext">EXTERNO</span> Google</td></tr>
+          <tr><td>Monitorar nota/volume</td><td><span class="pill ext">EXTERNO</span></td></tr>
+          <tr><td>Interceptar detrator</td><td><span class="pill crm">CRM</span> Recovery Loop</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="card orange" style="margin-top:12px">
+    <h4>🛠️ CSAT de pós-visita — a nota do técnico</h4>
+    <div class="grid2" style="gap:14px;margin-top:6px">
+      <div>
+        <p>Quando uma <strong>OS fecha no SGP</strong>, dispara automaticamente a pesquisa: <em>“o serviço foi resolvido? que nota pra visita?”</em>. Avalia <strong>conduta, resolutividade e a experiência da visita</strong> — não a empresa em geral.</p>
+        <p><small><strong>Entrega um scorecard por técnico</strong>: quem resolve na primeira, quem gera retorno, quem tem nota baixa recorrente. Qualidade de campo vira métrica — e qualidade de campo é o que segura a base (lembre dos 67% com OS).</small></p>
+      </div>
+      <div>
+        <table style="margin:0">
+          <tr><td>Gatilho</td><td><span class="pill sgp">SGP</span> fechamento de OS</td></tr>
+          <tr><td>Pesquisa</td><td><span class="pill crm">CRM</span> reusa o CSAT</td></tr>
+          <tr><td>Scorecard técnico</td><td><span class="pill crm">CRM</span><span class="pill radar">RADAR</span></td></tr>
+          <tr><td>Nota baixa</td><td>→ caso de recuperação</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="card orange" style="margin-top:12px">
+    <h4>🎁 Indique &amp; Ganhe — o promotor vira aquisição</h4>
+    <div class="grid2" style="gap:14px;margin-top:6px">
+      <div>
+        <p>O cliente <strong>saudável e promotor</strong> recebe um link de indicação com <strong>landing própria</strong> e controle de cada etapa (indicou → contratou → recompensa liberada). O custo de aquisição despenca: quem indica é quem já ama o serviço.</p>
+        <p><small>Fecha o lado positivo do loop: o Radar não serve só pra apagar incêndio — ele identifica <strong>quem promover</strong>, e esse vira o canal de crescimento mais barato do provedor.</small></p>
+      </div>
+      <div>
+        <table style="margin:0">
+          <tr><td>Quem indica</td><td><span class="pill radar">RADAR</span> faixa saudável</td></tr>
+          <tr><td>Link + landing</td><td><span class="pill crm">CRM</span></td></tr>
+          <tr><td>Controle de etapas</td><td><span class="pill crm">CRM</span></td></tr>
+          <tr><td>Recompensa</td><td><span class="pill sgp">SGP</span> confirma contrato</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 10. FASES + PACOTES + SPECS ============ -->
+<section class="page">
+  <h2><span class="n">10</span> Faseamento, pacotes &amp; especificações</h2>
+  <p class="lead">Do seguro ao profundo. As Fases 1 e 2 não tocam o agente (infra/UI). A Fase 3 é a resolutiva — entra com a regra <em>agente propõe, humano aprova</em>.</p>
+
+  <div class="svgwrap">
+  <svg viewBox="0 0 1000 120" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI,sans-serif">
+    <line x1="40" y1="60" x2="960" y2="60" stroke="#e6e8ee" stroke-width="3"/>
+    <circle cx="180" cy="60" r="13" fill="#FFC107"/><text x="180" y="65" text-anchor="middle" font-size="12" font-weight="800" fill="#3a2c00">1</text>
+    <circle cx="500" cy="60" r="13" fill="#2563eb"/><text x="500" y="65" text-anchor="middle" font-size="12" font-weight="800" fill="#fff">2</text>
+    <circle cx="820" cy="60" r="13" fill="#16a34a"/><text x="820" y="65" text-anchor="middle" font-size="12" font-weight="800" fill="#fff">3</text>
+    <text x="180" y="32" text-anchor="middle" font-size="12.5" font-weight="700">Sensor confiável</text>
+    <text x="180" y="92" text-anchor="middle" font-size="10.5" fill="#5b6472">CSAT+NPS, motivo, fila,</text>
+    <text x="180" y="106" text-anchor="middle" font-size="10.5" fill="#5b6472">painel inicial, reputação</text>
+    <text x="500" y="32" text-anchor="middle" font-size="12.5" font-weight="700">Inteligência</text>
+    <text x="500" y="92" text-anchor="middle" font-size="10.5" fill="#5b6472">Radar, Health Score, BI,</text>
+    <text x="500" y="106" text-anchor="middle" font-size="10.5" fill="#5b6472">loop de aprendizado</text>
+    <text x="820" y="32" text-anchor="middle" font-size="12.5" font-weight="700">Resolutivo</text>
+    <text x="820" y="92" text-anchor="middle" font-size="10.5" fill="#5b6472">agente + playbooks,</text>
+    <text x="820" y="106" text-anchor="middle" font-size="10.5" fill="#5b6472">fechamento do loop, indicações</text>
+  </svg>
+  </div>
+
+  <table>
+    <thead><tr><th>Pacote</th><th>Entrega</th><th>Toca o agente?</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Essencial</strong></td><td>CSAT + NPS confiável, motivo estruturado, fila de retenção, alerta de detrator, convite ao Google para promotores, painel inicial</td><td>Não</td></tr>
+      <tr><td><strong>Retenção Pro</strong></td><td>Radar + Health Score (flags), painel proativo, BI de churn (deflator/projeção/geo), loop de aprendizado, fidelidades vencendo, CSAT de pós-visita</td><td>Não</td></tr>
+      <tr><td><strong>Retenção Autônoma</strong></td><td>Agente com playbooks + ações controladas, fechamento do loop, MRR recuperado, churn real, Indique &amp; Ganhe</td><td><strong>Sim</strong></td></tr>
+    </tbody>
+  </table>
+
+  <h3>Especificações fechadas (decisões tomadas)</h3>
+  <div class="grid2">
+    <div class="card">
+      <table style="margin:0">
+        <tr><td><strong>Escala do NPS</strong></td><td>0–10 clássico (comparável com o mercado)</td></tr>
+        <tr><td><strong>Gatilhos</strong></td><td>transacional (pós-atendimento) <em>e</em> relacional (~90 dias)</td></tr>
+        <tr><td><strong>Health Score</strong></td><td>0–100 por flags explicáveis, 4 faixas</td></tr>
+        <tr><td><strong>Caso de recuperação</strong></td><td>reusa o motor de protocolo existente</td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <table style="margin:0">
+        <tr><td><strong>Radar</strong></td><td>varredura incremental por fatias, 1×/dia</td></tr>
+        <tr><td><strong>Prioridade da varredura</strong></td><td>inadimplentes + fidelidade + sinal crítico primeiro</td></tr>
+        <tr><td><strong>Histórico de sinal</strong></td><td>sim — snapshot periódico da ONU</td></tr>
+        <tr><td><strong>Loop do agente</strong></td><td>resolve o que der + humano aprova o sensível</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="callout">
+    <strong>Posicionamento:</strong> <em>“O ChatBanana não só mede satisfação. Ele prevê quem vai cancelar, entende se o problema é técnico, financeiro ou comercial, aciona o agente certo, acompanha até recuperar — e transforma o cliente feliz em avaliação no Google e indicação.”</em>
+  </div>
+
+  <div class="footer-line">
+    <img src="img/logo.png" alt="ChatBanana"> · Suíte Retenção &amp; NPS Inteligente · desenho funcional definitivo v2 · 20/06/2026
+  </div>
+</section>
+
+</body>
+</html>

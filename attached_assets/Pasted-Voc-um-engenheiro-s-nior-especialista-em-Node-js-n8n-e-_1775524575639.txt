@@ -1,0 +1,146 @@
+Você é um engenheiro sênior especialista em Node.js, n8n e integrações HTTP.
+
+CONTEXTO:
+Existe um node no n8n responsável por enviar a mensagem de transferência para atendimento humano.
+
+O payload atual já está FUNCIONANDO em produção:
+
+{
+conversation_id,
+message,
+humanize: false
+}
+
+IMPORTANTE:
+
+* NÃO pode haver breaking changes
+* NÃO pode remover campos existentes
+* NÃO pode alterar nomes atuais
+* NÃO pode mudar comportamento atual
+* Apenas EXTENDER com melhorias
+
+---
+
+OBJETIVO:
+
+Garantir que a mensagem de transferência:
+
+* nunca falhe
+* nunca seja enviada vazia
+* seja rastreável
+* esteja pronta para escala
+
+---
+
+IMPLEMENTAÇÕES OBRIGATÓRIAS:
+
+1. PROTEÇÃO CONTRA MENSAGEM VAZIA (CRÍTICO)
+
+Validar:
+
+* message nunca pode ser null, undefined ou vazio
+* Se for inválido → usar fallback:
+
+"Vou te transferir para um atendente humano agora, só um momento 😊"
+
+---
+
+2. NORMALIZAÇÃO DE TIPO
+
+Garantir:
+
+* message sempre seja string
+* Se não for → converter ou fallback
+
+---
+
+3. VARIÁVEL INTERNA
+
+Criar:
+
+const mensagem = ...
+
+E validar antes de enviar
+
+---
+
+4. IDENTIFICAÇÃO DO TIPO DE MENSAGEM
+
+Adicionar:
+
+tipo: "handoff"
+origem: "sistema"
+
+---
+
+5. METADADOS (IMPORTANTE PARA LOG)
+
+Adicionar:
+
+meta: {
+motivo: $json.meta?.motivo ?? null,
+prioridade: $json.meta?.prioridade ?? "normal",
+timestamp: new Date().toISOString()
+}
+
+---
+
+6. COMPATIBILIDADE TOTAL
+
+Garantir:
+
+* Nenhuma chave atual seja alterada
+* Backend funcione mesmo ignorando novos campos
+* Nenhuma dependência externa
+
+---
+
+7. CÓDIGO DEFENSIVO
+
+Garantir:
+
+* null safety
+* fallback seguro
+* nenhuma exceção
+
+---
+
+8. ESTRUTURA FINAL
+
+O payload final deve ser equivalente a:
+
+{
+conversation_id,
+message,
+humanize: false,
+
+tipo: "handoff",
+origem: "sistema",
+
+meta: {
+motivo,
+prioridade,
+timestamp
+}
+}
+
+---
+
+IMPORTANTE:
+
+Se houver dúvida:
+
+* NÃO simplificar
+* NÃO remover código existente
+* NÃO refatorar estrutura
+
+Apenas EXTENDER com segurança
+
+---
+
+RESULTADO ESPERADO:
+
+* nunca enviar mensagem vazia
+* garantir transição suave
+* permitir rastreabilidade
+* base pronta para fila inteligente

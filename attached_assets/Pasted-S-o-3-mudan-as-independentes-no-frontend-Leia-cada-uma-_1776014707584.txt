@@ -1,0 +1,143 @@
+São 3 mudanças independentes no frontend. Leia cada uma antes de executar.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+MUDANÇA 1 — Botão "Assumir" no painel direito
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Localize o componente do painel direito do chat — o que exibe
+"ATRIBUIR / TRANSFERIR", prioridade, tags, resposta rápida.
+Deve ser algo como ChatSidebar.tsx, ActionPanel.tsx ou ConversationPanel.tsx.
+
+Adicione o estado e a função handler logo no início do componente
+(junto com os outros useState/useCallback existentes):
+
+const [assuming, setAssuming] = useState(false);
+
+const handleAssume = useCallback(async () => {
+  if (assuming) return;
+  setAssuming(true);
+  try {
+    const res = await apiFetch(`/api/conversations/${conversation.id}/assume`, {
+      method: 'POST',
+    });
+    const data = await res.json();
+    if (res.status === 409) {
+      alert(data.error); // ou use o sistema de toast já existente no projeto
+      return;
+    }
+    if (!res.ok) throw new Error(data.error);
+    // Atualiza conversa localmente
+    onConversationUpdate?.({ assigned_user_name: data.agente, pendente: false });
+  } catch (err) {
+    console.error('[assume]', err);
+  } finally {
+    setAssuming(false);
+  }
+}, [assuming, conversation.id, onConversationUpdate]);
+
+Depois, no JSX, localize o bloco "ATRIBUIR / TRANSFERIR" e adicione
+ABAIXO dele (mas dentro da mesma seção) a exibição condicional:
+
+{conversation.assigned_team_id && !conversation.assigned_user_id && (
+  <button
+    onClick={handleAssume}
+    disabled={assuming}
+    style={{
+      width: '100%',
+      marginTop: 8,
+      padding: '10px 0',
+      background: assuming ? 'transparent' : 'var(--color-background-info)',
+      color: 'var(--color-text-info)',
+      border: '1px solid var(--color-border-info)',
+      borderRadius: 8,
+      fontWeight: 500,
+      fontSize: 13,
+      cursor: assuming ? 'not-allowed' : 'pointer',
+    }}
+  >
+    {assuming ? 'Assumindo...' : '✋ Assumir atendimento'}
+  </button>
+)}
+
+Se o componente não recebe onConversationUpdate como prop, substitua
+por qualquer mecanismo que o projeto já usa para atualizar o estado
+da conversa ativa (ex: setActiveConversation, updateConversation, etc.).
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+MUDANÇA 2 — Exibir equipe atribuída no painel
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+No mesmo componente do painel direito, localize onde é exibido
+o atendente atual (assigned_user_name ou agente).
+
+Logo acima ou abaixo desse bloco, adicione:
+
+{conversation.pipeline && (
+  <div style={{ marginBottom: 8 }}>
+    <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--color-text-secondary)', marginBottom: 4 }}>
+      EQUIPE
+    </div>
+    <div style={{
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: 6,
+      padding: '4px 10px',
+      background: 'var(--color-background-secondary)',
+      border: '1px solid var(--color-border-tertiary)',
+      borderRadius: 6,
+      fontSize: 13,
+      color: 'var(--color-text-primary)',
+    }}>
+      {conversation.pipeline}
+    </div>
+  </div>
+)}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+MUDANÇA 3 — Filtro de visibilidade por equipe
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Esta mudança é no BACKEND. Localize a rota GET /api/conversations
+(a que lista as conversas para a bandeja do chat).
+
+Substitua o trecho que faz a query de conversas pela versão abaixo.
+Mantenha todos os outros filtros existentes (workspace_id, status, busca
+por nome/telefone, paginação) — adicione APENAS o filtro de equipe:
+
+// Busca as equipes do usuário logado
+const userTeams = await db
+  .select({ teamId: teamMembers.teamId })
+  .from(teamMembers)
+  .where(eq(teamMembers.userId, req.user!.id));
+
+const userTeamIds = userTeams.map(t => t.teamId);
+const isManager = ['admin', 'gerente', 'Gerente'].includes(req.user!.role ?? '');
+
+// Aplica no WHERE da query de conversas:
+// Gerentes veem tudo. Atendentes veem:
+//   - conversas sem equipe (triagem pelo agente ainda em curso)
+//   - conversas da sua equipe
+const teamFilter = isManager
+  ? undefined
+  : or(
+      isNull(conversations.assignedTeamId),
+      userTeamIds.length > 0
+        ? inArray(conversations.assignedTeamId, userTeamIds)
+        : isNull(conversations.assignedTeamId)
+    );
+
+// Adicione teamFilter no .where() da query principal de conversas:
+// .where(and(eq(conversations.workspaceId, workspaceId), teamFilter, ...outros filtros))
+
+Importe os operadores Drizzle necessários que ainda não estiverem importados:
+isNull, inArray, or — do 'drizzle-orm'.
+
+Importe teamMembers do schema se ainda não estiver importado.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Confirme:
+1. Botão "Assumir" aparece no painel quando equipe está atribuída mas sem atendente
+2. Nome da equipe (pipeline) aparece no painel direito
+3. Filtro de visibilidade aplicado na rota GET /api/conversations
+4. Nenhum erro de TypeScript ou de renderização

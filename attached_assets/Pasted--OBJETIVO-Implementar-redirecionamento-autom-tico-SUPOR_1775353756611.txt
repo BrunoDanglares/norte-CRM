@@ -1,0 +1,71 @@
+## OBJETIVO
+Implementar redirecionamento automático SUPORTE → FINANCEIRO
+quando cliente reporta problema de internet mas está inadimplente.
+
+## REGRA DE NEGÓCIO
+Após validar CPF no ERP e antes de chamar qualquer agente:
+1. Verificar status financeiro nos dados retornados pelo ERP
+2. Se inadimplente/suspenso → chamar agente_financeiro
+3. Se em dia → chamar agente_suporte_tecnico_v2
+O cliente não sabe que foi redirecionado.
+
+## PASSO 1 — DIAGNÓSTICO (não modificar nada ainda)
+Abrir server/services/ispProviders/sgpProvider.ts:
+- Listar todos os campos retornados na resposta do cliente
+- Identificar campos que indicam suspensão ou inadimplência
+- Exemplos prováveis: status, situacao, bloqueado, suspenso,
+  status_contrato, inadimplente
+
+Abrir server/services/ispProviders/ixcProvider.ts:
+- Fazer o mesmo levantamento
+- Exemplos prováveis: status_internet, bloqueado, situacao,
+  tipo_bloqueio, status_financeiro
+
+Reportar os campos exatos encontrados em cada provider
+ANTES de implementar qualquer código.
+
+## PASSO 2 — IMPLEMENTAR APÓS DIAGNÓSTICO
+Em server/services/ispAgentEngine.ts, após o ERP retornar
+os dados do cliente e ANTES de classificar o agente,
+adicionar verificação:
+```typescript
+// Só roda quando intent é SUPORTE_TECNICO
+if (intent === 'SUPORTE_TECNICO') {
+  const erp = session.erpData || {};
+  
+  // Adaptar campos conforme diagnóstico do Passo 1
+  const inadimplente =
+    erp.status === 'S' ||           // SGP suspenso
+    erp.bloqueado === true ||
+    erp.bloqueado === 'S' ||
+    erp.situacao === 'BLOQUEADO' ||
+    erp.status_contrato === 'SUSPENSO' ||
+    erp.tipo_bloqueio === 'FINANCEIRO' ||
+    erp.status_internet === 'BLOQUEADO';
+  
+  if (inadimplente) {
+    intent = 'FINANCEIRO';
+    session.contexto_anterior = 'suporte_redirecionado';
+    session.motivo_redirecionamento = 'inadimplente';
+    
+    console.log(`[ISP Engine] Redirecionamento: 
+      SUPORTE → FINANCEIRO | CPF: ${session.cpf}`);
+  }
+}
+```
+
+## PASSO 3 — CONTEXTO NO AGENTE FINANCEIRO
+Quando session.contexto_anterior === 'suporte_redirecionado',
+injetar no prompt do agente_financeiro:
+
+"O cliente entrou em contato relatando problema de internet.
+Identificamos que o serviço está suspenso por inadimplência.
+Informe com empatia sobre a suspensão e ofereça as opções
+de regularização. Não mencione problema técnico."
+
+## REGRAS
+- Se ERP não retornar status financeiro → manter SUPORTE (fail-safe)
+- Redirecionamento é silencioso para o cliente
+- Usar campos reais encontrados no Passo 1
+- Reportar campos encontrados antes de implementar
+- Listar todos os arquivos modificados

@@ -1,0 +1,182 @@
+Perfeito. Vamos finalizar a engine primeiro. Um prompt por nó para manter controle.
+
+PROMPT 1 — Condição Real
+Implemente a execução real do nó "Condição" na engine de automações do FlowCRM.
+Hoje ele sempre retorna true. Substitua pela avaliação real de expressões.
+
+## Parâmetros do nó
+{
+  field: string,        // campo a avaliar (ex: "lead.status", "lead.value", "variables.score")
+  operator: string,     // operador
+  value: string | number // valor de comparação
+}
+
+## Operadores suportados
+equals, not_equals, contains, not_contains, greater_than, less_than,
+greater_or_equal, less_or_equal, is_empty, is_not_empty, starts_with, ends_with
+
+## Implementação
+
+1. Resolva o valor do campo usando context:
+   - Se field começa com "lead." → busque o lead no banco pelo context.leadId
+     Campos disponíveis: name, email, phone, status, stage, value, priority, tags, notes
+   - Se field começa com "variables." → leia de context.variables
+   - Se field começa com "message." → leia de context.message (última mensagem recebida)
+
+2. Aplique o operador:
+   - Comparações numéricas: converta ambos para Number antes de comparar
+   - contains/not_contains: use String.includes()
+   - is_empty: valor === null || valor === undefined || valor === ""
+   - starts_with/ends_with: use String.startsWith/endsWith
+
+3. O resultado (true ou false) determina qual saída seguir:
+   - Handle "true" → próximo nó se condição verdadeira
+   - Handle "false" → próximo nó se condição falsa
+
+4. Log: { success: true, field, operator, value, resolved_value, result: boolean }
+
+## Validação
+Se o campo não existir no lead ou nas variables, trate como is_empty (false para comparações).
+Nunca lance exceção — em caso de erro avalie como false e logue o erro.
+
+PROMPT 2 — Resposta IA via OpenAI
+Implemente a execução real do nó "Resposta IA" na engine de automações do FlowCRM.
+Hoje retorna "[Resposta simulada]". Substitua pela chamada real à OpenAI.
+
+## Parâmetros do nó
+{
+  prompt_slug?: string,   // slug de um prompt salvo na tabela ia_prompts
+  custom_prompt?: string, // ou prompt customizado direto
+  save_to?: string        // nome da variável onde salvar a resposta (ex: "variables.resposta_ia")
+}
+
+## Implementação
+
+1. Resolva o system prompt:
+   - Se prompt_slug informado → busque na tabela ia_prompts WHERE slug = prompt_slug
+   - Se custom_prompt informado → use diretamente
+   - Se nenhum → use prompt padrão: "Você é um assistente prestativo."
+
+2. Monte o user message com contexto do lead:
+   - Busque o lead pelo context.leadId
+   - User message: 
+     "Lead: {name}, telefone: {phone}, status: {status}
+      Última mensagem recebida: {context.message?.text || 'não disponível'}
+      Variáveis do fluxo: {JSON.stringify(context.variables)}"
+
+3. Chame a OpenAI (credencial já existe no sistema — use a mesma usada pela Base de IA):
+   POST https://api.openai.com/v1/chat/completions
+   {
+     model: "gpt-4o-mini",
+     messages: [
+       { role: "system", content: systemPrompt },
+       { role: "user", content: userMessage }
+     ],
+     max_tokens: 500,
+     temperature: 0.7
+   }
+
+4. Salve a resposta:
+   - Se save_to informado → context.variables[save_to] = response.choices[0].message.content
+   - Sempre salve em context.variables.last_ai_response também
+
+5. Log: { success: true, prompt_slug, tokens_used: usage.total_tokens, response_preview: primeiros 100 chars }
+
+## Tratamento de erro
+Se OpenAI falhar, salve "" em save_to, log { success: false, error } e continue o fluxo.
+
+PROMPT 3 — Atribuir Agente
+Implemente a execução real do nó "Atribuir Agente" na engine de automações do FlowCRM.
+Hoje retorna sucesso sem fazer nada. Substitua pelo UPDATE real no banco.
+
+## Parâmetros do nó
+{
+  agent_id?: number,       // ID fixo de um usuário
+  strategy?: string        // "round_robin" | "least_busy" | "random"
+}
+
+## Implementação
+
+### Se agent_id informado (atribuição direta):
+1. Verifique se o usuário existe e está ativo na tabela users (tenant_id = context.tenantId)
+2. Faça UPDATE na tabela leads: SET assigned_to = agent_id, updated_at = NOW()
+   WHERE id = context.leadId AND tenant_id = context.tenantId
+3. Log: { success: true, strategy: "direct", agent_id, agent_name }
+
+### Se strategy = "round_robin":
+1. Busque todos os usuários ativos do tenant ordenados por id
+2. Busque o último lead atribuído no tenant (ORDER BY updated_at DESC LIMIT 1)
+3. Pegue o próximo usuário na sequência circular
+4. Atribua ao lead atual
+5. Log: { success: true, strategy: "round_robin", agent_id: escolhido }
+
+### Se strategy = "least_busy":
+1. Busque o usuário ativo com menor número de leads abertos atribuídos:
+   SELECT assigned_to, COUNT(*) as total FROM leads
+   WHERE tenant_id = $1 AND assigned_to IS NOT NULL AND status != 'closed'
+   GROUP BY assigned_to ORDER BY total ASC LIMIT 1
+2. Atribua ao lead atual
+3. Log: { success: true, strategy: "least_busy", agent_id: escolhido }
+
+### Se strategy = "random":
+1. Busque todos os usuários ativos, escolha um aleatoriamente
+2. Log: { success: true, strategy: "random", agent_id: escolhido }
+
+### Fallback
+Se nenhum agente encontrado em qualquer estratégia, log warning e continue sem atribuir.
+
+PROMPT 4 — Aguardar com Delay Real
+Implemente a execução real do nó "Aguardar" na engine de automações do FlowCRM.
+Hoje usa setTimeout simulado. Substitua por pausa real do fluxo.
+
+## Parâmetros do nó
+{
+  duration: number,
+  unit: "seconds" | "minutes" | "hours" | "days"
+}
+
+## Implementação
+
+Use o mesmo mecanismo de pausa já criado para o nó Lista de Opções
+(tabela automation_pending_inputs), mas com tipo diferente.
+
+1. Calcule o expires_at:
+   const ms = { seconds: 1000, minutes: 60000, hours: 3600000, days: 86400000 }
+   const resumeAt = new Date(Date.now() + duration * ms[unit])
+
+2. Salve na tabela automation_pending_inputs com uma coluna adicional:
+   pending_type: "wait" (vs "option_list" para o nó de lista)
+   expires_at: resumeAt
+
+3. INTERROMPA a execução do fluxo (igual ao nó Lista)
+
+4. O job de limpeza que já roda a cada 5 minutos deve ser ajustado:
+   Em vez de apenas DELETAR registros expirados, verificar:
+   - Se pending_type = "wait" E expires_at <= NOW() → retomar o fluxo automaticamente
+   - Chame resumeAutomationFlow(pending, "__timeout__")
+   - Depois delete o registro
+
+5. Log: { success: true, resume_at: resumeAt.toISOString(), duration, unit }
+
+## Ajuste no job de limpeza (server/index.ts ou app.ts)
+
+Substitua o setInterval atual por:
+
+setInterval(async () => {
+  // Busca esperas expiradas
+  const expired = await db.query(`
+    SELECT * FROM automation_pending_inputs
+    WHERE pending_type = 'wait' AND expires_at <= NOW()
+  `)
+  
+  for (const pending of expired.rows) {
+    await resumeAutomationFlow(pending, '__timeout__')
+    await db.query(`DELETE FROM automation_pending_inputs WHERE id = $1`, [pending.id])
+  }
+  
+  // Limpa option_lists expiradas sem retomar (cliente não respondeu)
+  await db.query(`
+    DELETE FROM automation_pending_inputs
+    WHERE pending_type = 'option_list' AND expires_at <= NOW()
+  `)
+}, 60 * 1000) // roda a cada 1 minuto agora

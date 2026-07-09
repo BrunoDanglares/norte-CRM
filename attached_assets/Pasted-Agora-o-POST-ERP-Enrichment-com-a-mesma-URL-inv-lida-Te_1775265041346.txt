@@ -1,0 +1,57 @@
+Agora é o POST ERP Enrichment com a mesma URL inválida. Tem mais nós com esse problema. Vamos corrigir todos de uma vez:
+No arquivo server/services/n8nManagerService.ts, atualize o método
+fixarUrlsV5 para corrigir TODOS os nós com URL inválida no V5.
+
+Substitua o objeto urlFixes por:
+
+    const urlFixes: Record<string, string> = {
+      'GET Sessão':
+        "={{ $('Set Entrada').item.json.chatbanana_url }}/api/n8n/memory/session",
+      'GET Histórico':
+        "={{ $('Set Entrada').item.json.chatbanana_url }}/api/n8n/memory/history/{{ $('Set Entrada').item.json.conversation_id }}?limit=10",
+      'POST ERP Enrichment':
+        "={{ $('Set Entrada').item.json.chatbanana_url }}/api/n8n/erp",
+      'POST Envia Lista Menu':
+        "={{ $('Set Entrada').item.json.chatbanana_url }}/api/n8n/send/list",
+      'POST Salva Turno Menu':
+        "={{ $('Set Entrada').item.json.chatbanana_url }}/api/n8n/memory/save",
+      'POST AI Suporte':
+        "={{ $('Set Entrada').item.json.chatbanana_url }}/api/n8n/ai",
+      'POST Enviar Informação':
+        "={{ $('Set Entrada').item.json.chatbanana_url }}/api/n8n/send",
+      'POST Salva Turno':
+        "={{ $('Set Entrada').item.json.chatbanana_url }}/api/n8n/memory/save",
+      'POST AI Financeiro':
+        "={{ $('Set Entrada').item.json.chatbanana_url }}/api/n8n/ai",
+      'POST Envia Financeiro':
+        "={{ $('Set Entrada').item.json.chatbanana_url }}/api/n8n/send",
+      'POST Salva Turno Financeiro':
+        "={{ $('Set Entrada').item.json.chatbanana_url }}/api/n8n/memory/save",
+      'POST AI Comercial':
+        "={{ $('Set Entrada').item.json.chatbanana_url }}/api/n8n/ai",
+      'POST Envia Comercial':
+        "={{ $('Set Entrada').item.json.chatbanana_url }}/api/n8n/send",
+      'POST Salva Turno Comercial':
+        "={{ $('Set Entrada').item.json.chatbanana_url }}/api/n8n/memory/save",
+      'POST Envia Msg Transferência':
+        "={{ $('Set Entrada').item.json.chatbanana_url }}/api/n8n/send",
+    };
+
+    // Além de corrigir URLs, corrija também todos os nós HTTP que
+    // ainda tenham URL começando com =https:// (fallback genérico):
+    const updatedNodes = workflow.nodes.map((node: any) => {
+      // Correção por nome específico
+      const newUrl = urlFixes[node.name];
+      if (newUrl) {
+        return { ...node, parameters: { ...node.parameters, url: newUrl } };
+      }
+      // Correção genérica: qualquer URL que comece com =https://
+      if (node.parameters?.url?.startsWith('=https://')) {
+        const fixedUrl = node.parameters.url
+          .replace(/^=https:\/\/chatbanana\.com\.br/, "={{ $('Set Entrada').item.json.chatbanana_url }}");
+        return { ...node, parameters: { ...node.parameters, url: fixedUrl } };
+      }
+      return node;
+    });
+
+Salve e aguarde redeploy.

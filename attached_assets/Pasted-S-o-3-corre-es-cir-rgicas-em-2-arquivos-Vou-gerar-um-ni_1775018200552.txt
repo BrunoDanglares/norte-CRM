@@ -1,0 +1,103 @@
+São 3 correções cirúrgicas em 2 arquivos. Vou gerar um único prompt que resolve tudo de uma vez:
+
+Prompt — Correções identificadas na auditoria de código
+Aplique as seguintes correções cirúrgicas no ChatBanana. São 3 bugs 
+identificados em 2 arquivos. Não altere nada além do especificado.
+
+═══════════════════════════════════════════════════════════
+CORREÇÃO 1 — server/services/automationEngine.ts
+assignedUserId salvo como String em vez de integer
+═══════════════════════════════════════════════════════════
+
+Localize o bloco do case "ai_response" onde o CRM_ASSIGN é processado.
+Encontre estas duas linhas dentro do bloco `if (crmAssignMatch && c.aiCrmAtribuir !== false)`:
+
+  await db.update(conversations).set({
+    assignedUserId: String(matchedUser.id),
+    assignedUserName: matchedUser.nome,
+  })
+
+Substitua por:
+
+  await db.update(conversations).set({
+    assignedUserId: matchedUser.id,
+    assignedUserName: matchedUser.nome,
+  })
+
+Remover o String() — assignedUserId é integer no schema.
+
+Também localize o bloco de fallback CRM (dentro de `if (!hasCrmTags && ...)`),
+onde há estas linhas:
+
+  fallbackUpdates.assignedUserId = String(firstMember[0].id);
+
+Substitua por:
+
+  fallbackUpdates.assignedUserId = firstMember[0].id;
+
+═══════════════════════════════════════════════════════════
+CORREÇÃO 2 — server/services/automationEngine.ts
+Variável `provider` usada sem estar definida no escopo
+═══════════════════════════════════════════════════════════
+
+Dentro do case "ai_response", no bloco de processamento de imagem
+(mediaType === "image"), localize esta linha:
+
+  if (provider === "openai") overrideModel = "gpt-4o";
+
+Esta linha referencia `provider` que não existe nesse escopo — é um 
+resquício de código antigo que causa um ReferenceError silencioso.
+
+Substitua por:
+
+  overrideModel = "gpt-4o";
+
+A lógica é: sempre que for imagem, usar gpt-4o. 
+Remover a condição `provider` completamente.
+
+═══════════════════════════════════════════════════════════
+CORREÇÃO 3 — server/services/automationEngine.ts
+Histórico carregado com limit: 10000 em dois lugares
+═══════════════════════════════════════════════════════════
+
+Dentro do case "ai_response", localize os dois lugares onde há:
+
+  await storage.getMessages(ctx.conversationId, { limit: 10000 });
+
+OCORRÊNCIA 1 — dentro do bloco de histórico da conversa para contexto IA:
+(comentário próximo: "// internal - sem paginação intencional (histórico completo para contexto IA)")
+
+Substitua por:
+
+  await storage.getMessages(ctx.conversationId, { limit: 200 });
+
+OCORRÊNCIA 2 — dentro do message-processor.ts, no bloco que combina
+mensagens consecutivas do usuário antes de rodar automação:
+(comentário próximo: "// internal - sem paginação intencional (mensagens recentes para automação)")
+
+Substitua por:
+
+  await storage.getMessages(ctx.conversationId, { limit: 20 });
+
+Justificativa dos limites:
+- 200 para contexto IA: suficiente para qualquer conversa real, evita 
+  sobrecarga de memória e tokens. Conversas com mais de 200 msgs já 
+  passam pelo bloco de resumo automático (slice -40).
+- 20 para detecção de mensagens consecutivas: a lógica só precisa das 
+  últimas mensagens para combinar o texto recente do usuário. 
+  20 é mais que suficiente.
+
+═══════════════════════════════════════════════════════════
+VERIFICAÇÃO FINAL
+═══════════════════════════════════════════════════════════
+
+Após aplicar as 3 correções, confirme:
+
+1. Buscar no automationEngine.ts por String(matchedUser.id) — não deve 
+   existir mais nenhuma ocorrência
+2. Buscar por "provider ===" dentro do case "ai_response" — não deve 
+   existir mais
+3. Buscar por "limit: 10000" em todo o projeto — não deve existir mais
+
+Confirme quando as 3 correções foram aplicadas e informe se houve 
+alguma dificuldade de localização dos trechos.

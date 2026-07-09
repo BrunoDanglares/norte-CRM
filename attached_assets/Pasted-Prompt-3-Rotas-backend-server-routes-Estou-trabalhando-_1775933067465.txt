@@ -1,0 +1,215 @@
+Prompt 3 — Rotas backend (server/routes/)Estou trabalhando no projeto ChatBanana. Preciso criar e modificar rotas em `server/routes/`.
+
+---
+
+### 1. Criar `server/routes/history.ts`
+
+Cria esse arquivo completo:
+
+```typescriptimport { Router } from "express";
+import { db } from "../db";
+import {
+conversations,
+protocols,
+conversationSituationTags,
+leads,
+} from "../../shared/schema";
+import { eq, desc, and, sql, isNull } from "drizzle-orm";
+import { requireAuth } from "../middleware/auth";
+import { resolveWorkspaceId } from "../utils/workspace";const router = Router();// GET /api/history
+router.get("/", requireAuth, async (req, res) => {
+try {
+const workspaceId = resolveWorkspaceId(req);
+const { limit = "50", offset = "0" } = req.query;const rows = await db
+  .select({
+    conversationId:    conversations.id,
+    contactName:       conversations.contactName,
+    contactPhone:      conversations.contactPhone,
+    pipeline:          conversations.pipeline,
+    status:            conversations.status,
+    resolvedAt:        conversations.updatedAt,
+    agentName:         conversations.assignedAgent,
+    protocolId:        protocols.id,
+    protocolNumber:    protocols.protocolNumber,
+    leadStage:         leads.stage,
+    leadArchivedAt:    leads.archivedAt,
+    leadArchivalReason: leads.archivalReason,
+  })
+  .from(conversations)
+  .leftJoin(protocols, eq(protocols.conversationId, conversations.id))
+  .leftJoin(leads, eq(leads.conversationId, conversations.id))
+  .where(
+    and(
+      eq(conversations.workspaceId, workspaceId),
+      eq(conversations.status, "resolved")
+    )
+  )
+  .orderBy(desc(conversations.updatedAt))
+  .limit(parseInt(limit as string))
+  .offset(parseInt(offset as string));const conversationIds = rows.map((r) => r.conversationId);
+const tagsMap: Record<number, any[]> = {};if (conversationIds.length > 0) {
+  const allTags = await db
+    .select()
+    .from(conversationSituationTags)
+    .where(
+      sql`${conversationSituationTags.conversationId} = ANY(${sql.raw(
+        `ARRAY[${conversationIds.join(",")}]`
+      )})`
+    );  for (const tag of allTags) {
+    if (!tagsMap[tag.conversationId]) tagsMap[tag.conversationId] = [];
+    tagsMap[tag.conversationId].push(tag);
+  }
+}const result = rows.map((row) => ({
+  ...row,
+  tags: tagsMap[row.conversationId] || [],
+}));res.json({ data: result, total: result.length });
+} catch (error) {
+console.error("[History] Erro:", error);
+res.status(500).json({ error: "Erro interno" });
+}
+});// GET /api/history/metrics
+router.get("/metrics", requireAuth, async (req, res) => {
+try {
+const workspaceId = resolveWorkspaceId(req);const [totalResolved] = await db
+  .select({ count: sql<number>`count(*)` })
+  .from(conversations)
+  .where(
+    and(
+      eq(conversations.workspaceId, workspaceId),
+      eq(conversations.status, "resolved")
+    )
+  );const topTags = await db
+  .select({
+    tagSlug: conversationSituationTags.tagSlug,
+    count:   sql<number>`count(*)`,
+  })
+  .from(conversationSituationTags)
+  .where(eq(conversationSituationTags.workspaceId, workspaceId))
+  .groupBy(conversationSituationTags.tagSlug)
+  .orderBy(desc(sql`count(*)`))
+  .limit(10);const [ativados] = await db
+  .select({ count: sql<number>`count(*)` })
+  .from(leads)
+  .where(
+    and(
+      eq(leads.workspaceId, workspaceId),
+      eq(leads.archivalReason, "ativado")
+    )
+  );const [perdidos] = await db
+  .select({ count: sql<number>`count(*)` })
+  .from(leads)
+  .where(
+    and(
+      eq(leads.workspaceId, workspaceId),
+      eq(leads.archivalReason, "perdido")
+    )
+  );// Breakdown por pipeline
+const byPipeline = await db
+  .select({
+    pipeline: leads.pipeline,
+    reason:   leads.archivalReason,
+    count:    sql<number>`count(*)`,
+  })
+  .from(leads)
+  .where(
+    and(
+      eq(leads.workspaceId, workspaceId),
+      sql`${leads.archivedAt} IS NOT NULL`
+    )
+  )
+  .groupBy(leads.pipeline, leads.archivalReason);res.json({
+  totalResolved: Number(totalResolved?.count || 0),
+  ativados:      Number(ativados?.count || 0),
+  perdidos:      Number(perdidos?.count || 0),
+  topTags,
+  byPipeline,
+});
+} catch (error) {
+console.error("[History] Métricas erro:", error);
+res.status(500).json({ error: "Erro interno" });
+}
+});// POST /api/history/conversations/:id/tags — tag manual
+router.post("/conversations/:id/tags", requireAuth, async (req, res) => {
+try {
+const workspaceId   = resolveWorkspaceId(req);
+const conversationId = parseInt(req.params.id);
+const { situationCode } = req.body;
+const userId = (req as any).user?.id;const { applyManualTag } = await import("../services/situationTagService");
+await applyManualTag(workspaceId, conversationId, situationCode, userId);res.json({ success: true });
+} catch (error: any) {
+res.status(400).json({ error: error.message });
+}
+});// DELETE /api/history/conversations/:id/tags/:tagId
+router.delete("/conversations/:id/tags/:tagId", requireAuth, async (req, res) => {
+try {
+const conversationId = parseInt(req.params.id);
+const tagId          = parseInt(req.params.tagId);const { removeTag } = await import("../services/situationTagService");
+await removeTag(conversationId, tagId);res.json({ success: true });
+} catch (error) {
+res.status(500).json({ error: "Erro interno" });
+}
+});// PATCH /api/history/leads/:id/archive — arquivamento imediato ao mover card
+router.patch("/leads/:id/archive", requireAuth, async (req, res) => {
+try {
+const leadId = parseInt(req.params.id);
+const { reason } = req.body as { reason: "ativado" | "perdido" };const { archiveLead } = await import("../services/kanbanArchivalService");
+await archiveLead(leadId, reason);res.json({ success: true });
+} catch (error) {
+res.status(500).json({ error: "Erro interno" });
+}
+});export default router;
+
+---
+
+### 2. Registrar em `server/index.ts`
+
+```typescriptimport historyRouter from "./routes/history";
+app.use("/api/history", historyRouter);
+
+---
+
+### 3. Filtrar arquivados nas rotas do kanban
+
+Abre `server/routes/pipeline.ts` (ou o arquivo onde leads do kanban são buscados).
+
+Em TODAS as queries que retornam leads para exibição no kanban, adiciona o filtro:
+
+```typescriptisNull(leads.archivedAt)
+
+Exemplo:
+
+```typescript.where(
+and(
+eq(leads.workspaceId, workspaceId),
+isNull(leads.archivedAt)  // ← arquivados não aparecem no kanban
+)
+)
+
+---
+
+### 4. Disparar arquivamento imediato ao mover card para etapa final
+
+Localiza no frontend ou backend onde o lead tem o `stage` atualizado (drag-and-drop do kanban).
+
+No momento em que `stage` muda para um dos valores finais abaixo, a rota `PATCH /api/history/leads/:id/archive` deve ser chamada automaticamente com o `reason` correto:
+
+```typescriptconst FINAL_STAGE_MAP: Record<string, "ativado" | "perdido"> = {
+// Comercial
+"Instalado / Ativado":  "ativado",
+"Perdido":              "perdido",
+// Suporte Técnico
+"Resolvido":            "ativado",
+"Visita Técnica":       "ativado",
+"Escalado / NOC":       "perdido",
+// Financeiro
+"Pago / Regularizado":  "ativado",
+"Inadimplente":         "perdido",
+"Cancelado por Débito": "perdido",
+};// Após atualizar o stage do lead:
+if (FINAL_STAGE_MAP[novoStage]) {
+await fetch(/api/history/leads/${leadId}/archive, {
+method: "PATCH",
+headers: { "Content-Type": "application/json" },
+body: JSON.stringify({ reason: FINAL_STAGE_MAP[novoStage] }),
+});
+}

@@ -1,0 +1,125 @@
+}
+(node:7) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+Unrecognized node type: n8n-nodes-evolution-api.evolutionApi
+Unrecognized node type: n8n-nodes-evolution-api.evolutionApi
+Unrecognized node type: n8n-nodes-evolution-api.evolutionApi
+Unrecognized node type: n8n-nodes-evolution-api.evolutionApi
+Unrecognized node type: n8n-nodes-evolution-api.evolutionApi
+Unrecognized node type: n8n-nodes-evolution-api.evolutionApi
+Unrecognized node type: n8n-nodes-evolution-api.evolutionApi
+Unrecognized node type: n8n-nodes-evolution-api.evolutionApi
+Unrecognized node type: n8n-nodes-evolution-api.evolutionApi
+Unrecognized node type: n8n-nodes-evolution-api.evolutionApi
+Unrecognized node type: n8n-nodes-evolution-api.evolutionApi
+Unrecognized node type: n8n-nodes-evolution-api.evolutionApi
+Unrecognized node type: n8n-nodes-evolution-api.evolutionApi
+Unrecognized node type: n8n-nodes-evolution-api.evolutionApi
+Unrecognized node type: n8n-nodes-evolution-api.evolutionApi
+Unrecognized node type: n8n-nodes-evolution-api.evolutionApi
+Unrecognized node type: n8n-nodes-evolution-api.evolutionApi
+Unrecognized node type: n8n-nodes-evolution-api.evolutionApi
+Unrecognized node type: n8n-nodes-evolution-api.evolutionApi
+Unrecognized node type: n8n-nodes-evolution-api.evolutionApi
+Unrecognized node type: n8n-nodes-evolution-api.evolutionApi
+Unrecognized node type: n8n-nodes-evolution-api.evolutionApi
+Unrecognized node type: n8n-nodes-evolution-api.evolutionApi
+Unrecognized node type: n8n-nodes-evolution-api.evolutionApi
+Unrecognized node type: n8n-nodes-evolution-api.evolutionApi
+Unrecognized node type: n8n-nodes-evolution-api.evolutionApi
+Unrecognized node type: n8n-nodes-evolution-api.evolutionApi
+Unrecognized node type: n8n-nodes-evolution-api.evolutionApi
+Unrecognized node type: n8n-nodes-evolution-api.evolutionApi
+Unrecognized node type: n8n-nodes-evolution-api.evolutionApi
+Unrecognized node type: n8n-nodes-evolution-api.evolutionApi
+Unrecognized node type: n8n-nodes-evolution-api.evolutionApi
+Unrecognized node type: n8n-nodes-evolution-api.evolutionApi
+Unrecognized node type: n8n-nodes-evolution-api.evolutionApi
+Unrecognized node type: n8n-nodes-evolution-api.evolutionApi
+Unrecognized node type: n8n-nodes-evolution-api.evolutionApi
+Unrecognized node type: n8n-nodes-evolution-api.evolutionApi
+Unrecognized node type: n8n-nodes-evolution-api.evolutionApi
+Unrecognized node type: n8n-nodes-evolution-api.evolutionApi
+Node does not have any credentials set
+Unrecognized node type: n8n-nodes-evolution-api.evolutionApi
+Unrecognized node type: n8n-nodes-evolution-api.evolutionApi
+Unrecognized node type: n8n-nodes-evolution-api.evolutionApi
+Workflow activation failed validation
+(node:7) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+The connection cannot be established, this usually occurs due to an incorrect host (domain) value
+Invalid URL
+Deregistered all crons for workflow
+Deregistered all crons for workflow
+Deregistered all crons for workflow
+Deregistered all crons for workflow
+Deregistered all crons for workflow
+Deregistered all crons for workflow
+Received SIGTERM. Shutting down...
+Deregistered all crons for workflow
+[runnner:js] Received SIGTERM signal, shutting down...
+[runnner:js] Task runner stopped
+
+Stopping n8n...
+Initializing n8n process
+n8n ready on ::, port 5678
+n8n Task Broker ready on 127.0.0.1, port 5679
+Failed to start Python task runner in internal mode. because Python 3 is missing from this system. Launching a Python runner in internal mode is intended only for debugging and is not recommended for production. Users are encouraged to deploy in external mode. See: https://docs.n8n.io/hosting/configuration/task-runners/#setting-up-external-mode
+[license SDK] Skipping renewal on init: license cert is not due for renewal
+Registered runner "JS Task Runner" (qmEcymL3rqJNAp94zG1NV) 
+Version: 2.14.2
+Building workflow dependency index...
+Start Active Workflows:
+(node:7) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+Finished building workflow dependency index. Processed 2 draft workflows, 0 published workflows.
+Activated workflow "🍌 ISP Agent V4 — ChatBanana Proxy (ERP + AI + Send)" (ID: ofw3whE3auzl4hDI)
+
+Editor is now accessible via:
+https://n8n-n8n.xhtsxx.easypanel.host
+(node:7) [DEP0060] DeprecationWarning: The `util._extend` API is deprecated. Please use Object.assign() instead.
+ValidationError: The 'X-Forwarded-For' header is set but the Express 'trust proxy' setting is false (default). This could indicate a misconfiguration which would prevent express-rate-limit from accurately identifying users. See https://express-rate-limit.github.io/ERR_ERL_UNEXPECTED_X_FORWARDED_FOR/ for more information.
+    at Object.xForwardedForHeader (/usr/local/lib/node_modules/n8n/node_modules/.pnpm/express-rate-limit@8.2.2_express@5.1.0/node_modules/express-rate-limit/dist/index.cjs:371:13)
+    at Object.wrappedValidations.<computed> [as xForwardedForHeader] (/usr/local/lib/node_modules/n8n/node_modules/.pnpm/express-rate-limit@8.2.2_express@5.1.0/node_modules/express-rate-limit/dist/index.cjs:685:22)
+    at Object.keyGenerator (/usr/local/lib/node_modules/n8n/node_modules/.pnpm/express-rate-limit@8.2.2_express@5.1.0/node_modules/express-rate-limit/dist/index.cjs:788:20)
+    at /usr/local/lib/node_modules/n8n/node_modules/.pnpm/express-rate-limit@8.2.2_express@5.1.0/node_modules/express-rate-limit/dist/index.cjs:849:32
+    at /usr/local/lib/node_modules/n8n/node_modules/.pnpm/express-rate-limit@8.2.2_express@5.1.0/node_modules/express-rate-limit/dist/index.cjs:830:5 {
+  code: 'ERR_ERL_UNEXPECTED_X_FORWARDED_FOR',
+  help: 'https://express-rate-limit.github.io/ERR_ERL_UNEXPECTED_X_FORWARDED_FOR/'
+}
+ValidationError: The 'X-Forwarded-For' header is set but the Express 'trust proxy' setting is false (default). This could indicate a misconfiguration which would prevent express-rate-limit from accurately identifying users. See https://express-rate-limit.github.io/ERR_ERL_UNEXPECTED_X_FORWARDED_FOR/ for more information.
+    at Object.xForwardedForHeader (/usr/local/lib/node_modules/n8n/node_modules/.pnpm/express-rate-limit@8.2.2_express@5.1.0/node_modules/express-rate-limit/dist/index.cjs:371:13)
+    at Object.wrappedValidations.<computed> [as xForwardedForHeader] (/usr/local/lib/node_modules/n8n/node_modules/.pnpm/express-rate-limit@8.2.2_express@5.1.0/node_modules/express-rate-limit/dist/index.cjs:685:22)
+    at Object.keyGenerator (/usr/local/lib/node_modules/n8n/node_modules/.pnpm/express-rate-limit@8.2.2_express@5.1.0/node_modules/express-rate-limit/dist/index.cjs:788:20)
+    at /usr/local/lib/node_modules/n8n/node_modules/.pnpm/express-rate-limit@8.2.2_express@5.1.0/node_modules/express-rate-limit/dist/index.cjs:849:32
+    at /usr/local/lib/node_modules/n8n/node_modules/.pnpm/express-rate-limit@8.2.2_express@5.1.0/node_modules/express-rate-limit/dist/index.cjs:830:5 {
+  code: 'ERR_ERL_UNEXPECTED_X_FORWARDED_FOR',
+  help: 'https://express-rate-limit.github.io/ERR_ERL_UNEXPECTED_X_FORWARDED_FOR/'
+}
+ValidationError: The 'X-Forwarded-For' header is set but the Express 'trust proxy' setting is false (default). This could indicate a misconfiguration which would prevent express-rate-limit from accurately identifying users. See https://express-rate-limit.github.io/ERR_ERL_UNEXPECTED_X_FORWARDED_FOR/ for more information.
+    at Object.xForwardedForHeader (/usr/local/lib/node_modules/n8n/node_modules/.pnpm/express-rate-limit@8.2.2_express@5.1.0/node_modules/express-rate-limit/dist/index.cjs:371:13)
+    at Object.wrappedValidations.<computed> [as xForwardedForHeader] (/usr/local/lib/node_modules/n8n/node_modules/.pnpm/express-rate-limit@8.2.2_express@5.1.0/node_modules/express-rate-limit/dist/index.cjs:685:22)
+    at Object.keyGenerator (/usr/local/lib/node_modules/n8n/node_modules/.pnpm/express-rate-limit@8.2.2_express@5.1.0/node_modules/express-rate-limit/dist/index.cjs:788:20)
+    at /usr/local/lib/node_modules/n8n/node_modules/.pnpm/express-rate-limit@8.2.2_express@5.1.0/node_modules/express-rate-limit/dist/index.cjs:849:32
+    at /usr/local/lib/node_modules/n8n/node_modules/.pnpm/express-rate-limit@8.2.2_express@5.1.0/node_modules/express-rate-limit/dist/index.cjs:830:5 {
+  code: 'ERR_ERL_UNEXPECTED_X_FORWARDED_FOR',
+  help: 'https://express-rate-limit.github.io/ERR_ERL_UNEXPECTED_X_FORWARDED_FOR/'
+}
+ValidationError: The 'X-Forwarded-For' header is set but the Express 'trust proxy' setting is false (default). This could indicate a misconfiguration which would prevent express-rate-limit from accurately identifying users. See https://express-rate-limit.github.io/ERR_ERL_UNEXPECTED_X_FORWARDED_FOR/ for more information.
+    at Object.xForwardedForHeader (/usr/local/lib/node_modules/n8n/node_modules/.pnpm/express-rate-limit@8.2.2_express@5.1.0/node_modules/express-rate-limit/dist/index.cjs:371:13)
+    at Object.wrappedValidations.<computed> [as xForwardedForHeader] (/usr/local/lib/node_modules/n8n/node_modules/.pnpm/express-rate-limit@8.2.2_express@5.1.0/node_modules/express-rate-limit/dist/index.cjs:685:22)
+    at Object.keyGenerator (/usr/local/lib/node_modules/n8n/node_modules/.pnpm/express-rate-limit@8.2.2_express@5.1.0/node_modules/express-rate-limit/dist/index.cjs:788:20)
+    at /usr/local/lib/node_modules/n8n/node_modules/.pnpm/express-rate-limit@8.2.2_express@5.1.0/node_modules/express-rate-limit/dist/index.cjs:849:32
+    at /usr/local/lib/node_modules/n8n/node_modules/.pnpm/express-rate-limit@8.2.2_express@5.1.0/node_modules/express-rate-limit/dist/index.cjs:830:5 {
+  code: 'ERR_ERL_UNEXPECTED_X_FORWARDED_FOR',
+  help: 'https://express-rate-limit.github.io/ERR_ERL_UNEXPECTED_X_FORWARDED_FOR/'
+}
+Deregistered all crons for workflow
+Deregistered all crons for workflow
+(node:7) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+Deregistered all crons for workflow
+Deregistered all crons for workflow
+Deregistered all crons for workflow
+Deregistered all crons for workflow
+Deregistered all crons for workflow
+Deregistered all crons for workflow
+Deregistered all crons for workflow
+Deregistered all crons for workflow

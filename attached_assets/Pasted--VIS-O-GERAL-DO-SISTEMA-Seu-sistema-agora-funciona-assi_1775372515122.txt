@@ -1,0 +1,235 @@
+🧠 VISÃO GERAL DO SISTEMA
+
+Seu sistema agora funciona assim:
+
+WhatsApp
+↓
+Memória + Sessão
+↓
+ERP (SGP)
+↓
+SDR (cérebro lógico)
+↓
+Orquestrador (linguagem natural)
+↓
+Switch (roteamento)
+↓
+Agentes especializados
+↓
+Resposta híbrida (texto + botões)
+↓
+CRM + CSAT
+🔁 ETAPA 1 — ENTRADA
+🎯 Objetivo:
+
+Capturar mensagem e contexto
+
+🔧 O que acontece:
+Recebe mensagem do ChatBanana
+Normaliza input (texto / botão)
+Carrega:
+sessão
+histórico
+🧠 ETAPA 2 — ENRICHMENT (ERP)
+🎯 Objetivo:
+
+Saber QUEM é o cliente
+
+🔧 Busca:
+CPF (se houver)
+Contrato
+Status financeiro
+Status conexão
+Nome
+📌 Resultado:
+{
+  "cliente": true/false,
+  "inadimplente": true/false,
+  "conexao": "online/offline",
+  "plano": "400MB"
+}
+🧠 ETAPA 3 — SDR (CÉREBRO LÓGICO)
+
+👉 Aqui é onde mora o poder do sistema
+
+🎯 Função:
+
+Transformar mensagem em INTENT
+
+🧠 Regras principais:
+1. BOTÃO TEM PRIORIDADE
+Se veio botão → usa direto
+2. DETECÇÃO DE INTENÇÃO
+Tipo	Exemplo	Resultado
+"sem internet"	suporte	SUPORTE ou FINANCEIRO
+"boleto"	financeiro	FINANCEIRO
+"quero plano"	venda	COMERCIAL
+"cancelar"	churn	RETENÇÃO
+🔥 REGRA MAIS IMPORTANTE (ISP)
+Se cliente pede suporte:
+
+→ verifica ERP
+
+Se inadimplente:
+   FINANCEIRO
+Senão:
+   SUPORTE
+3. IDENTIFICAÇÃO
+Se precisa → solicita CPF
+Se já tem → segue fluxo
+4. DEFINIÇÃO FINAL
+{
+  "intent": "SUPORTE | FINANCEIRO | COMERCIAL | RETENCAO | HUMANO"
+}
+🧠 ETAPA 4 — ORQUESTRADOR
+🎯 Função:
+
+Traduzir lógica em conversa natural
+
+🔧 Ele faz:
+Mensagens de transição
+Contexto para IA
+Briefing inteligente
+💡 Exemplo:
+"Vou verificar sua conexão agora 👇"
+🔀 ETAPA 5 — SWITCH
+🎯 Função:
+
+Rotear atendimento
+
+Rotas:
+SUPORTE
+FINANCEIRO
+COMERCIAL
+RETENÇÃO
+HUMANO
+IDENTIFICAÇÃO
+🤖 ETAPA 6 — AGENTES ESPECIALIZADOS
+
+Agora entra o coração da operação.
+
+🛠️ SUPORTE TÉCNICO
+🎯 Função:
+
+Resolver problema técnico
+
+🔧 Fluxo:
+Verifica:
+conexão online/offline
+Se offline:
+checar sinal da ONT
+Se online:
+testar Wi-Fi vs cabo
+Se não resolve:
+→ abre chamado
+💡 Importante:
+
+👉 educar cliente (ele não entende internet)
+
+💰 FINANCEIRO
+🎯 Função:
+
+Recuperar receita
+
+🔧 Fluxo:
+Mostra débito
+Oferece:
+PIX
+boleto
+Promessa:
+1x mês
+24h
+⚠️ Regra:
+
+👉 cliente bloqueado NÃO vai pro suporte
+
+💸 COMERCIAL
+🎯 Função:
+
+Gerar receita
+
+🔧 Fluxo (LEAD):
+Pergunta localização
+Valida cobertura
+Oferece planos
+Fecha
+🔧 Fluxo (CLIENTE):
+Upgrade
+Refidelização
+🔥 RETENÇÃO
+🎯 Função:
+
+Evitar cancelamento
+
+🔧 Fluxo:
+Descobre motivo
+Aplica estratégia:
+Motivo	Ação
+financeiro	desconto
+técnico	visita + compensação
+mudança	transferência
+insatisfação	desconto até 50%
+⚠️ Regra:
+
+👉 nunca aceitar cancelamento direto
+
+🌐 INCIDENTE REGIONAL
+🎯 Função:
+
+Evitar overload
+
+🔧 Fluxo:
+Detecta problema massivo
+Informa cliente
+NÃO faz troubleshooting
+❌ NÃO ENCONTRADO
+🎯 Função:
+
+Não travar o usuário
+
+🔧 Fluxo:
+Não encontrou → oferece:
+tentar novamente
+contratar
+humano
+👤 HUMANO
+🎯 Função:
+
+Fallback
+
+🔧 Quando usar:
+erro
+cliente insiste
+caso complexo
+💬 ETAPA 7 — RESPOSTA HÍBRIDA
+🎯 Regra de ouro:
+
+👉 TODA resposta deve ter:
+
+texto natural
+botões
+💡 Exemplo:
+Entendi! Vamos resolver isso 👇
+
+1️⃣ Sem internet  
+2️⃣ Internet lenta  
+3️⃣ Problema no roteador
+🔁 ETAPA 8 — FINALIZAÇÃO
+🎯 Se resolveu:
+envia CSAT
+atualiza CRM
+🎯 Se não:
+abre protocolo
+atribui agente
+🧱 VISÃO FINAL DO SISTEMA
+Cliente fala
+↓
+Sistema entende
+↓
+Decide com base no ERP
+↓
+Responde com IA + botões
+↓
+Resolve ou escala
+↓
+Registra tudo no CRM

@@ -1,0 +1,185 @@
+Create the WhatsApp Official API connection page in the ChatBanana React frontend, including the Meta Embedded Signup button flow.
+
+## Context
+- Stack: React 18 + TypeScript + Vite, Tailwind CSS
+- Existing app color scheme: background #0f0c1a, cards #1c1830, primary accent #8b5cf6→#6d28d9
+- Use existing apiFetch helper with Bearer token for all API calls
+- Meta Embedded Signup requires loading the Facebook JS SDK in the browser
+- Meta App ID: 2651158151951093
+- Route: /settings/whatsapp-official (add to router and sidebar)
+
+## File to create: client/src/pages/WhatsAppOfficialSettings.tsx
+
+### Section 1: Connection Status Card
+
+If NOT connected:
+- Large card with WhatsApp logo (use green #25D366)
+- Title: "Conectar WhatsApp via API Oficial Meta"
+- Description: "Use a API oficial da Meta para enviar mensagens sem risco de banimento, com suporte a templates HSM, botões interativos e maior confiabilidade."
+- Benefits list:
+  ✅ Sem risco de banimento
+  ✅ Templates aprovados pela Meta (HSM)
+  ✅ Botões e listas interativas
+  ✅ Escala ilimitada
+  ✅ Status de entrega em tempo real
+- Big green button: "🔗 Conectar com WhatsApp Business" → triggers Embedded Signup
+- Small text below: "Você precisará de uma conta Meta Business e um número de telefone não registrado no WhatsApp pessoal."
+
+If CONNECTED:
+- Green status badge: "✅ Conectado via API Oficial"
+- Show: Número exibido, Nome do negócio, Qualidade (GREEN/YELLOW/RED badge), Limite de mensagens, Última atividade
+- Buttons: "Testar conexão" | "Desconectar" (with confirmation dialog)
+
+### Section 2: Embedded Signup Implementation
+
+The Embedded Signup opens a Meta popup. Implement this exactly:
+```typescript
+// Load Facebook SDK on component mount
+useEffect(() => {
+  if (window.FB) return; // already loaded
+  
+  window.fbAsyncInit = function() {
+    window.FB.init({
+      appId: '2651158151951093',
+      autoLogAppEvents: true,
+      xfbml: true,
+      version: 'v19.0'
+    });
+  };
+  
+  const script = document.createElement('script');
+  script.src = 'https://connect.facebook.net/pt_BR/sdk.js';
+  script.async = true;
+  script.defer = true;
+  document.body.appendChild(script);
+}, []);
+
+// Launch Embedded Signup
+const handleConnectWhatsApp = () => {
+  setIsConnecting(true);
+  
+  window.FB.login(async (response) => {
+    if (response.authResponse) {
+      const code = response.authResponse.code;
+      
+      // Meta also sends WABA and phone number via the session info callback
+      // We handle this via the "fb_embedded_signup:complete" message event below
+    } else {
+      setIsConnecting(false);
+      toast.error('Conexão cancelada pelo usuário');
+    }
+  }, {
+    config_id: '<YOUR_EMBEDDED_SIGNUP_CONFIG_ID>', // Create this in Meta App Dashboard → WhatsApp → Embedded Signup
+    response_type: 'code',
+    override_default_response_type: true,
+    extras: {
+      setup: {},
+      featureType: '',
+      sessionInfoVersion: '3'
+    }
+  });
+};
+
+// Listen for session info message (contains waba_id and phone_number_id)
+useEffect(() => {
+  const handleMessage = async (event: MessageEvent) => {
+    if (event.origin !== 'https://www.facebook.com' && event.origin !== 'https://web.facebook.com') return;
+    
+    try {
+      const data = JSON.parse(event.data);
+      if (data.type === 'WA_EMBEDDED_SIGNUP') {
+        if (data.event === 'FINISH') {
+          const { phone_number_id, waba_id } = data.data;
+          // Now we have everything — exchange the code
+          await completeConnection(phone_number_id, waba_id);
+        } else if (data.event === 'CANCEL') {
+          setIsConnecting(false);
+          toast.error('Configuração cancelada');
+        } else if (data.event === 'ERROR') {
+          setIsConnecting(false);
+          toast.error('Erro no processo de conexão Meta');
+        }
+      }
+    } catch {}
+  };
+  
+  window.addEventListener('message', handleMessage);
+  return () => window.removeEventListener('message', handleMessage);
+}, []);
+
+// Store the code from FB.login callback in a ref, use it in completeConnection
+const authCodeRef = useRef<string | null>(null);
+
+const completeConnection = async (phoneNumberId: string, wabaId: string) => {
+  try {
+    const result = await apiFetch('/api/whatsapp-official/connect', {
+      method: 'POST',
+      body: JSON.stringify({
+        code: authCodeRef.current,
+        waba_id: wabaId,
+        phone_number_id: phoneNumberId
+      })
+    });
+    
+    setConnection(result);
+    toast.success('WhatsApp conectado com sucesso! 🎉');
+  } catch (err: any) {
+    toast.error('Erro ao conectar: ' + err.message);
+  } finally {
+    setIsConnecting(false);
+  }
+};
+```
+
+### Section 3: Templates HSM
+
+Show only if connected.
+
+Table with columns: Nome, Categoria, Status (badge), Idioma, Ações
+Status badges: APPROVED=green, PENDING=yellow, REJECTED=red
+
+Button: "🔄 Sincronizar templates" → POST /api/whatsapp-official/templates/sync
+Shows count: "X templates sincronizados"
+
+Info box: "Templates são necessários para iniciar conversas após a janela de 24 horas. Crie templates no Meta Business Manager e sincronize aqui."
+
+Link button: "Criar template no Meta Business Manager →" (opens https://business.facebook.com/wa/manage/message-templates/ in new tab)
+
+### Section 4: Migration Guide (only shown when BOTH Z-API and Meta are configured)
+
+Yellow info card:
+"Você está usando a API Oficial e o Z-API simultaneamente. Novas mensagens serão enviadas pela API Oficial. Para migrar completamente, desconecte o Z-API nas configurações de conexão."
+
+### Add to sidebar navigation
+In the sidebar component, under "Configurações" or "Conexões", add:
+- Icon: MessageSquare or Smartphone (Lucide)
+- Label: "WhatsApp Oficial"  
+- Route: /settings/whatsapp-official
+- Show a green dot badge if connected, gray if not
+
+### Add to router
+In the app router (App.tsx or routes file), add:
+<ProtectedRoute path="/settings/whatsapp-official" component={WhatsAppOfficialSettings} />
+
+### TypeScript declaration for window.FB
+At the top of the file or in a global.d.ts:
+```typescript
+declare global {
+  interface Window {
+    FB: any;
+    fbAsyncInit: () => void;
+  }
+}
+```
+
+## IMPORTANT - Before implementing
+In the Meta App Dashboard (developers.facebook.com), you need to:
+1. Go to your app → WhatsApp → Configuration → Embedded Signup
+2. Create an Embedded Signup configuration
+3. Copy the config_id and replace <YOUR_EMBEDDED_SIGNUP_CONFIG_ID> in the code above
+4. Set the webhook URL to: https://your-domain.com/api/webhook/meta
+5. Set the webhook verify token to match WHATSAPP_WEBHOOK_VERIFY_TOKEN in your .env
+6. Subscribe to webhook fields: messages, message_deliveries, message_reads, messaging_postbacks
+
+This must be done BEFORE running this prompt, otherwise the FB.login call will fail.
+Document the config_id here so we can hardcode it.

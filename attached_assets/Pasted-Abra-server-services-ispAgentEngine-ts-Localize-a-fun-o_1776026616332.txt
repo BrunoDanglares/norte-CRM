@@ -1,0 +1,58 @@
+Abra server/services/ispAgentEngine.ts.
+
+Localize a função classifyIntent() — deve estar por volta da linha 635.
+
+Encontre o bloco que força o fluxo para FINANCEIRO quando o cliente
+tem faturas em aberto, independente da intenção declarada.
+Deve ser algo assim:
+
+  if (erpData.open_invoices > 0 && !previousIntent) {
+    return 'FINANCEIRO';
+  }
+
+OU qualquer condição que redirecione para FINANCEIRO antes de checar
+a intenção real do cliente.
+
+CORREÇÃO — VENDAS e SUPORTE devem ter prioridade sobre o fallback financeiro:
+
+Substitua o bloco pelo padrão abaixo:
+
+  // Detecta intenção explícita do cliente ANTES de qualquer fallback
+  const mensagemLower = mensagem.toLowerCase();
+
+  const VENDAS_REGEX = /plano|upgrade|contratar|assinar|internet|instalação|instalacao|novo cliente|quero contratar|quero assinar|aumentar velocidade|mudar plano/i;
+  const SUPORTE_REGEX = /sem internet|caiu|lento|reiniciar|roteador|senha|wifi|wi-fi|técnico|tecnico|problema|falha|não funciona|nao funciona/i;
+  const FINANCEIRO_REGEX = /boleto|fatura|pix|pagar|pagamento|débito|debito|vencimento|segunda via|parcelar|negociar|promessa/i;
+
+  const isVendas = VENDAS_REGEX.test(mensagemLower);
+  const isSuporte = SUPORTE_REGEX.test(mensagemLower);
+  const isFinanceiro = FINANCEIRO_REGEX.test(mensagemLower);
+
+  // Intenção explícita tem prioridade absoluta sobre fallback por fatura em aberto
+  if (isVendas && !isFinanceiro) return 'VENDAS';
+  if (isSuporte && !isFinanceiro) return 'SUPORTE';
+  if (isFinanceiro) return 'FINANCEIRO';
+
+  // Só cai no fallback financeiro se não houver intenção clara
+  if (erpData?.open_invoices > 0 && !previousIntent) {
+    return 'FINANCEIRO';
+  }
+
+  // Retorna a classificação já existente abaixo (OpenAI/outro mecanismo)
+
+ATENÇÃO:
+- Não remova a lógica de classificação via OpenAI que vem depois —
+  esse bloco só adiciona prioridade para os casos mais comuns antes
+  de chamar a IA
+- Se já existirem regex similares no arquivo, unifique com os existentes
+  em vez de duplicar
+- Se a função já tem um retorno via OpenAI que cobre esses casos,
+  apenas mova o bloco do fallback financeiro para DEPOIS das verificações
+  de regex
+
+Confirme:
+1. VENDAS detectado por regex não é mais sobreposto por fallback financeiro
+2. SUPORTE detectado por regex também tem prioridade
+3. Fallback financeiro (open_invoices) só dispara se não houver intenção clara
+4. Lógica OpenAI preservada e intacta
+5. Servidor sem erros de TypeScript

@@ -1,0 +1,108 @@
+Criar endpoint de simulação que permite testar o bot sem
+depender de mensagem WhatsApp real e sem gravar histórico
+de conversa permanente.
+
+══ PASSO 1 — Rota de simulação ══
+
+Em server/routes/isp.ts, adicione:
+
+POST /api/isp/agent/simulate
+Requer: requireAuth
+Body:
+{
+  message: string,
+  input_type: 'text' | 'button' | 'audio',
+  button_id?: string,
+  transcription?: string,
+  phone?: string,            // default: 'test_000000000'
+  reset_session?: boolean    // limpa sessão antes de simular
+}
+
+Comportamento:
+1. Usa phone = body.phone ?? 'test_000000000'
+2. Se reset_session = true, apaga isp_session_state
+   onde conversation_id like 'sim_%' para o workspace
+3. Cria/recupera sessão com prefix 'sim_' + phone
+4. Monta payload igual ao webhook real (mesmo formato
+   que o Meta Cloud API entrega)
+5. Chama ispAgentEngine.processMessage() com esse payload
+6. Captura a resposta e retorna:
+
+{
+  response: {
+    message: string,
+    buttons?: any[],
+    list?: any
+  },
+  debug: {
+    intent_vector: IntentVector,
+    intent_resolved: string,
+    situation_code: string | null,
+    input_type: string,
+    fluid_swap: boolean,
+    guard_result: 'allow' | 'block' | 'redirect',
+    guard_action: string | null,
+    session_state: SessionState,
+    erp_calls: string[],
+    ai_prompt_used: string
+  }
+}
+
+Para capturar erp_calls e ai_prompt_used,
+adicione flags de debug no contexto da chamada:
+  if (isSimulation) {
+    ctx._debug = { erp_calls: [], ai_prompts: [] };
+  }
+
+E nos serviços n8nErpService e n8nAiService,
+quando ctx._debug existir, registre cada chamada:
+  ctx._debug?.erp_calls.push(nomeDaChamada);
+  ctx._debug?.ai_prompts.push(promptName);
+
+NÃO salve na tabela conversation_turns quando for
+simulação (identificar por conversation_id com prefix 'sim_').
+NÃO dispare automações ou webhooks.
+NÃO envie mensagem pelo WhatsApp (n8nSendService.send
+deve ser no-op quando isSimulation = true).
+
+══ PASSO 2 — Frontend: painel de teste ══
+
+Em client/src/pages/isp-prompts.tsx, adicione uma
+terceira aba "Testar Agente" (ao lado de Agentes e Situações).
+
+Layout:
+
+┌─────────────────────────────────────────────────────┐
+│ Simular conversa com o agente                       │
+│                                                     │
+│ Tipo de input: [Texto ▼]  [Botão ▼]  [Áudio]       │
+│                                                     │
+│ ┌─────────────────────────────────────────────────┐ │
+│ │ minha internet não funciona                     │ │
+│ └─────────────────────────────────────────────────┘ │
+│                          [Limpar sessão] [Enviar ↗] │
+│                                                     │
+│ ─── Resposta ──────────────────────────────────────│
+│ [mensagem do bot aparece aqui]                      │
+│                                                     │
+│ ─── Debug ─────────────────────────────────────────│
+│ Intent: SUPORTE_TECNICO (0.87) · Situação: S1       │
+│ Guard: allow · Fluid swap: não                      │
+│ ERP calls: consultarCliente, consultarONU           │
+│ Prompt: agente_suporte_tecnico_v2                   │
+│                                                     │
+│ [ver session state completo ▼]                      │
+└─────────────────────────────────────────────────────┘
+
+Funcionalidades:
+- Campo de texto para a mensagem
+- Selector de input_type (texto/botão/áudio)
+- Se botão: mostrar dropdown com os button_ids disponíveis
+  (FINANCEIRO_DEPT, SUPORTE_DEPT, etc.)
+- Botão "Limpar sessão" — chama simulate com reset_session=true
+- Histórico da conversa simulada scrollável acima do input
+  (como um chat visual)
+- Seção debug colapsável com todos os campos do debug object
+- Sessão persiste entre envios (simula conversa completa)
+
+Chama POST /api/isp/agent/simulate para cada mensagem.

@@ -1,0 +1,102 @@
+PROMPT 11 — Fechamento (A6 + M3)
+Fix the two remaining medium-priority issues in ChatBanana.
+
+## FIX 1: Add timeouts to all external API calls (A6)
+
+Files: server/routes.ts (now split into modules), server/services/automationEngine.ts
+
+PROBLEM: External API calls to Z-API, Meta, OpenAI, SGP, IXC have no timeout.
+A slow/unresponsive external service can hang a request indefinitely.
+
+Create a utility function in server/utils/helpers.ts:
+```typescript
+export function fetchWithTimeout(
+  url: string,
+  options: RequestInit = {},
+  timeoutMs: number = 30000
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  
+  return fetch(url, { ...options, signal: controller.signal })
+    .finally(() => clearTimeout(timer));
+}
+```
+
+Find all raw fetch() calls in server/ that call external services:
+- Z-API calls (api.z-api.io)
+- OpenAI calls (api.openai.com)
+- Any other external fetch() in server/
+
+Replace with fetchWithTimeout:
+```typescript
+// BEFORE:
+const response = await fetch('https://api.z-api.io/...', options);
+
+// AFTER:
+const response = await fetchWithTimeout('https://api.z-api.io/...', options, 30000);
+```
+
+Note: SGP and IXC adapters already have AbortController timeouts — skip those.
+Note: Meta API calls in meta-whatsapp.ts already have metaFetch with timeout — skip those.
+Focus only on remaining raw fetch() calls in route modules and automation engine.
+
+---
+
+## FIX 2: Refactor automacoes.tsx (M3)
+
+File: client/src/pages/automacoes.tsx (6.588 lines)
+
+This is the largest file in the project. Apply the same extraction strategy
+used successfully on inbox.tsx.
+
+### Step 1: Map the sections first
+Read the file and identify the major logical sections and their line ranges.
+Report what you find before extracting anything.
+
+### Step 2: Extract in this order
+
+#### FlowCanvas component
+File: client/src/components/automacoes/FlowCanvas.tsx
+Extract:
+- React Flow canvas setup
+- Node rendering logic
+- Edge rendering
+- Canvas event handlers (onConnect, onNodesChange, onEdgesChange)
+- Zoom/fit controls
+
+#### NodeConfigPanel component  
+File: client/src/components/automacoes/NodeConfigPanel.tsx
+Extract:
+- The right-side config panel
+- All node-type-specific config forms
+- Save/cancel handlers for node config
+
+#### NodePicker component
+File: client/src/components/automacoes/NodePicker.tsx
+Extract:
+- The node type picker/palette
+- Node categories (Mensagens, Lógica, IA, Integrações, ISP)
+- Drag-to-canvas logic
+
+#### AutomacaosList component
+File: client/src/components/automacoes/AutomacaosList.tsx
+Extract:
+- The list of saved automations
+- Create/delete/duplicate actions
+- Status toggle (active/inactive)
+
+### Step 3: Target metrics
+- automacoes.tsx: under 600 lines
+- Each component: under 400 lines
+- All functionality identical to before
+- TypeScript compiles without errors
+
+---
+
+## After implementing:
+1. automacoes.tsx under 600 lines
+2. Fetch calls in server modules have 30s timeout
+3. Confirm automation canvas still works (create, edit, run a flow)
+4. TypeScript compiles without errors
+5. Report final line counts

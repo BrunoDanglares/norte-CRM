@@ -1,0 +1,131 @@
+{
+  "version": "6.0",
+  "screens": [
+    {
+      "id": "DADOS_PESSOAIS",
+      "title": "Cadastro",
+      "terminal": true,
+      "data": {},
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          { "type": "TextHeading", "text": "Vamos agilizar seu cadastro" },
+          { "type": "TextBody", "text": "Preencha os dados abaixo. Nossa equipe entra em contato pra finalizar a contratacao." },
+          { "type": "TextSubheading", "text": "Dados do titular" },
+          {
+            "type": "Dropdown",
+            "name": "tipo_cadastro",
+            "label": "Tipo de cadastro",
+            "required": true,
+            "data-source": [
+              { "id": "pessoa_fisica", "title": "Pessoa Fisica - CPF" },
+              { "id": "pessoa_juridica", "title": "Pessoa Juridica - CNPJ" }
+            ]
+          },
+          {
+            "type": "TextInput",
+            "name": "nome_completo",
+            "label": "Nome ou Razao Social",
+            "required": true,
+            "input-type": "text"
+          },
+          {
+            "type": "TextInput",
+            "name": "documento",
+            "label": "CPF ou CNPJ",
+            "required": true,
+            "input-type": "number",
+            "helper-text": "Informe seu CPF ou CNPJ"
+          },
+          {
+            "type": "DatePicker",
+            "name": "data_nascimento",
+            "label": "Data de nascimento ou fundacao",
+            "required": true
+          },
+          {
+            "type": "TextInput",
+            "name": "email",
+            "label": "E-mail",
+            "required": true,
+            "input-type": "email"
+          },
+          { "type": "TextSubheading", "text": "Endereco de instalacao" },
+          {
+            "type": "TextInput",
+            "name": "cep",
+            "label": "CEP",
+            "required": true,
+            "input-type": "number",
+            "helper-text": "8 digitos"
+          },
+          {
+            "type": "TextInput",
+            "name": "endereco",
+            "label": "Endereco (Rua, Numero, Bairro)",
+            "required": true,
+            "input-type": "text"
+          },
+          {
+            "type": "TextInput",
+            "name": "ponto_referencia",
+            "label": "Ponto de referencia",
+            "required": false,
+            "input-type": "text"
+          },
+          {
+            "type": "TextSubheading", "text": "Wi-Fi (opcional)"
+          },
+          {
+            "type": "TextInput",
+            "name": "wifi_ssid",
+            "label": "Nome do Wi-Fi desejado",
+            "required": false,
+            "input-type": "text"
+          },
+          {
+            "type": "TextInput",
+            "name": "wifi_senha",
+            "label": "Senha do Wi-Fi desejada",
+            "required": false,
+            "input-type": "text"
+          },
+          {
+            "type": "Dropdown",
+            "name": "como_soube",
+            "label": "Como soube da gente?",
+            "required": false,
+            "data-source": [
+              { "id": "google", "title": "Google" },
+              { "id": "instagram", "title": "Instagram" },
+              { "id": "facebook", "title": "Facebook" },
+              { "id": "indicacao", "title": "Indicacao" },
+              { "id": "anuncio_rua", "title": "Anuncio na rua" },
+              { "id": "outro", "title": "Outro" }
+            ]
+          },
+          {
+            "type": "Footer",
+            "label": "Enviar cadastro",
+            "on-click-action": {
+              "name": "complete",
+              "payload": {
+                "tipo_cadastro": "${form.tipo_cadastro}",
+                "nome_completo": "${form.nome_completo}",
+                "documento": "${form.documento}",
+                "data_nascimento": "${form.data_nascimento}",
+                "email": "${form.email}",
+                "cep": "${form.cep}",
+                "endereco": "${form.endereco}",
+                "ponto_referencia": "${form.ponto_referencia}",
+                "wifi_ssid": "${form.wifi_ssid}",
+                "wifi_senha": "${form.wifi_senha}",
+                "como_soube": "${form.como_soube}"
+              }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

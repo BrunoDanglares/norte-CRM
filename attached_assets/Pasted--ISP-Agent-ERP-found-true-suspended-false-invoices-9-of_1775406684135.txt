@@ -1,0 +1,39 @@
+[ISP Agent] 🔍 ERP: found=true, suspended=false, invoices=9, offline=false
+[ISP Intent] classifyIntent: text="832.953.211-91", found=true, suspended=false, invoices=9, days_late=0, offline=false, status="inadimplente", prevIntent=menu
+[ISP Intent] → FINANCEIRO (9 faturas abertas, days_late=0)
+[ISP Agent] 🎯 Intent=FINANCEIRO, prompt=agente_financeiro, prev=menu, changed=true
+[ISP Agent] 🎭 Orquestrador: first=false, intentChanged=true, menu→FINANCEIRO
+[N8N AI] Nome resolution: sessao.cliente_nome='undefined', cliente.nome='undefined', contact_name='', resolved='Bruno Danglares'
+[N8N AI] messages table has 5 msgs — NOT first message
+[N8N AI] isFirstMessage=false, historico_len=0
+[N8N AI] companyName "HRB LACERDA LTDA" looks corporate, using fallback
+[N8N AI] Auto-saved user+assistant turns to conversation_turns for conv=204
+[ISP Agent] 🎭 Orquestrador: "Entendi que você deseja tratar de questões financeiras, Bruno Danglares. 
+
+Atual"
+[N8N AI] Nome resolution: sessao.cliente_nome='undefined', cliente.nome='undefined', contact_name='', resolved='Bruno Danglares'
+[N8N AI] isFirstMessage=false, historico_len=5
+[N8N AI] companyName "HRB LACERDA LTDA" looks corporate, using fallback
+[N8N AI] Auto-saved user+assistant turns to conversation_turns for conv=204
+[ISP Agent] 💬 AI: 262 chars, tokens=795
+[ISP Agent] ✉️ Enviado: parts=4
+[N8N_TRIGGER] ISP Agent: intent=FINANCEIRO, success=true
+[N8N_TRIGGER] ISP Agent handled message — skipping N8N webhook (prevents duplicate responses)
+[MetaWebhook] processIncoming: phone=559192424228, conv=204, automacaoId=8771ba08-e6e0-4b06-b386-3dc7a79f1ce3, msgType=text, phoneLocked=true
+[MessageProcessor] Automation check: phone=559192424228, conexaoAutomacaoId=8771ba08-e6e0-4b06-b386-3dc7a79f1ce3, content_len=1, mediaType=text
+[MessageProcessor] debounce decision: firstNode=n8n_trigger, hasN8nOrAi=true, needsDebounce=true
+[MessageProcessor] DEBOUNCE: scheduling automation for conv=204 (10s window)
+[ISP Agent] ▶ conv=204, phone=559192424228, msg="1"
+[ISP Agent] companyName "HRB LACERDA LTDA" looks corporate, using fallback
+[ISP Agent] 🔍 ERP: found=true, suspended=false, invoices=9, offline=false
+[ISP Intent] classifyIntent: text="1", found=true, suspended=false, invoices=9, days_late=0, offline=false, status="inadimplente", prevIntent=FINANCEIRO
+[ISP Intent] → FINANCEIRO (9 faturas abertas, days_late=0)
+[ISP Agent] 🎯 Intent=FINANCEIRO, prompt=agente_financeiro, prev=FINANCEIRO, changed=false
+[N8N AI] Nome resolution: sessao.cliente_nome='undefined', cliente.nome='undefined', contact_name='', resolved='Bruno Danglares'
+[N8N AI] isFirstMessage=false, historico_len=11
+[N8N AI] companyName "HRB LACERDA LTDA" looks corporate, using fallback
+[N8N AI] Auto-saved user+assistant turns to conversation_turns for conv=204
+[ISP Agent] 💬 AI: 152 chars, tokens=898
+[ISP Agent] ✉️ Enviado: parts=2
+[N8N_TRIGGER] ISP Agent: intent=FINANCEIRO, success=true
+[N8N_TRIGGER] ISP Agent handled message — skipping N8N webhook (prevents duplicate responses)

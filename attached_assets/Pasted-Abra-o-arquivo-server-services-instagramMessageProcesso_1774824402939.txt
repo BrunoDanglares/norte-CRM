@@ -1,0 +1,60 @@
+Abra o arquivo `server/services/instagramMessageProcessor.ts`.
+
+Após o bloco de broadcast do WebSocket (os dois broadcastToWorkspace), e ANTES do bloco `if (!skipAutomations)`, adicione a seguinte lógica de verificação de pending inputs:
+
+// Verifica se há fluxo de automação pausado aguardando resposta deste usuário
+if (!skipAutomations && lead) {
+  try {
+    const pending = await storage.getPendingInputByPhone(senderIgUserId, workspaceId);
+    if (pending) {
+      const autoCheck = await storage.getAutomacao(pending.flowId, workspaceId);
+      if (!autoCheck || autoCheck.status !== "ACTIVE") {
+        await storage.deletePendingInput(pending.id);
+      } else {
+        const pendingType = (pending as any).pendingType || "option_list";
+        const pauseData = pending.context?.pauseData || {};
+        const isWaitingForReply =
+          pendingType === "wait" &&
+          (pauseData.eventType === "client_reply" || pauseData.eventType === "new_message");
+
+        if (pendingType === "wait" && !isWaitingForReply) {
+          return;
+        }
+
+        if (content) {
+          try {
+            const { conversations } = await import("@shared/schema");
+            await db
+              .update(conversations)
+              .set({ ultimaMensagem: content, tempo: "agora", updatedAt: new Date() })
+              .where(
+                and(
+                  eq(conversations.id, pending.context?.conversationId ?? conversationId!),
+                  eq(conversations.workspaceId, workspaceId)
+                )
+              );
+          } catch {}
+        }
+
+        const { resumeAutomationFlow } = await import("./automationEngine");
+        await storage.deletePendingInput(pending.id);
+        await resumeAutomationFlow(pending, "__text_input__", {
+          text: content,
+          type: messageType as any,
+          media_url: mediaUrl,
+        });
+        return; // fluxo retomado, não dispara nova automação
+      }
+    }
+  } catch (pendingErr: any) {
+    console.error("[Instagram] Pending input error:", pendingErr.message);
+  }
+}
+
+Em seguida, altere o bloco `if (!skipAutomations)` existente para `if (!skipAutomations && lead)` — se já estiver assim, não mude nada.
+
+Certifique-se de que `db`, `and`, `eq`, `storage` já estão importados no topo do arquivo (eles já estão). Verifique se `resumeAutomationFlow` e `conversations` são importados dinamicamente dentro do bloco (como mostrado acima) para evitar dependência circular.
+
+Não mexa em nenhuma outra parte do arquivo.
+
+Reporte o resultad

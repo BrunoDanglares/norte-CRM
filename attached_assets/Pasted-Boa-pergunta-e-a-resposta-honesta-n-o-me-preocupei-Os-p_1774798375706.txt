@@ -1,0 +1,141 @@
+Boa pergunta — e a resposta honesta é: não me preocupei. Os prompts anteriores criaram várias coisas que agora colidem ou ficam duplicadas com o novo módulo. Preciso de um prompt de limpeza antes de continuar.
+
+PROMPT DE LIMPEZA — Remover implementações anteriores conflitantes
+Antes de continuar com o módulo Insta Prospect, precisamos remover o que foi criado nos prompts anteriores que agora está duplicado ou em conflito. Faça as seguintes remoções:
+
+---
+
+### 1. Remover arquivos de serviço antigos
+
+Delete os seguintes arquivos se existirem:
+- `server/services/instagramCommentHandler.ts`
+- `server/services/instagramStoryHandler.ts`
+- `server/services/ispInstagramFlows.ts`
+
+---
+
+### 2. Limpar o arquivo server/routes/instagram.ts
+
+No webhook POST do Instagram, remova todas as chamadas e imports antigos:
+
+Remova estes imports do topo do arquivo:
+```ts
+// REMOVER estas linhas:
+import { processInstagramComment } from '../services/instagramCommentHandler';
+import { processStoryMention } from '../services/instagramStoryHandler';
+```
+
+Dentro do handler POST, no loop de `entry.changes`, substitua TODO o conteúdo atual por apenas os placeholders — o novo módulo vai assumir isso:
+```ts
+// Dentro do loop entry.changes:
+for (const change of entry.changes || []) {
+  // Processado pelo módulo Insta Prospect
+  if (change.field === 'comments' && change.value) {
+    const { value } = change;
+    await handleInstaProspectComment({
+      workspaceId: conn.workspaceId,
+      connectionId: conn.id,
+      accessToken: conn.accessToken,
+      igAccountUserId: igUserId,
+      commentId: value.id,
+      postId: value.media?.id || '',
+      fromIgUserId: value.from?.id || '',
+      fromIgUsername: value.from?.username || '',
+      commentText: value.text || '',
+    });
+  }
+
+  if (change.field === 'mention' && change.value) {
+    await handleInstaProspectStory({
+      workspaceId: conn.workspaceId,
+      accessToken: conn.accessToken,
+      igAccountUserId: igUserId,
+      fromIgUserId: change.value?.sender_id || '',
+      fromIgUsername: change.value?.from?.username || '',
+    });
+  }
+}
+```
+
+No loop de `entry.messaging` (DMs), substitua a chamada antiga por:
+```ts
+for (const messaging of entry.messaging || []) {
+  const { sender, recipient, message } = messaging;
+  if (sender.id === igUserId) continue;
+  if (!message) continue;
+
+  await handleInstaProspectDM({
+    workspaceId: conn.workspaceId,
+    connectionId: conn.id,
+    accessToken: conn.accessToken,
+    igAccountUserId: igUserId,
+    senderIgUserId: sender.id,
+    senderIgUsername: sender.username || '',
+    messageText: message.text || '',
+  });
+}
+```
+
+Adicione o import correto no topo:
+```ts
+import {
+  handleInstaProspectDM,
+  handleInstaProspectComment,
+  handleInstaProspectStory,
+} from '../services/instaProspectService';
+```
+
+---
+
+### 3. Remover nós do canvas de automações
+
+No arquivo que define os tipos de nós do canvas (NodeTypes, nodeDefinitions ou similar), remova os seguintes tipos que foram adicionados anteriormente:
+- `instagram_comment_trigger`
+- `instagram_dm_trigger`
+- `instagram_story_trigger`
+
+Esses gatilhos agora vivem exclusivamente no módulo Insta Prospect, não no canvas.
+
+---
+
+### 4. Remover templates ISP do canvas
+
+No arquivo de templates de automação (onde foram adicionados `isp_cobertura`, `isp_indicacao`, `isp_pos_instalacao`, `isp_story_reativacao`, `isp_comment_to_dm`, `isp_indicacao_instagram`), remova todos esses templates. A categoria "Instagram ISP" deve ser removida por completo do canvas.
+
+---
+
+### 5. Remover cron jobs antigos
+
+No arquivo de jobs agendados, remova os dois jobs que foram adicionados anteriormente:
+- Job de pós-instalação Instagram (`*/5 * * * *` filtrando canal instagram)
+- Job de notificação de lista de espera (`0 9 * * *`)
+
+Esses serão reimplementados dentro do próprio módulo Insta Prospect.
+
+---
+
+### 6. Remover rota antiga do Instagram ISP stats
+
+No arquivo `server/routes/instagram.ts`, remova a rota:
+GET /api/instagram/isp-stats
+
+---
+
+### 7. Verificar tabelas obsoletas
+
+As seguintes tabelas foram criadas nos prompts anteriores mas agora são substituídas pelas novas. Verifique se existem e, se existirem e estiverem VAZIAS, rode os drops:
+```sql
+-- Rodar apenas se as tabelas estiverem vazias:
+DROP TABLE IF EXISTS instagram_waitlist;
+DROP TABLE IF EXISTS instagram_comment_triggers;
+```
+
+Se já tiverem dados, mantenha por enquanto e reporte.
+
+---
+
+Após todas as remoções, rode o servidor e confirme:
+1. Sem erros de imports quebrados
+2. Sem referências a funções deletadas
+3. Canvas de automações sem os nós de Instagram
+4. Reporte quais itens foram encontrados e removidos com sucesso

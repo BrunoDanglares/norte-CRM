@@ -1,0 +1,449 @@
+Implement payment confirmation and contract unblocking features for the ChatBanana ISP module.
+
+## Context
+- ISP module exists with SGP and IXC adapters implementing ISPProvider interface
+- isp_configs table exists with workspace settings
+- channel-router sendMessage used for WhatsApp notifications
+- Both SGP and IXC adapters must implement the new methods
+
+## Step 1: Update isp_configs table
+
+Add columns via Drizzle migration:
+
+-- Trust unlock settings
+- trust_unlock_enabled: boolean not null default true
+- trust_unlock_max_days_overdue: integer default null (null = no limit)
+- trust_unlock_max_per_month: integer default null (null = no limit)
+- trust_unlock_cooldown_hours: integer not null default 24 (min hours between unlocks for same client)
+- trust_unlock_message: text (message sent to client after unlock)
+- trust_unlock_operator_notify: boolean not null default true (notify operator via WhatsApp)
+- operator_phone: text (operator WhatsApp number for notifications)
+
+Run migration after.
+
+## Step 2: Create unlock tracking table
+
+Add to schema:
+
+### isp_unlock_logs
+Tracks every trust unlock granted — prevents abuse.
+
+Columns:
+- id: serial primary key
+- workspace_id: uuid not null references workspaces(id) on delete cascade
+- sgp_customer_id: text not null
+- sgp_contract_id: text not null
+- customer_phone: text not null
+- customer_name: text not null
+- unlock_type: text not null (enum: 'trust' | 'payment_confirmed')
+- days_overdue_at_unlock: integer not null default 0
+- erp_response: jsonb (raw response from SGP/IXC)
+- success: boolean not null default false
+- error_message: text
+- unlocked_at: timestamp default now()
+- workspace_id index
+
+Unique partial index: (workspace_id, sgp_customer_id, unlock_type)
+WHERE unlocked_at > NOW() - INTERVAL '24 hours'
+-- prevents same customer from being unlocked multiple times in 24h at DB level
+
+Run migration.
+
+## Step 3: Add new methods to ISPProvider interface
+
+In server/services/isp-provider.interface.ts, add to ISPProvider:
+```typescript// Trust unlock: unblock client immediately without payment confirmation
+// SGP: POST /api/ura/desbloquearconfianca/ or similar
+// IXC: PUT /cliente_contrato/{id} with status change
+trustUnlock(
+credentials: ISPCredentials,
+params: { customerId: string; contractId: string }
+): Promise<{ success: boolean; message: string }>;// Mark invoice as paid in ERP
+// SGP: POST /api/ura/baixartitulo/ or financial endpoint
+// IXC: PUT /fn_areceber/{id} with payment data
+confirmPayment(
+credentials: ISPCredentials,
+params: { invoiceId: string; customerId: string; contractId: string; paymentDate?: string }
+): Promise<{ success: boolean; message: string }>;// Reactivate suspended contract
+// SGP: included in trustUnlock or separate endpoint
+// IXC: PUT /cliente_contrato/{id} with ativo=S
+reactivateContract(
+credentials: ISPCredentials,
+params: { customerId: string; contractId: string }
+): Promise<{ success: boolean; message: string }>;
+
+## Step 4: Implement new methods in SGP adapter
+
+In server/services/sgp-adapter.ts:
+```typescriptexport async function trustUnlock(credentials: ISPCredentials, params: {
+customerId: string; contractId: string;
+}): Promise<{ success: boolean; message: string }> {
+// SGP trust unlock endpoint (URA category)
+// POST /api/ura/desbloquearconfianca/
+const formData = new FormData();
+formData.append('token', credentials.apiToken);
+formData.append('app', credentials.sgpApp || 'ChatBanana');
+formData.append('contrato', params.contractId);try {
+const response = await sgpFetch(
+${credentials.baseUrl}/api/ura/desbloquearconfianca/,
+{ method: 'POST', body: formData },
+credentials
+);return {
+  success: response.status === 1 || response.sucesso === true || response.msg?.toLowerCase().includes('sucesso'),
+  message: response.msg || response.message || 'Desbloqueio realizado'
+};
+} catch (err: any) {
+return { success: false, message: err.sgpMessage || err.message };
+}
+}export async function confirmPayment(credentials: ISPCredentials, params: {
+invoiceId: string; customerId: string; contractId: string; paymentDate?: string;
+}): Promise<{ success: boolean; message: string }> {
+// SGP: POST /api/ura/baixartitulo/
+// OR financial endpoint to mark title as paid
+const formData = new FormData();
+formData.append('token', credentials.apiToken);
+formData.append('app', credentials.sgpApp || 'ChatBanana');
+formData.append('titulo', params.invoiceId);
+formData.append('contrato', params.contractId);
+formData.append('data_pagamento', params.paymentDate || new Date().toISOString().split('T')[0]);try {
+const response = await sgpFetch(
+${credentials.baseUrl}/api/ura/baixartitulo/,
+{ method: 'POST', body: formData },
+credentials
+);return {
+  success: response.status === 1 || response.sucesso === true,
+  message: response.msg || response.message || 'Pagamento registrado'
+};
+} catch (err: any) {
+return { success: false, message: err.sgpMessage || err.message };
+}
+}export async function reactivateContract(credentials: ISPCredentials, params: {
+customerId: string; contractId: string;
+}): Promise<{ success: boolean; message: string }> {
+// SGP: reactivation may be included in trustUnlock
+// Try dedicated endpoint first
+const formData = new FormData();
+formData.append('token', credentials.apiToken);
+formData.append('app', credentials.sgpApp || 'ChatBanana');
+formData.append('contrato', params.contractId);try {
+const response = await sgpFetch(
+${credentials.baseUrl}/api/ura/ativarcontrato/,
+{ method: 'POST', body: formData },
+credentials
+).catch(async () => {
+// Fallback: some SGP versions reactivate via trustUnlock
+return { status: 1, msg: 'Contrato reativado via desbloqueio' };
+});return {
+  success: response.status === 1 || response.sucesso === true,
+  message: response.msg || 'Contrato reativado'
+};
+} catch (err: any) {
+return { success: false, message: err.message };
+}
+}
+
+## Step 5: Implement new methods in IXC adapter
+
+In server/services/ixc-adapter.ts:
+```typescriptexport async function trustUnlock(credentials: ISPCredentials, params: {
+customerId: string; contractId: string;
+}): Promise<{ success: boolean; message: string }> {
+// IXC trust unlock: PUT /cliente_contrato/{id}
+// Change bloqueio field to N (not blocked)
+const url = ${credentials.baseUrl}/cliente_contrato/${params.contractId};try {
+const response = await ixcFetch(url, {
+method: 'PUT',
+headers: { ...getIXCHeaders(credentials), 'ixcsoft': 'alterar' },
+body: JSON.stringify({
+bloqueio: 'N',
+bloqueio_financeiro: 'N'
+})
+});return {
+  success: response.type === 'success',
+  message: response.message || 'Desbloqueio realizado com sucesso'
+};
+} catch (err: any) {
+return { success: false, message: err.message };
+}
+}export async function confirmPayment(credentials: ISPCredentials, params: {
+invoiceId: string; customerId: string; contractId: string; paymentDate?: string;
+}): Promise<{ success: boolean; message: string }> {
+// IXC: PUT /fn_areceber/{id} to mark as paid
+// OR use special endpoint fn_areceber_baixa
+const url = ${credentials.baseUrl}/fn_areceber/${params.invoiceId};
+const today = params.paymentDate || new Date().toISOString().split('T')[0];try {
+const response = await ixcFetch(url, {
+method: 'PUT',
+headers: { ...getIXCHeaders(credentials), 'ixcsoft': 'alterar' },
+body: JSON.stringify({
+status: 'B',           // B = Baixado (paid)
+data_pagamento: today,
+valor_pago: null        // null = use original value
+})
+});return {
+  success: response.type === 'success',
+  message: response.message || 'Pagamento confirmado'
+};
+} catch (err: any) {
+return { success: false, message: err.message };
+}
+}export async function reactivateContract(credentials: ISPCredentials, params: {
+customerId: string; contractId: string;
+}): Promise<{ success: boolean; message: string }> {
+// IXC: PUT /cliente_contrato/{id} to reactivate
+const url = ${credentials.baseUrl}/cliente_contrato/${params.contractId};try {
+const response = await ixcFetch(url, {
+method: 'PUT',
+headers: { ...getIXCHeaders(credentials), 'ixcsoft': 'alterar' },
+body: JSON.stringify({
+ativo: 'S',
+situacao: 'A',
+bloqueio: 'N',
+bloqueio_financeiro: 'N'
+})
+});return {
+  success: response.type === 'success',
+  message: response.message || 'Contrato reativado'
+};
+} catch (err: any) {
+return { success: false, message: err.message };
+}
+}
+
+## Step 6: Create unlock service
+
+File to create: server/services/isp-unlock.ts
+```typescriptimport { db } from '../db';
+import { isp_configs, isp_unlock_logs } from '../db/schema';
+import { eq, and, gte, count } from 'drizzle-orm';
+import { getProviderFromConfig } from './isp-provider-factory';
+import { sendMessage } from './channel-router';const DEFAULT_TRUST_UNLOCK_MESSAGE = `✅ Seu sinal foi reativado, {{nome}}!Seu acesso à internet foi liberado. Lembre-se de realizar o pagamento da fatura em aberto para evitar nova suspensão.Fatura: {{valor}} vencida em {{vencimento}}
+PIX/Boleto: {{link_boleto}}Qualquer dúvida, estamos aqui! 😊`;const DEFAULT_OPERATOR_MESSAGE = `⚠️ Desbloqueio de ConfiançaCliente: {{nome}}
+Telefone: {{telefone}}
+Fatura em atraso: {{valor}} ({{dias_atraso}} dias)
+Vencimento: {{vencimento}}Desbloqueio concedido automaticamente via WhatsApp.`;export interface UnlockParams {
+workspaceId: string;
+customerId: string;
+contractId: string;
+customerName: string;
+customerPhone: string;
+invoiceId?: string;
+invoiceValue?: number;
+invoiceDueDate?: string;
+invoiceDaysOverdue?: number;
+invoiceLink?: string;
+unlockType: 'trust' | 'payment_confirmed';
+}export interface UnlockResult {
+success: boolean;
+message: string;
+alreadyUnlocked?: boolean;
+restrictedReason?: string;
+}export async function executeTrustUnlock(params: UnlockParams): Promise<UnlockResult> {
+const { workspaceId, customerId, contractId } = params;// 1. Load ISP config
+const config = await db.query.isp_configs.findFirst({
+where: and(
+eq(isp_configs.workspace_id, workspaceId),
+eq(isp_configs.is_active, true)
+)
+});
+if (!config) return { success: false, message: 'ISP não configurado' };// 2. Check if trust unlock is enabled
+if (!config.trust_unlock_enabled) {
+return {
+success: false,
+restrictedReason: 'disabled',
+message: 'Desbloqueio de confiança não está disponível no momento.'
+};
+}// 3. Check max days overdue restriction
+if (config.trust_unlock_max_days_overdue && params.invoiceDaysOverdue) {
+if (params.invoiceDaysOverdue > config.trust_unlock_max_days_overdue) {
+return {
+success: false,
+restrictedReason: 'max_days_exceeded',
+message: Não é possível realizar o desbloqueio de confiança com mais de ${config.trust_unlock_max_days_overdue} dias de atraso. Entre em contato com nosso suporte.
+};
+}
+}// 4. Check cooldown — same customer unlock within configured hours
+const cooldownHours = config.trust_unlock_cooldown_hours || 24;
+const cooldownDate = new Date(Date.now() - cooldownHours * 60 * 60 * 1000);const recentUnlock = await db.query.isp_unlock_logs.findFirst({
+where: and(
+eq(isp_unlock_logs.workspace_id, workspaceId),
+eq(isp_unlock_logs.sgp_customer_id, customerId),
+eq(isp_unlock_logs.success, true),
+gte(isp_unlock_logs.unlocked_at, cooldownDate)
+)
+});if (recentUnlock) {
+return {
+success: false,
+alreadyUnlocked: true,
+message: Seu sinal já foi desbloqueado recentemente. O desbloqueio de confiança pode ser usado uma vez a cada ${cooldownHours} horas.
+};
+}// 5. Check monthly limit per customer
+if (config.trust_unlock_max_per_month) {
+const startOfMonth = new Date();
+startOfMonth.setDate(1);
+startOfMonth.setHours(0, 0, 0, 0);const [monthlyCount] = await db.select({ value: count() })
+  .from(isp_unlock_logs)
+  .where(and(
+    eq(isp_unlock_logs.workspace_id, workspaceId),
+    eq(isp_unlock_logs.sgp_customer_id, customerId),
+    eq(isp_unlock_logs.success, true),
+    gte(isp_unlock_logs.unlocked_at, startOfMonth)
+  ));if ((monthlyCount?.value || 0) >= config.trust_unlock_max_per_month) {
+  return {
+    success: false,
+    restrictedReason: 'monthly_limit',
+    message: `Você atingiu o limite de desbloqueios de confiança deste mês. Entre em contato com o suporte para regularizar sua situação.`
+  };
+}
+}// 6. Execute unlock in ERP
+const { provider, credentials } = getProviderFromConfig(config);const unlockResult = await provider.trustUnlock(credentials, { customerId, contractId });
+const reactivateResult = await provider.reactivateContract(credentials, { customerId, contractId });const overallSuccess = unlockResult.success || reactivateResult.success;// 7. Log the unlock attempt
+await db.insert(isp_unlock_logs).values({
+workspace_id: workspaceId,
+sgp_customer_id: customerId,
+sgp_contract_id: contractId,
+customer_phone: params.customerPhone,
+customer_name: params.customerName,
+unlock_type: params.unlockType,
+days_overdue_at_unlock: params.invoiceDaysOverdue || 0,
+erp_response: { unlock: unlockResult, reactivate: reactivateResult },
+success: overallSuccess,
+error_message: overallSuccess ? null : ${unlockResult.message} | ${reactivateResult.message}
+}).catch(e => console.error('[ISP Unlock] Log error:', e));if (!overallSuccess) {
+return {
+success: false,
+message: 'Não foi possível realizar o desbloqueio automático. Entre em contato com o suporte.'
+};
+}// 8. Send confirmation message to client
+const clientMessage = buildMessage(
+config.trust_unlock_message || DEFAULT_TRUST_UNLOCK_MESSAGE,
+{
+nome: params.customerName?.split(' ')[0] || 'cliente',
+valor: params.invoiceValue ? R$ ${params.invoiceValue.toFixed(2)} : '',
+vencimento: params.invoiceDueDate ? new Date(params.invoiceDueDate).toLocaleDateString('pt-BR') : '',
+link_boleto: params.invoiceLink || ''
+}
+);await sendMessage({
+workspaceId,
+to: params.customerPhone,
+type: 'text',
+content: clientMessage
+}).catch(e => console.error('[ISP Unlock] Client notification error:', e));// 9. Notify operator if configured
+if (config.trust_unlock_operator_notify && config.operator_phone) {
+const operatorMessage = buildMessage(
+DEFAULT_OPERATOR_MESSAGE,
+{
+nome: params.customerName,
+telefone: params.customerPhone,
+valor: params.invoiceValue ? R$ ${params.invoiceValue.toFixed(2)} : 'N/D',
+dias_atraso: String(params.invoiceDaysOverdue || 0),
+vencimento: params.invoiceDueDate ? new Date(params.invoiceDueDate).toLocaleDateString('pt-BR') : 'N/D'
+}
+);await sendMessage({
+  workspaceId,
+  to: config.operator_phone,
+  type: 'text',
+  content: operatorMessage
+}).catch(e => console.error('[ISP Unlock] Operator notification error:', e));
+}return {
+success: true,
+message: Sinal reativado com sucesso!
+};
+}export async function executePaymentConfirmation(params: UnlockParams): Promise<UnlockResult> {
+const { workspaceId, customerId, contractId } = params;const config = await db.query.isp_configs.findFirst({
+where: and(eq(isp_configs.workspace_id, workspaceId), eq(isp_configs.is_active, true))
+});
+if (!config) return { success: false, message: 'ISP não configurado' };const { provider, credentials } = getProviderFromConfig(config);// 1. Confirm payment in ERP
+const paymentResult = params.invoiceId
+? await provider.confirmPayment(credentials, {
+invoiceId: params.invoiceId,
+customerId,
+contractId
+})
+: { success: false, message: 'ID da fatura não informado' };// 2. Reactivate contract
+const reactivateResult = await provider.reactivateContract(credentials, { customerId, contractId });// 3. Trust unlock (unblock access)
+const unlockResult = await provider.trustUnlock(credentials, { customerId, contractId });const overallSuccess = paymentResult.success || (reactivateResult.success && unlockResult.success);// 4. Log
+await db.insert(isp_unlock_logs).values({
+workspace_id: workspaceId,
+sgp_customer_id: customerId,
+sgp_contract_id: contractId,
+customer_phone: params.customerPhone,
+customer_name: params.customerName,
+unlock_type: 'payment_confirmed',
+days_overdue_at_unlock: params.invoiceDaysOverdue || 0,
+erp_response: { payment: paymentResult, reactivate: reactivateResult, unlock: unlockResult },
+success: overallSuccess,
+error_message: overallSuccess ? null : paymentResult.message
+}).catch(() => {});// 5. Notify operator
+if (config.trust_unlock_operator_notify && config.operator_phone) {
+const msg = ✅ *Pagamento Confirmado*\n\nCliente: *${params.customerName}*\nFatura: *${params.invoiceValue ? R$ ${params.invoiceValue.toFixed(2)} : 'N/D'}*\nContrato reativado: ${reactivateResult.success ? '✅' : '❌'}\nAcesso liberado: ${unlockResult.success ? '✅' : '❌'};
+await sendMessage({ workspaceId, to: config.operator_phone, type: 'text', content: msg }).catch(() => {});
+}return { success: overallSuccess, message: paymentResult.message };
+}function buildMessage(template: string, vars: Record<string, string>): string {
+return template.replace(/{{(\w+)}}/g, (_, k) => vars[k] ?? '');
+}
+
+## Step 7: Add routes to isp.ts
+```typescriptimport { executeTrustUnlock, executePaymentConfirmation } from '../services/isp-unlock';
+import { isp_unlock_logs } from '../db/schema';// POST /api/isp/unlock/trust
+// Called by automation engine or manually by operator
+router.post('/unlock/trust', async (req, res) => {
+try {
+const workspaceId = resolveWorkspaceId(req);
+const {
+customer_id, contract_id, customer_name, customer_phone,
+invoice_id, invoice_value, invoice_due_date, invoice_days_overdue, invoice_link
+} = req.body;if (!customer_id || !contract_id) {
+  return res.status(400).json({ error: 'customer_id e contract_id são obrigatórios' });
+}const result = await executeTrustUnlock({
+  workspaceId,
+  customerId: customer_id,
+  contractId: contract_id,
+  customerName: customer_name || '',
+  customerPhone: customer_phone || '',
+  invoiceId: invoice_id,
+  invoiceValue: invoice_value,
+  invoiceDueDate: invoice_due_date,
+  invoiceDaysOverdue: invoice_days_overdue,
+  invoiceLink: invoice_link,
+  unlockType: 'trust'
+});res.json(result);
+} catch (err: any) {
+res.status(500).json({ error: err.message });
+}
+});// POST /api/isp/unlock/payment-confirmed
+router.post('/unlock/payment-confirmed', async (req, res) => {
+try {
+const workspaceId = resolveWorkspaceId(req);
+const { customer_id, contract_id, invoice_id, customer_name, customer_phone, invoice_value } = req.body;const result = await executePaymentConfirmation({
+  workspaceId,
+  customerId: customer_id,
+  contractId: contract_id,
+  customerName: customer_name || '',
+  customerPhone: customer_phone || '',
+  invoiceId: invoice_id,
+  invoiceValue: invoice_value,
+  unlockType: 'payment_confirmed'
+});res.json(result);
+} catch (err: any) {
+res.status(500).json({ error: err.message });
+}
+});// GET /api/isp/unlock/logs
+router.get('/unlock/logs', async (req, res) => {
+try {
+const workspaceId = resolveWorkspaceId(req);
+const limit = parseInt(req.query.limit as string) || 50;const logs = await db.select()
+  .from(isp_unlock_logs)
+  .where(eq(isp_unlock_logs.workspace_id, workspaceId))
+  .orderBy(desc(isp_unlock_logs.unlocked_at))
+  .limit(limit);res.json(logs);
+} catch (err: any) {
+res.status(500).json({ error: err.message });
+}
+});
+
+## After implementing:
+1. Run migration — confirm isp_unlock_logs table + new isp_configs columns
+2. Confirm TypeScript compiles
+3. Test POST /api/isp/unlock/trust with mock data — confirm restriction checks work
+4. Report the exact SGP endpoint name for trust unlock if different from /api/ura/desbloquearconfianca/

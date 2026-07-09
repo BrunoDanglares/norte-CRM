@@ -1,0 +1,109 @@
+PROMPT 6 — C1 + C2 (Credenciais Hardcoded)
+Fix two remaining critical security vulnerabilities in ChatBanana.
+
+## FIX 1: Remove hardcoded super admin password (C1)
+
+File: server/routes.ts lines ~5046-5047
+
+Find these lines:
+const SUPER_ADMIN_USER = "Administrador";
+const SUPER_ADMIN_PASS = "Odlareg159951@";
+
+STEP 1: Find the existing password hashing function used for regular users.
+Look for: hashPassword, scrypt, or similar in server/auth.ts or server/middleware/auth.ts
+Identify the exact function name and import path.
+
+STEP 2: Add a one-time hash generator route (temporary, we'll delete it):
+```typescript
+// TEMPORARY — add this route, call it once, then DELETE it
+app.get('/api/internal/generate-hash', async (req, res) => {
+  const { hashPassword } = await import('./auth'); // adjust import
+  const hash = await hashPassword("Odlareg159951@");
+  res.json({ hash });
+  // IMPORTANT: Delete this route after use
+});
+```
+
+STEP 3: Replace the hardcoded constants:
+```typescript
+// REMOVE:
+const SUPER_ADMIN_USER = "Administrador";
+const SUPER_ADMIN_PASS = "Odlareg159951@";
+
+// ADD:
+const SUPER_ADMIN_USER = process.env.SUPER_ADMIN_USER;
+const SUPER_ADMIN_PASS_HASH = process.env.SUPER_ADMIN_PASS_HASH;
+
+if (!SUPER_ADMIN_USER || !SUPER_ADMIN_PASS_HASH) {
+  console.warn('[SuperAdmin] SUPER_ADMIN_USER or SUPER_ADMIN_PASS_HASH not configured');
+}
+```
+
+STEP 4: Update the password comparison in the super admin login handler.
+Find where the password is compared (likely something like):
+```typescript
+// BEFORE (plain text comparison):
+if (password === SUPER_ADMIN_PASS) { ... }
+
+// AFTER (hash comparison):
+const { comparePasswords } = await import('./auth'); // adjust import
+const isValid = SUPER_ADMIN_USER && 
+                SUPER_ADMIN_PASS_HASH && 
+                username === SUPER_ADMIN_USER && 
+                await comparePasswords(password, SUPER_ADMIN_PASS_HASH);
+if (isValid) { ... }
+```
+
+STEP 5: After implementing, call the temporary route:
+GET /api/internal/generate-hash
+Copy the returned hash value.
+
+STEP 6: Add to EasyPanel → Environment:
+SUPER_ADMIN_USER=Administrador
+SUPER_ADMIN_PASS_HASH=<paste the hash from step 5>
+
+STEP 7: DELETE the temporary /api/internal/generate-hash route.
+
+STEP 8: Verify with grep:
+grep -r "Odlareg" . --include="*.ts" --include="*.tsx"
+→ Should return 0 results
+
+---
+
+## FIX 2: Remove JWT_SECRET fallback (C2)
+
+Files: server/index.ts line ~66, server/middleware/auth.ts line ~6
+
+Find this pattern in both files:
+```typescript
+const JWT_SECRET = process.env.JWT_SECRET || "flowcrm-secret-2025"
+```
+
+Replace with:
+```typescript
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  console.error('[FATAL] JWT_SECRET environment variable is required');
+  process.exit(1);
+}
+```
+
+IMPORTANT: Before deploying, verify JWT_SECRET exists in EasyPanel.
+Run: check EasyPanel → chatbanana → Environment → confirm JWT_SECRET is set.
+
+If JWT_SECRET is NOT in EasyPanel yet:
+1. Generate a strong secret: node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
+2. Add to EasyPanel environment as JWT_SECRET
+3. Then deploy
+
+After deploying, verify with:
+grep -r "flowcrm-secret" . --include="*.ts"
+→ Should return 0 results
+
+## After both fixes:
+1. Deploy to production
+2. Confirm server starts (logs show no FATAL errors)
+3. Test super admin login works
+4. Test regular user login still works
+5. Run: grep -r "Odlareg\|flowcrm-secret" . --include="*.ts" --include="*.tsx"
+   → Must return 0 results

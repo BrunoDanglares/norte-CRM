@@ -1,0 +1,216 @@
+PROMPT 2 — Frontend (Auth real)
+Preciso implementar autenticação real no frontend deste projeto React/TypeScript.
+
+CONTEXTO ATUAL:
+- O login.tsx usa setTimeout de 800ms e redireciona sem validar nada
+- Não existe token armazenado em lugar nenhum
+- Não existe proteção de rotas
+- O App.tsx só esconde a sidebar na rota /login mas não verifica autenticação
+
+---
+
+PASSO 1 — Criar serviço de autenticação
+
+Crie o arquivo client/src/services/auth.ts:
+
+const API = "/api";
+
+export const authService = {
+  login: async (email: string, senha: string) => {
+    const res = await fetch(`${API}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, senha }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Erro ao fazer login");
+    return data;
+  },
+
+  me: async () => {
+    const token = localStorage.getItem("flowcrm_token");
+    if (!token) throw new Error("Sem token");
+    const res = await fetch(`${API}/auth/me`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Não autenticado");
+    return data;
+  },
+
+  logout: () => {
+    localStorage.removeItem("flowcrm_token");
+    localStorage.removeItem("flowcrm_user");
+    window.location.href = "/login";
+  },
+
+  getToken: () => localStorage.getItem("flowcrm_token"),
+
+  getUser: () => {
+    const u = localStorage.getItem("flowcrm_user");
+    return u ? JSON.parse(u) : null;
+  },
+
+  isAuthenticated: () => !!localStorage.getItem("flowcrm_token"),
+};
+
+---
+
+PASSO 2 — Atualizar Login.tsx
+
+Substitua o handleSubmit atual por:
+
+const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault();
+  setError("");
+  if (!email || !senha) {
+    setError("Preencha todos os campos");
+    return;
+  }
+  setLoading(true);
+  try {
+    const res = await authService.login(email, senha);
+    localStorage.setItem("flowcrm_token", res.data.token);
+    localStorage.setItem("flowcrm_user", JSON.stringify(res.data.user));
+    setLocation("/");
+  } catch (err: any) {
+    setError(err.message || "Email ou senha incorretos");
+  } finally {
+    setLoading(false);
+  }
+};
+
+Na tela de login, mostre o erro em vermelho abaixo do formulário se `error` estiver preenchido.
+Mantenha todo o visual atual — apenas substitua a lógica.
+
+---
+
+PASSO 3 — Criar componente de rota protegida
+
+Crie client/src/components/ProtectedRoute.tsx:
+
+import { useEffect, useState } from "react";
+import { authService } from "../services/auth";
+
+export function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  const [checking, setChecking] = useState(true);
+  const [authenticated, setAuthenticated] = useState(false);
+
+  useEffect(() => {
+    const check = async () => {
+      if (!authService.isAuthenticated()) {
+        window.location.href = "/login";
+        return;
+      }
+      try {
+        await authService.me();
+        setAuthenticated(true);
+      } catch {
+        authService.logout();
+      } finally {
+        setChecking(false);
+      }
+    };
+    check();
+  }, []);
+
+  if (checking) {
+    return (
+      <div style={{
+        display: "flex", alignItems: "center", justifyContent: "center",
+        height: "100vh", background: "var(--bg)", color: "var(--muted)",
+        flexDirection: "column", gap: 12
+      }}>
+        <div style={{ fontSize: 32 }}>⚡</div>
+        <div style={{ fontSize: 13 }}>Verificando autenticação...</div>
+      </div>
+    );
+  }
+
+  return authenticated ? <>{children}</> : null;
+}
+
+---
+
+PASSO 4 — Atualizar App.tsx
+
+Importe o ProtectedRoute e envolva TODAS as rotas privadas com ele.
+A rota /login permanece pública.
+
+Exemplo de estrutura:
+- /login → público → componente Login
+- / e todas as outras rotas → <ProtectedRoute> envolvendo o layout com sidebar
+
+---
+
+PASSO 5 — Adicionar token em todas as chamadas de API
+
+Crie ou atualize o arquivo client/src/services/api.ts com uma função helper:
+
+export async function apiFetch(path: string, options: RequestInit = {}) {
+  const token = localStorage.getItem("flowcrm_token");
+  const res = await fetch(`/api${path}`, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...options.headers,
+    },
+  });
+  if (res.status === 401) {
+    localStorage.removeItem("flowcrm_token");
+    localStorage.removeItem("flowcrm_user");
+    window.location.href = "/login";
+    throw new Error("Sessão expirada");
+  }
+  return res;
+}
+
+Atualize todas as chamadas fetch existentes no projeto para usar apiFetch
+em vez de fetch direto, para que o token seja enviado automaticamente.
+
+---
+
+Confirme ao final:
+- authService criado com todos os métodos
+- Login.tsx chama a API real e salva o token
+- ProtectedRoute criado e aplicado no App.tsx
+- apiFetch helper criado e aplicado nas chamadas existentes
+- Logout limpa localStorage e redireciona para /login
+
+✅ PROMPT 3 — Validação Final
+Faça a validação completa do sistema de autenticação implementado:
+
+1. TESTE DE LOGIN — Confirme:
+   [ ] POST /api/auth/login com joao@flowcrm.com e a senha correta retorna token JWT real
+   [ ] Token tem formato correto (3 partes separadas por ponto)
+   [ ] Token é salvo no localStorage com chave "flowcrm_token"
+   [ ] Dados do usuário são salvos com chave "flowcrm_user"
+   [ ] Login com senha errada retorna erro 401 com mensagem clara
+   [ ] Login com usuário inativo retorna erro 403 com mensagem clara
+   [ ] A tela exibe a mensagem de erro abaixo do formulário
+
+2. PROTEÇÃO DE ROTAS — Confirme:
+   [ ] Acessar qualquer rota sem token redireciona para /login
+   [ ] Acessar /login com token válido já logado redireciona para /
+   [ ] GET /api/leads sem token retorna 401
+   [ ] GET /api/leads com token válido retorna os dados normalmente
+
+3. SESSÃO PERSISTENTE — Confirme:
+   [ ] Após login, recarregar a página mantém o usuário logado
+   [ ] GET /api/auth/me com token válido retorna os dados do usuário
+   [ ] Token expirado redireciona para /login automaticamente
+
+4. LOGOUT — Confirme:
+   [ ] Logout remove o token do localStorage
+   [ ] Após logout, qualquer rota redireciona para /login
+   [ ] Não é possível voltar com o botão "Voltar" do browser após logout
+
+5. QUAL SENHA USAR — Importante:
+   Os usuários no banco têm senhas hasheadas. Verifique qual é a senha
+   em texto puro de joao@flowcrm.com. Se não souber, redefina a senha
+   dele para "senha123" usando a função hashPassword já existente e
+   atualize no banco:
+   UPDATE users SET password = '<novo_hash>' WHERE email = 'joao@flowcrm.com';
+
+Relate cada item e o que foi corrigido.

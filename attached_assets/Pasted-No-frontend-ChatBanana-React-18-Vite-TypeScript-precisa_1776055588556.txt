@@ -1,0 +1,48 @@
+No frontend ChatBanana (React 18/Vite/TypeScript), precisa criar a página de métricas ISP em `/isp/metrics` e um painel de simulação dentro de `/isp/prompts`.
+
+**1. Cria `client/src/pages/isp/ISPMetrics.tsx`:**
+
+Página com 4 seções:
+
+**Cards de resumo (topo):**
+- Sessões hoje (total)
+- Taxa de resolução (resolved / total em %)
+- Taxa de escalação (escalated + max_turns / total em %)
+- ERP uptime (100% - % de sessões com erpUnavailable)
+- Latência GPT média (avgLatencyMs em ms) e p95
+
+**Gráfico de sessões por hora** (últimas 24h) — usa os dados de `sessions` agrupados por hora no frontend com `Array.reduce`. Usa o componente de gráfico já existente no projeto ou uma tabela simples se não houver biblioteca de gráficos.
+
+**Tabela de sessões recentes** — colunas: phone (últimos 4 dígitos mascarados), agente, situação, turns, resolução, latência, horário.
+
+**Log de eventos do sistema** — lista reversa cronológica com badge colorido por tipo:
+- CIRCUIT_BREAKER_OPEN → vermelho
+- TIMEOUT_ERP / TIMEOUT_GPT → amarelo
+- PHONE_LOCK_DISCARD → cinza
+- MAX_TURNS_REACHED → laranja
+- ERP_DEGRADED_MODE → vermelho
+
+Cada seção busca dados com `useEffect` + `fetch('/api/isp/metrics/summary?workspaceId=...')` etc. Usa o `apiFetch` já existente no projeto para incluir o Bearer token automaticamente.
+
+**2. Adiciona rota no router:**
+
+Onde as outras rotas ISP estão definidas (ex: `/isp/prompts`, `/isp/agents`):
+```typescript
+<Route path="/isp/metrics" element={<ISPMetrics />} />
+```
+
+**3. Adiciona link no menu ISP:**
+
+No componente de sidebar/nav ISP, adiciona item "Métricas" apontando para `/isp/metrics`.
+
+**4. Painel de simulação em `/isp/prompts`:**
+
+Dentro da página `ISPPrompts.tsx` existente, adiciona uma seção "Testar situação" no final da página:
+
+- Select de situação (F1–F10, S1–S13, C1–C10)
+- Textarea para mensagem de teste
+- Botão "Simular"
+- Chama `POST /api/isp/agent/simulate` (endpoint já deve existir com `isSimulation: true`, se não existir cria um stub que retorna mock) 
+- Exibe a resposta do agente formatada abaixo
+
+Mostra os arquivos criados/alterados após aplicar.

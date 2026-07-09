@@ -1,0 +1,282 @@
+Implement the Meta Cloud API webhook receiver for ChatBanana to receive and process incoming WhatsApp messages.
+
+## Context
+- Meta sends ALL workspace messages to a SINGLE webhook URL registered in the Meta App
+- Webhook URL will be: https://your-domain.com/api/webhook/meta
+- Meta verifies webhook with GET request (challenge handshake) before sending events
+- Must resolve which workspace a message belongs to using phone_number_id
+- This webhook runs WITHOUT requireAuth middleware (public endpoint)
+- Currently ChatBanana has a Z-API webhook at /api/webhook/zapi — do NOT modify it
+- After processing, message should flow through the same automation engine as Z-API messages
+
+## File to create: server/routes/webhook-meta.ts
+
+### GET /api/webhook/meta — Webhook Verification (Challenge Handshake)
+
+Meta sends:
+- hub.mode = "subscribe"
+- hub.challenge = <random string>
+- hub.verify_token = <your WHATSAPP_WEBHOOK_VERIFY_TOKEN>
+
+Handler:
+```typescript
+if (req.query['hub.mode'] === 'subscribe' && req.query['hub.verify_token'] === process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN) {
+  console.log('[Meta Webhook] Verification successful');
+  res.status(200).send(req.query['hub.challenge']);
+} else {
+  console.warn('[Meta Webhook] Verification failed', req.query);
+  res.sendStatus(403);
+}
+```
+
+### POST /api/webhook/meta — Receive Events
+
+Meta sends a batch of events. Structure:
+```json
+{
+  "object": "whatsapp_business_account",
+  "entry": [{
+    "id": "<WABA_ID>",
+    "changes": [{
+      "value": {
+        "messaging_product": "whatsapp",
+        "metadata": { "display_phone_number": "...", "phone_number_id": "<PHONE_NUMBER_ID>" },
+        "contacts": [{ "profile": { "name": "..." }, "wa_id": "..." }],
+        "messages": [{
+          "id": "<WAMID>",
+          "from": "<SENDER_PHONE>",
+          "timestamp": "...",
+          "type": "text|image|audio|video|document|sticker|location|contacts|interactive|button",
+          "text": { "body": "..." },
+          "image": { "id": "...", "mime_type": "...", "sha256": "...", "caption": "..." },
+          "audio": { "id": "...", "mime_type": "..." },
+          "interactive": { "type": "button_reply|list_reply", "button_reply": { "id": "...", "title": "..." } }
+        }],
+        "statuses": [{
+          "id": "<WAMID>",
+          "status": "sent|delivered|read|failed",
+          "timestamp": "...",
+          "recipient_id": "...",
+          "errors": []
+        }]
+      },
+      "field": "messages"
+    }]
+  }]
+}
+```
+
+Handler logic:
+```typescript
+// 1. Always respond 200 immediately (Meta retries if no 200 within 20s)
+res.sendStatus(200);
+
+// 2. Process asynchronously
+setImmediate(() => processMetaWebhookPayload(req.body));
+```
+
+### processMetaWebhookPayload(body: any)
+```typescript
+async function processMetaWebhookPayload(body: any) {
+  if (body.object !== 'whatsapp_business_account') return;
+  
+  for (const entry of body.entry || []) {
+    for (const change of entry.changes || []) {
+      if (change.field !== 'messages') continue;
+      const value = change.value;
+      const phoneNumberId = value.metadata?.phone_number_id;
+      
+      // Resolve workspace by phone_number_id
+      const connection = await db.query.whatsapp_official_connections.findFirst({
+        where: eq(whatsapp_official_connections.phone_number_id, phoneNumberId)
+      });
+      
+      if (!connection) {
+        console.warn('[Meta Webhook] No workspace found for phone_number_id:', phoneNumberId);
+        continue;
+      }
+      
+      const workspaceId = connection.workspace_id;
+      
+      // Save raw event to whatsapp_webhook_events for debugging
+      await db.insert(whatsapp_webhook_events).values({
+        workspace_id: workspaceId,
+        phone_number_id: phoneNumberId,
+        waba_id: entry.id,
+        event_type: value.messages ? 'message' : value.statuses ? 'status' : 'unknown',
+        raw_payload: body,
+        received_at: new Date()
+      }).onConflictDoNothing(); // if same event replayed
+      
+      // Process messages
+      for (const msg of value.messages || []) {
+        await processIncomingMetaMessage({ workspaceId, connection, msg, contacts: value.contacts, phoneNumberId });
+      }
+      
+      // Process delivery/read status updates
+      for (const status of value.statuses || []) {
+        await processMessageStatus({ workspaceId, status });
+      }
+    }
+  }
+}
+```
+
+### processIncomingMetaMessage(params)
+```typescript
+async function processIncomingMetaMessage({ workspaceId, connection, msg, contacts, phoneNumberId }) {
+  const wamid = msg.id;
+  
+  // Deduplication: skip if we already processed this wamid
+  const existing = await db.query.messages.findFirst({
+    where: and(eq(messages.external_id, wamid), eq(messages.workspace_id, workspaceId))
+  });
+  if (existing) return;
+  
+  const fromPhone = msg.from; // e.g. "5591999999999"
+  const contactName = contacts?.find(c => c.wa_id === fromPhone)?.profile?.name || fromPhone;
+  
+  // Find or create contact
+  let contact = await db.query.contacts.findFirst({
+    where: and(eq(contacts.phone, fromPhone), eq(contacts.workspace_id, workspaceId))
+  });
+  if (!contact) {
+    [contact] = await db.insert(contacts_table).values({
+      workspace_id: workspaceId,
+      name: contactName,
+      phone: fromPhone,
+      channel: 'whatsapp_official'
+    }).returning();
+  }
+  
+  // Find or create conversation
+  let conversation = await db.query.conversations.findFirst({
+    where: and(
+      eq(conversations.contact_id, contact.id),
+      eq(conversations.workspace_id, workspaceId),
+      eq(conversations.status, 'open')
+    )
+  });
+  if (!conversation) {
+    [conversation] = await db.insert(conversations).values({
+      workspace_id: workspaceId,
+      contact_id: contact.id,
+      channel: 'whatsapp_official',
+      status: 'open',
+      last_message_at: new Date()
+    }).returning();
+  }
+  
+  // Extract message content by type
+  let messageType = msg.type;
+  let messageContent = '';
+  let mediaUrl = null;
+  let mediaType = null;
+  
+  switch (msg.type) {
+    case 'text':
+      messageContent = msg.text?.body || '';
+      break;
+    case 'image':
+      messageContent = msg.image?.caption || '';
+      mediaUrl = await downloadMetaMedia(msg.image.id, connection.access_token);
+      mediaType = 'image';
+      break;
+    case 'audio':
+      mediaUrl = await downloadMetaMedia(msg.audio.id, connection.access_token);
+      mediaType = 'audio';
+      messageType = 'audio';
+      break;
+    case 'document':
+      messageContent = msg.document?.caption || msg.document?.filename || '';
+      mediaUrl = await downloadMetaMedia(msg.document.id, connection.access_token);
+      mediaType = 'document';
+      break;
+    case 'interactive':
+      if (msg.interactive.type === 'button_reply') {
+        messageContent = msg.interactive.button_reply.title;
+      } else if (msg.interactive.type === 'list_reply') {
+        messageContent = msg.interactive.list_reply.title;
+      }
+      break;
+    case 'button':
+      messageContent = msg.button?.text || '';
+      break;
+    default:
+      messageContent = `[${msg.type}]`;
+  }
+  
+  // Save message to DB
+  const [savedMessage] = await db.insert(messages).values({
+    workspace_id: workspaceId,
+    conversation_id: conversation.id,
+    external_id: wamid,
+    direction: 'inbound',
+    type: messageType,
+    content: messageContent,
+    media_url: mediaUrl,
+    media_type: mediaType,
+    channel: 'whatsapp_official',
+    status: 'received',
+    sent_at: new Date(parseInt(msg.timestamp) * 1000),
+    created_at: new Date()
+  }).returning();
+  
+  // Mark as read on WhatsApp
+  await metaWhatsApp.markMessageAsRead(phoneNumberId, connection.access_token, wamid);
+  
+  // Update conversation last_message_at
+  await db.update(conversations)
+    .set({ last_message_at: new Date(), updated_at: new Date() })
+    .where(eq(conversations.id, conversation.id));
+  
+  // Trigger automation engine — same call as Z-API webhook
+  await triggerAutomationEngine({
+    workspaceId,
+    conversationId: conversation.id,
+    contactId: contact.id,
+    messageId: savedMessage.id,
+    messageContent,
+    messageType,
+    mediaUrl,
+    channel: 'whatsapp_official',
+    phoneNumberId,
+    accessToken: connection.access_token
+  });
+}
+```
+
+### downloadMetaMedia(mediaId: string, accessToken: string): Promise<string>
+```typescript
+// 1. GET https://graph.facebook.com/v19.0/{mediaId}?access_token={token}
+// Returns { url, mime_type, sha256, file_size, id }
+// 2. GET that URL with Authorization: Bearer {token}
+// 3. Upload to your storage (or return the Meta URL directly — valid for a few hours)
+// For MVP: return the Meta media URL directly (it expires, but works for immediate use)
+// TODO future: download and re-upload to permanent storage (S3/Cloudflare R2)
+```
+
+### processMessageStatus({ workspaceId, status })
+```typescript
+// Update message status in DB based on wamid
+await db.update(messages)
+  .set({ 
+    status: status.status, // 'sent' | 'delivered' | 'read' | 'failed'
+    updated_at: new Date()
+  })
+  .where(and(
+    eq(messages.external_id, status.id),
+    eq(messages.workspace_id, workspaceId)
+  ));
+```
+
+## Register webhook route (NO auth middleware)
+In server/index.ts — BEFORE the requireAuth middleware block:
+```typescript
+import metaWebhookRouter from './routes/webhook-meta';
+app.use('/api/webhook/meta', metaWebhookRouter);
+```
+
+IMPORTANT: The webhook must be registered BEFORE any global auth middleware, or Meta's verification GET will fail.
+
+## After implementing, document in console.log on startup:

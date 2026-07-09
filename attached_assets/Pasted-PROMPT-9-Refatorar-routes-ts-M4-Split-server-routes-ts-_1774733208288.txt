@@ -1,0 +1,100 @@
+PROMPT 9 — Refatorar routes.ts (M4)Split server/routes.ts (5.512 lines) into focused route modules.
+This is the highest-risk refactor — proceed carefully.
+
+## Strategy: Extract one module at a time, test before continuing
+
+## Step 1: Create the module structure
+
+Create these files (empty for now):
+- server/routes/auth.ts
+- server/routes/conversations.ts
+- server/routes/leads.ts
+- server/routes/contacts.ts
+- server/routes/messages.ts
+- server/routes/automacoes.ts
+- server/routes/campanhas.ts
+- server/routes/pipeline.ts
+- server/routes/dashboard.ts
+- server/routes/usuarios.ts
+- server/routes/appointments.ts
+- server/routes/transactions.ts
+
+## Step 2: Extract auth routes FIRST (lowest risk)
+
+Move to server/routes/auth.ts:
+- POST /api/auth/login
+- POST /api/auth/register
+- POST /api/auth/logout
+- GET /api/auth/me
+- POST /api/auth/change-password
+
+Template for each new module:
+```typescriptimport { Router } from 'express';
+import { db } from '../db';
+import { requireAuth } from '../middleware/auth';
+import { resolveWorkspaceId } from '../middleware/workspace';
+// ... other imports as neededconst router = Router();// Routes go hereexport default router;
+
+Register in server/index.ts:
+```typescriptimport authRouter from './routes/auth';
+app.use('/api/auth', authRouter);
+
+Remove the auth routes from server/routes.ts after confirming they work.
+
+## Step 3: Extract leads routes
+
+Move to server/routes/leads.ts:
+- GET /api/leads
+- POST /api/leads
+- GET /api/leads/:id
+- PATCH /api/leads/:id
+- DELETE /api/leads/:id
+- POST /api/leads/:id/tags
+- DELETE /api/leads/:id/tags/:tagId
+- GET /api/leads/:id/annotations
+- POST /api/leads/:id/annotations
+
+Register: app.use('/api/leads', requireAuth, leadsRouter);
+
+Test all lead operations in the UI before continuing.
+
+## Step 4: Extract conversations routes
+
+Move to server/routes/conversations.ts:
+- GET /api/conversations
+- GET /api/conversations/:id
+- PATCH /api/conversations/:id/status
+- PATCH /api/conversations/:id/priority
+- PATCH /api/conversations/:id/agent
+- POST /api/conversations/:id/read
+- GET /api/conversations/:id/messages
+
+## Step 5: Continue with remaining modules
+
+Extract one module at a time in this order:
+1. contacts.ts
+2. messages.ts  
+3. pipeline.ts
+4. automacoes.ts
+5. campanhas.ts
+6. usuarios.ts
+7. appointments.ts
+8. transactions.ts
+9. dashboard.ts
+
+## Critical rules:
+1. Extract ONE module, test it fully, then extract the next
+2. After each extraction, run a quick smoke test:
+   - Does the app start?
+   - Does the extracted feature work in the UI?
+3. Keep all middleware imports consistent across modules
+4. If a helper function is used by multiple modules, move it to server/utils/helpers.ts
+5. Do NOT change any route logic — only move code
+6. Run TypeScript compiler after each module extraction
+
+## After completing:
+1. server/routes.ts should be under 200 lines (just imports and registration)
+2. Each route module should be under 300 lines
+3. All features work identically
+4. TypeScript compiles without errors
+5. Report final structure with line counts

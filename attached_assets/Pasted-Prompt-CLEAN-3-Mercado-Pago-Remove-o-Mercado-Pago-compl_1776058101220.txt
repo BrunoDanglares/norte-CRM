@@ -1,0 +1,43 @@
+Prompt CLEAN-3 — Mercado Pago
+Remove o Mercado Pago completamente do projeto ChatBanana. Atenção: a tabela integration_configs é compartilhada com outras integrações (OpenAI, etc.) — não remove a tabela nem os métodos de storage, apenas o código que usa o provider "mercadopago".
+
+**1. `server/services/automationEngine.ts`**
+- Remove as linhas de carregamento da config MP no contexto de execução (bloco que busca "mercadopago" da integration_configs)
+- Remove o case `pagamento` inteiro do executor de nós (fetch à API Mercado Pago para PIX e checkout preferences)
+
+**2. `server/routes/billing.ts`**
+- Remove `GET /api/mercadopago/status`
+- Remove `POST /api/mercadopago/test`
+Se o arquivo `billing.ts` ficar vazio ou com apenas imports sem uso, remove o arquivo inteiro e o registro dele em `server/index.ts` ou onde for registrado.
+
+**3. `client/src/components/automacoes/NodePicker.tsx`**
+- Remove a lógica de `mpEnabled` e o node `pagamento` ocultado condicionalmente
+- Remove o node `pagamento` da lista (sempre, não condicionalmente)
+
+**4. `client/src/components/automacoes/FlowCanvas.tsx`**
+- Remove prop `mpEnabled` e todas as referências a ela
+- Remove a seção colapsável "Mercado Pago" no painel de configuração
+- Remove leitura de `integConfigsData?.data?.mercadopago?.enabled`
+
+**5. `client/src/components/automacoes/types.ts`**
+- Remove definição do node `pagamento` de NODE_TYPES
+- Remove `pagamento` da lista de tipos da categoria "Integrações"
+- Remove tooltip/descrição correspondente
+
+**6. `client/src/components/automacoes/NodeConfigPanel.tsx`**
+- Remove o painel de configuração do node `pagamento` (bloco MP inteiro)
+
+**7. `client/src/pages/integracoes.tsx`**
+- Remove import `MercadoPagoIcon`
+- Remove objeto de config da aba Mercado Pago
+- Remove "mercadopago" do tipo `IntegTabId`
+- Remove aba MP do `INTEGRATION_TABS`
+- Remove case `MercadoPagoIcon`
+- Remove endpoints MP do API reference
+- Remove leitura de `configs["mercadopago"]`
+
+**8. `client/src/components/brand-icons.tsx`**
+- Remove `SiMercadopago` do import react-icons/si
+- Remove função `MercadoPagoIcon`
+
+Servidor deve subir sem erros TypeScript. Confirma.

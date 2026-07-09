@@ -1,0 +1,115 @@
+ PROMPT 1 — Backend (Auth completo)
+Preciso implementar autenticação real no backend deste projeto Node.js/Express/TypeScript.
+
+CONTEXTO:
+- A tabela `users` já existe com colunas: id, email, password, nome, role, status
+- As senhas já estão hasheadas com scryptSync do módulo nativo `crypto` do Node
+  no formato "salt:hash" (ex: "a1b2c3...:d4e5f6...")
+- Não instale bcrypt nem argon2 — use apenas o módulo nativo `crypto`
+
+---
+
+PASSO 1 — Criar função verifyPassword
+
+No arquivo onde está a função hashPassword, adicione logo abaixo:
+
+function verifyPassword(plain: string, stored: string): boolean {
+  const [salt, hash] = stored.split(":");
+  const attempt = scryptSync(plain, salt, 64).toString("hex");
+  return attempt === hash;
+}
+
+---
+
+PASSO 2 — Instalar jsonwebtoken
+
+Execute: npm install jsonwebtoken @types/jsonwebtoken
+
+---
+
+PASSO 3 — Criar as rotas de autenticação
+
+Crie as seguintes rotas no arquivo de rotas do projeto:
+
+POST /api/auth/login
+- Body: { email, senha }
+- Validações:
+  - Se email ou senha faltando: status 400, { error: "Email e senha são obrigatórios" }
+  - Busca usuário pelo email no banco
+  - Se usuário não encontrado: status 401, { error: "Credenciais inválidas" }
+  - Se status do usuário for INACTIVE: status 403, { error: "Usuário desativado. Contate o administrador." }
+  - Se status for INVITED: status 403, { error: "Conta não ativada. Verifique seu e-mail." }
+  - Chama verifyPassword(senha, user.password)
+  - Se senha errada: status 401, { error: "Credenciais inválidas" }
+  - Se tudo ok: gera JWT com payload { id: user.id, email: user.email, role: user.role, nome: user.nome }
+  - JWT_SECRET = process.env.JWT_SECRET ou "flowcrm-secret-2025" como fallback
+  - JWT expira em 7 dias
+  - Atualiza campo ultimo_acesso do usuário com new Date()
+  - Resposta 200: { ok: true, data: { token, user: { id, nome, email, role, cargo, avatar, status, online } } }
+
+GET /api/auth/me
+- Rota protegida (requer token)
+- Lê o token do header Authorization: Bearer <token>
+- Verifica e decodifica o JWT
+- Se token inválido ou expirado: status 401, { error: "Não autenticado" }
+- Busca usuário no banco pelo id do payload
+- Se não encontrar: status 401, { error: "Usuário não encontrado" }
+- Resposta: { ok: true, data: { id, nome, email, role, cargo, avatar, status, online } }
+
+POST /api/auth/logout
+- Apenas retorna sucesso (invalidação real será feita no frontend)
+- Resposta: { ok: true, message: "Logout realizado" }
+
+---
+
+PASSO 4 — Criar middleware de autenticação
+
+Crie um middleware chamado `requireAuth` em um arquivo separado
+(ex: server/middleware/auth.ts):
+
+import jwt from "jsonwebtoken";
+
+export function requireAuth(req, res, next) {
+  const header = req.headers.authorization;
+  if (!header || !header.startsWith("Bearer ")) {
+    return res.status(401).json({ error: "Não autenticado" });
+  }
+  const token = header.split(" ")[1];
+  try {
+    const payload = jwt.verify(token, process.env.JWT_SECRET || "flowcrm-secret-2025");
+    req.user = payload;
+    next();
+  } catch (err) {
+    return res.status(401).json({ error: "Token inválido ou expirado" });
+  }
+}
+
+---
+
+PASSO 5 — Proteger todas as rotas existentes
+
+Importe o middleware requireAuth e aplique em TODAS as rotas que não sejam de auth:
+- GET/POST/PUT/DELETE /api/leads
+- GET/POST/PUT/DELETE /api/contatos
+- GET/POST/PUT/DELETE /api/usuarios (exceto /aceitar-convite que é público)
+- GET/POST/PUT/DELETE /api/automacoes
+- GET/POST/PUT/DELETE /api/campanhas
+- GET/POST/PUT/DELETE /api/agenda
+- GET/POST/PUT/DELETE /api/financeiro
+- GET/POST/PUT/DELETE /api/equipes
+- GET/POST/PUT/DELETE /api/permissoes
+- GET /api/relatorios
+- Todas as outras rotas privadas
+
+As únicas rotas que NÃO precisam de auth são:
+- POST /api/auth/login
+- POST /api/usuarios/aceitar-convite
+
+---
+
+Confirme ao final:
+- Função verifyPassword criada
+- jsonwebtoken instalado
+- 3 rotas de auth criadas e funcionando
+- Middleware requireAuth criado
+- Todas as rotas protegidas

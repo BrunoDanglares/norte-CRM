@@ -1,0 +1,150 @@
+PROMPT — Performance de Navegação (React Router + Code Splitting + Otimizações)
+Melhore a performance e responsividade da navegação do ChatBanana. Execute as seguintes otimizações em ordem:
+
+## 1. Lazy loading de todas as rotas principais
+
+Em `client/src/App.tsx` (ou onde estão definidas as rotas), substitua todos os imports estáticos das páginas por imports dinâmicos com React.lazy:
+```tsx
+import { lazy, Suspense } from "react";
+import { Skeleton } from "@/components/ui/skeleton";
+
+// Substituir imports estáticos como:
+// import Dashboard from "./pages/Dashboard";
+// Por:
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const Inbox = lazy(() => import("./pages/Inbox"));
+const Automacoes = lazy(() => import("./pages/Automacoes"));
+const Contacts = lazy(() => import("./pages/Contacts"));
+const Campanhas = lazy(() => import("./pages/Campanhas"));
+const Pipeline = lazy(() => import("./pages/Pipeline"));
+const Relatorios = lazy(() => import("./pages/Relatorios"));
+const ISPConfig = lazy(() => import("./pages/ISPConfig"));
+// (adicione todas as páginas existentes)
+
+// Criar componente de fallback de navegação
+function PageSkeleton() {
+  return (
+    <div className="flex flex-col gap-4 p-6 w-full h-full">
+      <Skeleton className="h-8 w-48 bg-[#1c1830]" />
+      <Skeleton className="h-4 w-96 bg-[#1c1830]" />
+      <div className="grid grid-cols-3 gap-4 mt-4">
+        <Skeleton className="h-32 bg-[#1c1830]" />
+        <Skeleton className="h-32 bg-[#1c1830]" />
+        <Skeleton className="h-32 bg-[#1c1830]" />
+      </div>
+      <Skeleton className="h-64 w-full bg-[#1c1830]" />
+    </div>
+  );
+}
+
+// Envolver o router com Suspense:
+<Suspense fallback={<PageSkeleton />}>
+  {/* rotas aqui */}
+</Suspense>
+```
+
+## 2. Prefetch on hover nos links do sidebar
+
+No componente do sidebar (provavelmente `client/src/components/Sidebar.tsx` ou similar), adicione prefetch nos itens de navegação:
+```tsx
+// Para cada item de menu, ao passar o mouse (onMouseEnter), 
+// fazer o prefetch do chunk da rota:
+const prefetchRoute = (importFn: () => Promise<any>) => {
+  importFn(); // o browser vai cachear o chunk
+};
+
+// Exemplo de uso no item do menu:
+<NavLink
+  to="/inbox"
+  onMouseEnter={() => prefetchRoute(() => import("../pages/Inbox"))}
+>
+  Inbox
+</NavLink>
+```
+
+## 3. Memoização dos componentes pesados do sidebar
+
+No arquivo do Sidebar, adicione `React.memo` e memoize listas de navegação com `useMemo`:
+```tsx
+import { memo, useMemo } from "react";
+
+const Sidebar = memo(function Sidebar({ workspaceName, userRole }: SidebarProps) {
+  const navItems = useMemo(() => [
+    { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+    { to: "/inbox", label: "Inbox", icon: MessageSquare },
+    // ... demais itens
+  ], []); // sem dependências — esses itens são estáticos
+
+  return (
+    // ... JSX existente usando navItems
+  );
+});
+
+export default Sidebar;
+```
+
+## 4. Otimizar re-renders do layout principal
+
+No componente de layout raiz (onde Sidebar + conteúdo ficam juntos), use `useMemo` e `useCallback` para evitar que o sidebar re-renderize a cada mudança de rota:
+```tsx
+import { memo, useCallback, useMemo } from "react";
+import { useLocation } from "react-router-dom";
+
+// O Outlet (conteúdo da página) muda, mas o Sidebar não deve re-renderizar
+// Certifique-se de que props passadas ao Sidebar são estáveis (não criar objetos inline)
+```
+
+## 5. Adicionar transição de página suave
+
+Crie o arquivo `client/src/components/PageTransition.tsx`:
+```tsx
+import { motion, AnimatePresence } from "framer-motion";
+import { useLocation } from "react-router-dom";
+
+// Se framer-motion não estiver instalada, usar CSS puro:
+export function PageTransition({ children }: { children: React.ReactNode }) {
+  const location = useLocation();
+  return (
+    <div
+      key={location.pathname}
+      style={{
+        animation: "fadeSlideIn 0.18s ease-out",
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+// Adicionar ao index.css ou equivalente global:
+// @keyframes fadeSlideIn {
+//   from { opacity: 0; transform: translateY(6px); }
+//   to   { opacity: 1; transform: translateY(0); }
+// }
+```
+
+Envolva o `<Suspense>` / `<Outlet>` com `<PageTransition>`.
+
+## 6. Garantir que react-query (ou SWR) use staleTime correto
+
+Em qualquer query que busca dados de lista (leads, contatos, conversas), certifique-se de que o `staleTime` não seja 0 (que força refetch toda vez que a rota é visitada):
+```tsx
+// Ruim — refetch em todo mount:
+useQuery({ queryKey: ["contacts"], queryFn: fetchContacts });
+
+// Bom — reutiliza cache por 60 segundos:
+useQuery({
+  queryKey: ["contacts", workspaceId],
+  queryFn: fetchContacts,
+  staleTime: 60_000,
+});
+```
+
+Revise as principais queries e ajuste staleTime para 30_000–120_000ms onde fizer sentido.
+
+---
+
+Após as mudanças:
+1. Confirme que não há erros de TypeScript
+2. Confirme que o lazy loading não quebrou nenhuma rota protegida (ProtectedRoute deve continuar funcionando dentro do Suspense)
+3. Reporte quais arquivos foram modificados

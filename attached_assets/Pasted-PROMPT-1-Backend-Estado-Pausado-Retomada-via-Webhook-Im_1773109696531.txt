@@ -1,0 +1,165 @@
+PROMPT 1 — Backend: Estado Pausado + Retomada via Webhook
+Implemente o nó "Lista de Opções" no motor de automações do FlowCRM.
+Este nó envia uma lista interativa via Z-API, pausa o fluxo e retoma
+quando o cliente clicar em uma opção (via webhook inbound do Z-API).
+
+---
+
+## PARTE 1: Nova tabela — automation_pending_inputs
+
+Crie a tabela para armazenar fluxos pausados aguardando resposta do cliente:
+
+CREATE TABLE IF NOT EXISTS automation_pending_inputs (
+  id SERIAL PRIMARY KEY,
+  tenant_id INTEGER NOT NULL,
+  flow_id INTEGER NOT NULL,
+  execution_id TEXT NOT NULL,
+  node_id TEXT NOT NULL,
+  lead_id INTEGER NOT NULL,
+  phone TEXT NOT NULL,
+  options JSONB NOT NULL,
+  -- options = [{ id: "opt1", label: "Opção 1" }, ...]
+  context JSONB NOT NULL,
+  -- context = estado completo do fluxo até aquele ponto (variables, logs parciais)
+  expires_at TIMESTAMP NOT NULL,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX ON automation_pending_inputs(phone, tenant_id);
+CREATE INDEX ON automation_pending_inputs(expires_at);
+
+---
+
+## PARTE 2: Executar o nó lista_opcoes na engine
+
+No arquivo da engine de execução (rota POST /api/automacoes/:id/execute),
+adicione o handler para tipo "lista_opcoes" (ou "option_list"):
+
+Parâmetros do nó:
+{
+  title: string,           // título da lista (ex: "Como posso ajudar?")
+  button_label: string,    // texto do botão que abre a lista (ex: "Ver opções")
+  footer?: string,         // rodapé opcional
+  options: [               // até 10 opções
+    { id: string, label: string, description?: string }
+  ],
+  timeout_minutes: number  // padrão: 30
+}
+
+Implementação:
+
+1. Busque o telefone do lead pelo context.leadId se não vier no nó
+2. Formate o payload para Z-API send-option-list:
+   POST https://api.z-api.io/instances/{ZAPI_INSTANCE_ID}/token/{ZAPI_TOKEN}/send-option-list
+   Body:
+   {
+     "phone": "<número>",
+     "title": "<title>",
+     "buttonLabel": "<button_label>",
+     "footer": "<footer>",
+     "sections": [
+       {
+         "title": "Opções disponíveis",
+         "rows": options.map(opt => ({
+           "id": opt.id,
+           "title": opt.label,
+           "description": opt.description || ""
+         }))
+       }
+     ]
+   }
+
+3. Se Z-API retornar erro, log { success: false, error } e continue o fluxo normalmente
+
+4. Se Z-API retornar sucesso, salve na tabela automation_pending_inputs:
+   {
+     tenant_id: context.tenantId,
+     flow_id: automationId,
+     execution_id: context.executionId,  -- gere um UUID se não existir ainda
+     node_id: node.id,
+     lead_id: context.leadId,
+     phone: phoneUsado,
+     options: node.options,
+     context: { variables: context.variables, logs: context.logs },
+     expires_at: NOW() + INTERVAL '<timeout_minutes> minutes'
+   }
+
+5. Após salvar, INTERROMPA a execução do fluxo retornando:
+   { status: "waiting_input", node_id: node.id, message: "Aguardando resposta do cliente" }
+   -- não execute os próximos nós
+
+---
+
+## PARTE 3: Retomar fluxo quando cliente responder
+
+No arquivo do webhook handler do Z-API (onde mensagens inbound são processadas),
+adicione ANTES da lógica atual de criação de lead:
+
+### 3a. Verificar se existe fluxo pausado para este telefone
+
+const pending = await db.query(`
+  SELECT * FROM automation_pending_inputs
+  WHERE phone = $1 AND tenant_id = $2 AND expires_at > NOW()
+  ORDER BY created_at DESC LIMIT 1
+`, [inboundPhone, tenantId])
+
+### 3b. Se NÃO existe pending → comportamento atual (cria/atualiza lead normalmente)
+
+### 3c. Se existe pending, verificar tipo de resposta:
+
+A mensagem inbound do Z-API pode ser:
+- Clique em opção da lista: `message.listResponseMessage` ou `message.buttonResponseMessage`
+  → Extraia o `selectedRowId` ou `selectedButtonId`
+- Texto livre: `message.extendedTextMessage` ou `message.conversation`
+  → NÃO é clique em opção
+
+#### Se for clique em opção:
+1. Encontre a opção correspondente em pending.options pelo id
+2. Delete o registro de pending_inputs
+3. Retome o fluxo chamando uma função resumeAutomationFlow(pending, selectedOptionId)
+4. NÃO processe como mensagem normal de lead
+
+#### Se for texto livre:
+1. NÃO delete o pending (fluxo continua pausado)
+2. Salve a mensagem na conversa normalmente
+3. Chame resumeAutomationFlow(pending, "__text_input__", { text: mensagemDigitada })
+4. -- texto livre vai pela saída especial "text_input" do nó
+
+---
+
+## PARTE 4: Função resumeAutomationFlow
+
+Crie a função server/services/automationEngine.ts (ou no arquivo de engine existente):
+
+async function resumeAutomationFlow(pending, selectedOptionId, extraContext?)
+
+Lógica:
+1. Carregue a automação pelo pending.flow_id
+2. Encontre o nó pelo pending.node_id no flow JSON
+3. Encontre as conexões de saída desse nó:
+   - Cada opção tem uma conexão com sourceHandle = optionId (ex: "opt1", "opt2")
+   - Texto livre tem sourceHandle = "text_input"
+4. Encontre o próximo nó a partir da conexão correta
+5. Restaure o contexto: variables e logs de pending.context
+6. Continue a execução a partir do próximo nó (não do início)
+7. Registre nos logs de execução que o fluxo foi retomado
+
+---
+
+## PARTE 5: Limpeza de pendências expiradas (opcional mas recomendado)
+
+Adicione um job simples que roda a cada 5 minutos:
+
+setInterval(async () => {
+  await db.query(`DELETE FROM automation_pending_inputs WHERE expires_at < NOW()`)
+}, 5 * 60 * 1000)
+
+Coloque esse interval no arquivo principal do servidor (index.ts/app.ts).
+
+---
+
+Confirme após implementar:
+1. Tabela automation_pending_inputs criada
+2. Nó lista_opcoes pausa o fluxo e salva pending
+3. Webhook inbound detecta clique em opção e retoma o fluxo
+4. Texto livre retoma pelo handle "text_input"

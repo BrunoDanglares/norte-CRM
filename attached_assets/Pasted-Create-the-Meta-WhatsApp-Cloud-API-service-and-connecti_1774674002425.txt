@@ -1,0 +1,271 @@
+Create the Meta WhatsApp Cloud API service and connection management backend for ChatBanana.
+
+## Environment variables already configured (use these exact names):
+- process.env.WHATSAPP_APP_ID (Meta App ID)
+- process.env.WHATSAPP_APP_SECRET (Meta App Secret)
+- process.env.WHATSAPP_ACCESS_TOKEN (System User Token)
+- process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN (Webhook verify token)
+
+## File to create: server/services/meta-whatsapp.ts
+
+Create a module (not a class) with the following exported async functions:
+
+### Interfaces to export:
+```typescript
+export interface MetaCredentials {
+  phoneNumberId: string;
+  accessToken: string;
+}
+
+export interface WABADetails {
+  id: string;
+  name: string;
+  currency: string;
+  timezoneId: string;
+}
+
+export interface PhoneNumberInfo {
+  id: string;
+  displayPhoneNumber: string;
+  verifiedName: string;
+  qualityRating: string;
+  platformType: string;
+}
+
+export interface SendTextResult {
+  messageId: string;
+}
+
+export interface SendMediaResult {
+  messageId: string;
+}
+
+export class MetaAPIError extends Error {
+  statusCode: number;
+  fbtrace_id?: string;
+  constructor(message: string, statusCode: number, fbtrace_id?: string) {
+    super(message);
+    this.name = 'MetaAPIError';
+    this.statusCode = statusCode;
+    this.fbtrace_id = fbtrace_id;
+  }
+}
+```
+
+### Helper functions (internal, not exported):
+
+#### formatPhone(phone: string): string
+- Strip all non-digit characters
+- If result starts with '0', remove the leading '0'
+- If result does not start with '55', prepend '55'
+- Return the final string (e.g. "5591999999999")
+
+#### handleMetaError(response: Response, context: string): Promise<never>
+- Read response body as JSON
+- Extract error.message, error.code, error.fbtrace_id
+- Throw new MetaAPIError(`[Meta ${context}] ${error.message} (code: ${error.code})`, response.status, error.fbtrace_id)
+
+#### metaFetch(url: string, options?: RequestInit): Promise<any>
+- Wrapper around native fetch with 10 second timeout using AbortController
+- On non-OK response, call handleMetaError
+- Return parsed JSON on success
+- Log every call: console.log('[MetaAPI]', options?.method || 'GET', url)
+
+### Exported functions:
+
+#### exchangeCodeForToken(code: string): Promise<string>
+GET https://graph.facebook.com/v19.0/oauth/access_token
+?client_id=${WHATSAPP_APP_ID}
+&client_secret=${WHATSAPP_APP_SECRET}
+&code=${code}
+Return response.access_token (string)
+
+#### getLongLivedToken(shortToken: string): Promise<{ token: string; expiresIn: number }>
+GET https://graph.facebook.com/v19.0/oauth/access_token
+?grant_type=fb_exchange_token
+&client_id=${WHATSAPP_APP_ID}
+&client_secret=${WHATSAPP_APP_SECRET}
+&fb_exchange_token=${shortToken}
+Return { token: response.access_token, expiresIn: response.expires_in }
+
+#### getWABADetails(wabaId: string, token: string): Promise<WABADetails>
+GET https://graph.facebook.com/v19.0/${wabaId}
+?fields=id,name,currency,timezone_id
+&access_token=${token}
+Return mapped WABADetails object
+
+#### getPhoneNumbers(wabaId: string, token: string): Promise<PhoneNumberInfo[]>
+GET https://graph.facebook.com/v19.0/${wabaId}/phone_numbers
+?fields=id,display_phone_number,verified_name,quality_rating,platform_type
+&access_token=${token}
+Return array of mapped PhoneNumberInfo
+
+#### subscribeWebhook(wabaId: string, token: string): Promise<boolean>
+POST https://graph.facebook.com/v19.0/${wabaId}/subscribed_apps
+?access_token=${token}
+Return response.success (boolean)
+
+#### sendTextMessage(params: { phoneNumberId: string; accessToken: string; to: string; text: string; replyToMessageId?: string }): Promise<SendTextResult>
+POST https://graph.facebook.com/v19.0/${params.phoneNumberId}/messages
+Authorization: Bearer ${params.accessToken}
+Content-Type: application/json
+Body:
+{
+messaging_product: "whatsapp",
+recipient_type: "individual",
+to: formatPhone(params.to),
+type: "text",
+text: { preview_url: false, body: params.text },
+...(params.replyToMessageId ? { context: { message_id: params.replyToMessageId } } : {})
+}
+Return { messageId: response.messages[0].id }
+
+#### sendMediaMessage(params: { phoneNumberId: string; accessToken: string; to: string; type: 'image' | 'audio' | 'document' | 'video'; mediaUrl: string; caption?: string; filename?: string }): Promise<SendMediaResult>
+POST https://graph.facebook.com/v19.0/${params.phoneNumberId}/messages
+Authorization: Bearer ${params.accessToken}
+Body:
+{
+messaging_product: "whatsapp",
+recipient_type: "individual",
+to: formatPhone(params.to),
+type: params.type,
+[params.type]: {
+link: params.mediaUrl,
+...(params.caption ? { caption: params.caption } : {}),
+...(params.filename ? { filename: params.filename } : {})
+}
+}
+Return { messageId: response.messages[0].id }
+
+#### sendTemplateMessage(params: { phoneNumberId: string; accessToken: string; to: string; templateName: string; language: string; components: any[] }): Promise<SendTextResult>
+POST https://graph.facebook.com/v19.0/${params.phoneNumberId}/messages
+Authorization: Bearer ${params.accessToken}
+Body:
+{
+messaging_product: "whatsapp",
+to: formatPhone(params.to),
+type: "template",
+template: {
+name: params.templateName,
+language: { code: params.language },
+components: params.components
+}
+}
+Return { messageId: response.messages[0].id }
+
+#### markMessageAsRead(phoneNumberId: string, accessToken: string, messageId: string): Promise<void>
+POST https://graph.facebook.com/v19.0/${phoneNumberId}/messages
+Authorization: Bearer ${accessToken}
+Body:
+{
+messaging_product: "whatsapp",
+status: "read",
+message_id: messageId
+}
+No return value, ignore errors silently (don't break flow if read receipt fails)
+
+#### syncTemplatesFromMeta(wabaId: string, token: string): Promise<any[]>
+GET https://graph.facebook.com/v19.0/${wabaId}/message_templates
+?fields=id,name,category,language,status,components,quality_score,rejection_reason
+&limit=100
+&access_token=${token}
+Return response.data array (raw template objects from Meta)
+
+#### getMediaUrl(mediaId: string, accessToken: string): Promise<string>
+GET https://graph.facebook.com/v19.0/${mediaId}
+?access_token=${accessToken}
+Return response.url (the temporary download URL for the media file)
+
+## File to create: server/routes/whatsapp-official.ts
+
+Import metaWhatsApp functions from '../services/meta-whatsapp'
+Import db and schema tables from the existing db setup
+Import resolveWorkspaceId and requireAuth from existing middleware
+Use existing apiFetch pattern for consistency
+
+### Routes to implement:
+
+#### POST /connect
+Body: { code?: string; waba_id: string; phone_number_id: string; access_token?: string }
+
+Two modes:
+1. OAuth mode (code provided): exchange code → get long-lived token → use that token
+2. Manual mode (access_token provided): use the token directly (for MVP without Embedded Signup)
+
+Steps after getting token:
+1. workspaceId = resolveWorkspaceId(req)
+2. Call getWABADetails(waba_id, token) → wabaInfo
+3. Call getPhoneNumbers(waba_id, token) → phones
+4. Find phone matching phone_number_id in the phones array
+5. Call subscribeWebhook(waba_id, token)
+6. Upsert into whatsapp_official_connections:
+   {
+     workspace_id: workspaceId,
+     waba_id,
+     phone_number_id,
+     display_phone_number: phone.displayPhoneNumber,
+     business_name: wabaInfo.name,
+     access_token: token,
+     token_type: code ? 'user' : 'system_user',
+     token_expires_at: code ? new Date(Date.now() + 60*24*60*60*1000) : null,
+     status: 'active',
+     webhook_verified: true,
+     meta_business_id: wabaInfo.id,
+     connected_at: new Date()
+   }
+7. Return connection without access_token field
+
+#### GET /connection
+- workspaceId = resolveWorkspaceId(req)
+- Find in whatsapp_official_connections where workspace_id = workspaceId AND status != 'disconnected'
+- If not found: return { connected: false }
+- Return connection object (exclude access_token, replace with token_masked: "••••••••")
+
+#### DELETE /connection
+- Set status = 'disconnected' and clear access_token = '' for this workspace
+- Return { success: true }
+
+#### POST /test
+- Load connection from DB (including access_token this time)
+- Call getPhoneNumbers(waba_id, access_token)
+- Return { success: true, phoneNumber: phones[0].displayPhoneNumber, qualityRating: phones[0].qualityRating }
+- On error: return { success: false, error: err.message }
+
+#### GET /templates
+- Query whatsapp_message_templates where workspace_id = workspaceId
+- If query param sync=true: also call syncTemplatesFromMeta and upsert results first
+- Return templates array
+
+#### POST /templates/sync
+- Load connection from DB
+- Call syncTemplatesFromMeta(waba_id, access_token)
+- For each template from Meta, upsert into whatsapp_message_templates:
+  {
+    workspace_id: workspaceId,
+    connection_id: connection.id,
+    template_name: t.name,
+    template_id: t.id,
+    category: t.category,
+    language: t.language,
+    status: t.status,
+    body_text: t.components?.find(c => c.type === 'BODY')?.text || '',
+    header_type: t.components?.find(c => c.type === 'HEADER')?.format || null,
+    footer_text: t.components?.find(c => c.type === 'FOOTER')?.text || null,
+    buttons: t.components?.find(c => c.type === 'BUTTONS')?.buttons || null,
+    approved_at: t.status === 'APPROVED' ? new Date() : null,
+    updated_at: new Date()
+  }
+- Return { synced: count }
+
+## Register in server/index.ts
+
+Find where other routes are registered (after requireAuth setup). Add:
+```typescript
+import whatsappOfficialRouter from './routes/whatsapp-official';
+app.use('/api/whatsapp-official', requireAuth, whatsappOfficialRouter);
+```
+
+## After completing, verify by checking:
+1. TypeScript compiles without errors
+2. Routes are registered (console shows them on startup if your app logs routes)
+3. Confirm the files created: server/services/meta-whatsapp.ts and server/routes/whatsapp-official.ts

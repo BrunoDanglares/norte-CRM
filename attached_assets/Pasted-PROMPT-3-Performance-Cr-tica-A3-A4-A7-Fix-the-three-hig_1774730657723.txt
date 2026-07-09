@@ -1,0 +1,143 @@
+PROMPT 3 — Performance Crítica (A3 + A4 + A7)
+Fix the three highest-impact performance issues in ChatBanana.
+
+## FIX 1: Add missing database indexes (A3)
+
+File: shared/schema.ts
+
+Add indexes to ALL high-traffic tables that filter by workspace_id.
+Add these index definitions alongside each table definition:
+```typescript
+// After each table definition, add:
+export const leadsWorkspaceIdx = index("idx_leads_workspace")
+  .on(leads.workspaceId);
+
+export const contactsWorkspaceIdx = index("idx_contacts_workspace")
+  .on(contacts.workspaceId);
+
+export const conversationsWorkspaceIdx = index("idx_conversations_workspace")
+  .on(conversations.workspaceId);
+
+export const messagesWorkspaceIdx = index("idx_messages_workspace")
+  .on(messages.workspaceId);
+
+export const dealsWorkspaceIdx = index("idx_deals_workspace")
+  .on(deals.workspaceId);
+
+export const appointmentsWorkspaceIdx = index("idx_appointments_workspace")
+  .on(appointments.workspaceId);
+
+export const transactionsWorkspaceIdx = index("idx_transactions_workspace")
+  .on(transactions.workspaceId);
+
+export const automacoesWorkspaceIdx = index("idx_automacoes_workspace")
+  .on(automacoes.workspaceId);
+
+export const campanhasWorkspaceIdx = index("idx_campanhas_workspace")
+  .on(campanhas.workspaceId);
+
+export const disparosWorkspaceIdx = index("idx_disparos_workspace")
+  .on(disparosProgramados.workspaceId);
+```
+
+Also add compound indexes for common query patterns:
+```typescript
+// conversations filtered by workspace + status (very common)
+export const conversationsWorkspaceStatusIdx = index("idx_conversations_workspace_status")
+  .on(conversations.workspaceId, conversations.status);
+
+// messages filtered by conversation (very common in inbox)
+export const messagesConversationIdx = index("idx_messages_conversation")
+  .on(messages.conversationId);
+
+// contacts unique: workspace + phone (for dedup)
+export const contactsWorkspacePhoneIdx = uniqueIndex("idx_contacts_workspace_phone")
+  .on(contacts.workspaceId, contacts.telefone);
+
+// messages unique: workspace + wamid (for Meta webhook dedup)  
+// Only add if wamid column exists in messages table
+// export const messagesWamidIdx = uniqueIndex("idx_messages_wamid")
+//   .on(messages.workspaceId, messages.wamid);
+```
+
+After adding all indexes: run npm run db:push to apply to database.
+Confirm all indexes were created successfully.
+
+---
+
+## FIX 2: Fix N+1 query in user listing (A4)
+
+File: server/routes.ts lines ~2214-2219
+
+PROBLEM:
+```typescript
+// N+1 — one query per team:
+for (const t of wsTeams) {
+  const members = await storage.getTeamMembers(t.id); // query per iteration!
+  ...
+}
+```
+
+SOLUTION: Fetch all members in one query:
+```typescript
+// Get all team IDs at once
+const teamIds = wsTeams.map(t => t.id);
+
+// Single query for all members
+const allMembers = await db.select()
+  .from(teamMembers)
+  .where(inArray(teamMembers.teamId, teamIds));
+
+// Group by teamId in memory
+const membersByTeam = allMembers.reduce((acc, member) => {
+  if (!acc[member.teamId]) acc[member.teamId] = [];
+  acc[member.teamId].push(member);
+  return acc;
+}, {} as Record<number, typeof allMembers>);
+
+// Use the grouped result
+const result = wsTeams.map(t => ({
+  ...t,
+  members: membersByTeam[t.id] || []
+}));
+```
+
+Import inArray from drizzle-orm if not already imported.
+
+---
+
+## FIX 3: Reduce aggressive polling in inbox (A7)
+
+File: client/src/pages/inbox.tsx
+
+PROBLEM: Polling every 1000-1500ms generates ~90 requests/minute per user.
+
+SOLUTION: Increase fallback intervals and rely on WebSocket for real-time:
+```typescript
+// Find all refetchInterval: 1000 and refetchInterval: 1500 in inbox.tsx
+// Replace with longer intervals as fallback:
+
+// For messages query:
+refetchInterval: 10000, // 10s fallback — WebSocket handles real-time
+
+// For conversations query:
+refetchInterval: 15000, // 15s fallback — WebSocket handles real-time
+
+// Add WebSocket-driven invalidation:
+// Find where WebSocket messages are received (likely in useWebSocket hook)
+// When a new message event arrives via WebSocket, invalidate the query cache:
+
+// In the WebSocket message handler:
+queryClient.invalidateQueries({ queryKey: ['messages', activeConversationId] });
+queryClient.invalidateQueries({ queryKey: ['conversations'] });
+```
+
+Find the existing WebSocket event handler in inbox.tsx and add
+queryClient.invalidateQueries calls for the relevant query keys.
+The WebSocket already exists — just hook the cache invalidation into it.
+
+## After implementing:
+1. Run npm run db:push — confirm all indexes created
+2. Check EXPLAIN ANALYZE on a lead query — confirm index is used
+3. Test inbox with Network tab open — confirm request rate dropped from ~90/min to ~6/min
+4. Confirm real-time updates still work via WebSocket after polling reduction

@@ -1,0 +1,142 @@
+Preciso mapear a arquitetura atual antes de escrever o prompt. Aqui está o diagnóstico do problema e o prompt completo:
+
+Diagnóstico
+O nó Lista de Opções hoje é bloqueante — ele pausa o fluxo e espera o clique. Isso é incompatível com o nó Resposta IA, que já está escutando a próxima mensagem livremente. Os dois brigam pela conversa.
+A solução é adicionar um modo não-bloqueante ao nó Lista de Opções: ele envia os botões como atalho visual, mas não pausa o fluxo. O usuário clica ou digita — a IA pega os dois.
+
+Prompt para o Replit
+## OBJETIVO
+Adicionar modo não-bloqueante ao nó "Lista de Opções" da engine de automação,
+permitindo fluxos híbridos onde botões aparecem como atalho opcional após
+respostas da IA, sem interromper o fluxo conversacional.
+
+## CONTEXTO
+- Engine de automação em: server/automationEngine.ts (ou similar)
+- Nó Lista de Opções usa a tabela `automation_pending_inputs` para pausar o fluxo
+- Nó Resposta IA usa GPT-4o-mini e já escuta mensagens livres
+- Stack: Node.js + Express + TypeScript + PostgreSQL + Drizzle ORM
+
+## MUDANÇA 1 — Schema do nó Lista de Opções
+
+No tipo/interface do nó Lista de Opções, adicionar propriedade:
+```typescript
+interface ListaDeOpcoesConfig {
+  question: string;
+  options: { label: string; value: string }[];
+  blocking: boolean; // NOVO — default: true para manter comportamento atual
+  variableName?: string;
+}
+```
+
+## MUDANÇA 2 — Engine de automação
+
+No handler do nó `lista_de_opcoes` dentro da engine, adicionar condição:
+```typescript
+case 'lista_de_opcoes': {
+  const config = node.config as ListaDeOpcoesConfig;
+  const blocking = config.blocking ?? true; // default mantém comportamento atual
+
+  // Envia a mensagem com botões interativos (Meta Cloud API)
+  await sendWhatsAppInteractiveButtons({
+    to: conversation.contactPhone,
+    body: config.question,
+    buttons: config.options.map(opt => ({
+      id: opt.value,
+      title: opt.label
+    })),
+    workspaceId
+  });
+
+  if (blocking) {
+    // Comportamento atual: pausa o fluxo
+    await db.insert(automationPendingInputs).values({
+      conversationId,
+      automacaoId,
+      nodeId: node.id,
+      workspaceId,
+      createdAt: new Date()
+    });
+    return; // Para a execução aqui
+  } else {
+    // NOVO: não-bloqueante — apenas envia os botões e continua
+    // O próximo nó no canvas executa normalmente
+    // A próxima mensagem do usuário (botão ou texto) volta ao fluxo normal
+    break; // Continua para o próximo nó
+  }
+}
+```
+
+## MUDANÇA 3 — Frontend: Canvas editor
+
+No componente de configuração do nó Lista de Opções
+(provavelmente em client/src/components/automation/ ou similar):
+
+Adicionar toggle "Modo opcional (não-bloqueante)":
+```tsx
+<div className="flex items-center justify-between mt-4">
+  <div>
+    <p className="text-sm font-medium text-white">Modo Opcional</p>
+    <p className="text-xs text-gray-400">
+      Botões aparecem como atalho, mas o usuário pode digitar livremente
+    </p>
+  </div>
+  <Switch
+    checked={!config.blocking}
+    onCheckedChange={(val) => updateConfig({ blocking: !val })}
+  />
+</div>
+```
+
+Quando `blocking = false`, mostrar badge visual no nó do canvas:
+```tsx
+{!config.blocking && (
+  <span className="text-xs bg-violet-500/20 text-violet-300 px-2 py-0.5 rounded-full">
+    Opcional
+  </span>
+)}
+```
+
+## MUDANÇA 4 — Handler de mensagens recebidas
+
+No handler que processa mensagens WhatsApp recebidas
+(onde botões interativos retornam como `interactive.button_reply`):
+
+Garantir que cliques em botões de modo não-bloqueante são tratados
+como mensagem de texto normal (para o nó Resposta IA capturar):
+```typescript
+// Ao receber interactive.button_reply
+const buttonText = payload.interactive?.button_reply?.title ?? '';
+
+// Se não há pending_input ativo para esta conversa,
+// tratar o clique como mensagem de texto normal
+const pendingInput = await db.query.automationPendingInputs.findFirst({
+  where: and(
+    eq(automationPendingInputs.conversationId, conversationId),
+    eq(automationPendingInputs.workspaceId, workspaceId)
+  )
+});
+
+if (!pendingInput) {
+  // Modo não-bloqueante: processa como texto livre
+  incomingText = buttonText;
+  // Continua fluxo normal de mensagem recebida
+} else {
+  // Modo bloqueante: comportamento atual, resume o fluxo pausado
+  await resumeAutomationFromPendingInput(pendingInput, buttonText);
+}
+```
+
+## REGRAS IMPORTANTES
+- NÃO quebrar o comportamento atual dos nós Lista de Opções existentes
+  (blocking: true é o default)
+- NÃO modificar a tabela automation_pending_inputs (sem migration)
+- O botão clicado em modo não-bloqueante DEVE aparecer como mensagem
+  no histórico da conversa normalmente
+- Testar com o fluxo de suporte ISP: após Resposta IA de diagnóstico,
+  Lista de Opções não-bloqueante oferece atalhos, IA captura qualquer resposta
+
+## ARQUIVOS PROVÁVEIS A EDITAR
+- server/automationEngine.ts
+- server/routes/webhook.ts (ou meta.ts) — handler de interactive button_reply
+- client/src/components/automation/nodes/ListaDeOpcoesNode.tsx (ou similar)
+- client/src/components/automation/NodeConfigPanel.tsx (ou similar)

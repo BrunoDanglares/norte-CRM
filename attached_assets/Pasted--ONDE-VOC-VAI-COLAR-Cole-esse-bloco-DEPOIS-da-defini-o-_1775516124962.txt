@@ -1,0 +1,77 @@
+🔧 ONDE VOCÊ VAI COLAR
+
+👉 Cole esse bloco DEPOIS da definição das keywords (kSup, kFin, etc)
+👉 E ANTES do bloco // Detectar intent pela mensagem
+
+🚀 BLOCO PARA ADICIONAR
+// =========================
+// 🔥 CAMADA INTELIGENTE (NÃO QUEBRA SEU FLUXO)
+// =========================
+
+// SCORE por intenção (complementar ao seu)
+const score = {
+  SUPORTE: kSup.filter(w => msg.includes(w)).length,
+  FINANCEIRO: kFin.filter(w => msg.includes(w)).length,
+  COMERCIAL: kCom.filter(w => msg.includes(w)).length,
+  CANCELAMENTO: kCancel.filter(w => msg.includes(w)).length,
+  HUMANO: kHum.filter(w => msg.includes(w)).length
+};
+
+// ordena intenções por score
+const ranking = Object.entries(score).sort((a,b)=>b[1]-a[1]);
+const topIntent = ranking[0]?.[0] ?? null;
+const secondIntent = ranking[1]?.[0] ?? null;
+const topScore = ranking[0]?.[1] ?? 0;
+const secondScore = ranking[1]?.[1] ?? 0;
+
+// detecta ambiguidade
+const ambiguidade = topScore > 0 && (topScore - secondScore <= 1);
+
+// detecta se há intenção clara nova
+const detectouNovaIntencao = topScore > 0;
+
+// =========================
+// 🔄 DETECÇÃO DE MUDANÇA DE INTENÇÃO
+// =========================
+let mudouIntencao = false;
+
+if (detectouNovaIntencao && intentOriginal && topIntent !== intentOriginal) {
+  mudouIntencao = true;
+}
+
+// =========================
+// 🧠 PRIORIDADE: NOVA INTENÇÃO > FLUXO
+// =========================
+if (!intentDireto && detectouNovaIntencao && !eSaudacao) {
+  intent = topIntent;
+}
+🔧 SEGUNDO AJUSTE (REGRA ISP MELHORADA)
+
+👉 Agora substitui SÓ essa linha sua:
+
+if (F.is_suspended && (intent === 'MENU' || intent === 'SUPORTE')) intent = 'FINANCEIRO';
+✅ POR ESSA VERSÃO MELHOR:
+// =========================
+// 🔥 REGRA ISP (ROBUSTA)
+// =========================
+const pediuSuporte = kSup.some(w => msg.includes(w));
+
+if (pediuSuporte) {
+
+  const suspenso = F.is_suspended || F.esta_suspenso || false;
+  const valorDevido = Number(F.valor_devido ?? F.amount_due ?? 0);
+  const temDebito = valorDevido > 0;
+
+  if (suspenso || temDebito) {
+    intent = 'FINANCEIRO';
+  } else {
+    intent = 'SUPORTE';
+  }
+}
+🔧 TERCEIRO AJUSTE (NO RETURN)
+
+👉 Acrescenta esses campos no seu return:
+
+ambiguidade,
+mudou_intencao: mudouIntencao,
+score_intencao: score,

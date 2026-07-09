@@ -1,0 +1,114 @@
+Create the SGP API adapter service for the ChatBanana ISP module.
+
+## Context
+- File to create: server/services/sgp-adapter.ts
+- SGP is a Brazilian ISP management system (Sistema de Gestão para Provedores)
+- The adapter must be stateless — credentials passed on each call
+- Use native fetch (Node 18+), no axios
+- All API calls use: Authorization: Bearer {apiToken} header
+
+## Interfaces to export
+```typescriptexport interface SGPCredentials {
+baseUrl: string;
+apiToken: string;
+}export interface SGPCustomer {
+id: string;
+nome: string;
+cpf: string;
+telefone: string;
+email: string;
+plano: string;
+dataNascimento: string | null; // ISO date string
+status: 'ativo' | 'suspenso' | 'cancelado' | 'inadimplente';
+endereco: string;
+}export interface SGPInvoice {
+id: string;
+customerId: string;
+numero: string;
+valor: number;
+vencimento: string; // ISO date
+status: 'aberto' | 'pago' | 'vencido' | 'cancelado';
+linhaDigitavel: string | null;
+linkBoleto: string | null;
+pix: string | null;
+diasAtraso: number;
+}export interface SGPTicket {
+id: string;
+customerId: string;
+tipo: string;
+descricao: string;
+status: 'aberto' | 'em_andamento' | 'resolvido';
+criadoEm: string;
+protocolo: string;
+}export interface SGPSecondCopy {
+linhaDigitavel: string;
+linkBoleto: string;
+pix: string | null;
+vencimento: string;
+valor: number;
+}export class SGPError extends Error {
+statusCode: number;
+sgpMessage: string;
+constructor(message: string, statusCode: number) {
+super(message);
+this.name = 'SGPError';
+this.statusCode = statusCode;
+this.sgpMessage = message;
+}
+}
+
+## Internal helpers
+
+### sgpFetch(url, options, credentials)
+- Wrapper with 10s timeout via AbortController
+- Adds Authorization: Bearer {token} header
+- Also adds token as query param: ?token={token} (SGP fallback)
+- On non-OK response: reads body, throws SGPError with status code
+- Logs: console.log('[SGP]', method, url)
+
+### formatCPF(cpf: string): string
+- Strips all non-digits, returns 11-digit string
+
+## Exported functions
+
+### searchCustomerByCPF(credentials, cpf): Promise<SGPCustomer | null>
+- GET {baseUrl}/clientes?cpf={formatCPF(cpf)}
+- Return null if 404 or empty result
+- Map response to SGPCustomer interface
+
+### getOpenInvoices(credentials, customerId): Promise<SGPInvoice[]>
+- GET {baseUrl}/financeiro/faturas?cliente_id={customerId}&status=aberto,vencido
+- Calculate diasAtraso for each (Math.max(0, days since vencimento))
+- Return sorted by vencimento ascending
+- Return [] if none found
+
+### generateSecondCopy(credentials, invoiceId): Promise<SGPSecondCopy>
+- POST {baseUrl}/financeiro/faturas/{invoiceId}/segunda-via
+- Throw SGPError if not found or already paid
+
+### createSupportTicket(credentials, params: { customerId, tipo, descricao }): Promise<SGPTicket>
+- POST {baseUrl}/os with body { cliente_id, tipo, descricao, prioridade: 'normal' }
+- Return created ticket with protocolo
+
+### getTicketStatus(credentials, ticketId): Promise<SGPTicket>
+- GET {baseUrl}/os/{ticketId}
+- Throw SGPError if not found
+
+### getOverdueCustomers(credentials, daysOverdue): Promise<Array<{ customer: SGPCustomer, invoices: SGPInvoice[] }>>
+- GET {baseUrl}/financeiro/faturas?status=vencido&dias_atraso={daysOverdue}
+- Group results by customer
+- Used by billing scheduler
+
+### getInvoicesDueSoon(credentials, daysUntilDue): Promise<Array<{ customer: SGPCustomer, invoice: SGPInvoice }>>
+- GET {baseUrl}/financeiro/faturas?vence_em={daysUntilDue}
+- Used by billing scheduler for pre-due reminders
+
+### getCustomerByPhone(credentials, phone): Promise<SGPCustomer | null>
+- GET {baseUrl}/clientes?telefone={phone}
+- Returns null if not found
+- Used by webhook to auto-identify callers
+
+## After implementing
+- Confirm TypeScript compiles without errors
+- Export all interfaces and functions as named exports
+- Confirm file created: server/services/sgp-adapter.ts

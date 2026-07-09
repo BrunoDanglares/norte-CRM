@@ -1,0 +1,174 @@
+Você é um engenheiro sênior especialista em Node.js, n8n e arquitetura SaaS.
+
+CONTEXTO:
+Existe um node no n8n responsável por registrar conversas e atualizar sessão do cliente após a resposta da IA.
+
+O payload atual já está FUNCIONANDO em produção e possui a seguinte estrutura:
+
+{
+workspace_id,
+conversation_id,
+telefone,
+user_message,
+assistant_message,
+intent,
+session_updates
+}
+
+IMPORTANTE:
+
+* NÃO pode haver breaking changes
+* NÃO pode remover campos existentes
+* NÃO pode alterar nomes atuais
+* NÃO pode mudar comportamento existente
+* Apenas EXTENDER o payload com melhorias
+
+---
+
+OBJETIVO:
+
+Tornar o registro de conversa mais robusto, rastreável e preparado para escala SaaS.
+
+---
+
+IMPLEMENTAÇÕES OBRIGATÓRIAS:
+
+1. INTENT DINÂMICO (CRÍTICO)
+
+Substituir intent fixo por:
+
+intent: $("Code: Contexto + SDR").item.json.intent ?? "SUPORTE"
+
+IMPORTANTE:
+
+* NÃO manter valor fixo
+* Sempre priorizar SDR
+
+---
+
+2. PROTEÇÃO DE RESPOSTA DA IA
+
+Garantir que assistant_message:
+
+* Nunca seja null, undefined ou vazio
+* Se estiver vazio → usar fallback:
+
+"Erro ao gerar resposta da IA"
+
+Implementar validação defensiva
+
+---
+
+3. NORMALIZAÇÃO DE TIPO
+
+Garantir que:
+
+* assistant_message seja sempre string
+* Se não for → converter ou fallback
+
+---
+
+4. REGISTRAR TIPO DE INPUT
+
+Adicionar campo:
+
+tipo_input: $("Code: Contexto + SDR").item.json.tipo_input ?? "texto"
+
+---
+
+5. REGISTRAR MUDANÇA DE INTENÇÃO
+
+Adicionar:
+
+mudou_intencao: $("Code: Contexto + SDR").item.json.mudou_intencao ?? false
+
+---
+
+6. METADADOS (IMPORTANTE PARA ANALYTICS)
+
+Adicionar objeto:
+
+meta: {
+origem: "n8n",
+agente: "suporte",
+timestamp: new Date().toISOString()
+}
+
+IMPORTANTE:
+
+* NÃO substituir nada existente
+* Apenas adicionar
+
+---
+
+7. SEGURANÇA DO CLIENTE ERP
+
+Garantir que:
+
+cliente_id_erp seja sempre string:
+
+cliente_id_erp: String($("Code: Contexto + SDR").item.json.cliente?.id ?? "")
+
+---
+
+8. PRESERVAR session_updates
+
+NÃO alterar estrutura atual:
+
+session_updates deve continuar com:
+
+* fluxo_atual
+* identificado
+* cliente_nome
+* cliente_id_erp
+
+---
+
+9. CÓDIGO DEFENSIVO
+
+Garantir:
+
+* null safety em todos os campos
+* fallback seguro
+* nenhuma exceção em runtime
+
+---
+
+10. ESTRUTURA FINAL (REFERÊNCIA)
+
+O payload final deve ser equivalente a:
+
+{
+workspace_id,
+conversation_id,
+telefone,
+user_message,
+assistant_message,
+intent,
+tipo_input,
+mudou_intencao,
+session_updates,
+meta
+}
+
+---
+
+IMPORTANTE:
+
+Se houver qualquer dúvida:
+
+* NÃO simplificar
+* NÃO refatorar estrutura
+* NÃO remover campos
+* NÃO alterar comportamento existente
+
+Apenas EXTENDER com segurança.
+
+---
+
+RESULTADO ESPERADO:
+
+* Logs confiáveis
+* Base para métricas e analytics
+* Controle real de intenção
+* Sistema preparado para escalar múltiplos provedores

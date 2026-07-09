@@ -1,0 +1,150 @@
+Você é um engenheiro sênior especialista em Node.js, n8n e arquitetura SaaS multi-tenant.
+
+CONTEXTO:
+Existe um node no n8n que envia dados para o agente_orquestrador no ChatBanana.
+
+O payload atual já está FUNCIONANDO em produção.
+
+IMPORTANTE:
+
+* NÃO pode haver breaking changes
+* NÃO pode remover campos existentes
+* NÃO pode alterar nomes atuais
+* Apenas EXTENDER com melhorias
+
+---
+
+OBJETIVO:
+
+Tornar o orquestrador mais inteligente, previsível e preparado para escala SaaS.
+
+---
+
+IMPLEMENTAÇÕES OBRIGATÓRIAS:
+
+1. NÃO ALTERAR ESTRUTURA ATUAL
+
+Preservar:
+
+* workspace_id
+* prompt_name
+* mensagem
+* context
+* historico
+
+---
+
+2. ADICIONAR CONTROLE DE INTENÇÃO
+
+Adicionar dentro de context:
+
+controle_intencao: {
+mudou_intencao: $('Code: Contexto + SDR').item.json.mudou_intencao ?? false,
+ambiguidade: $('Code: Contexto + SDR').item.json.ambiguidade ?? false,
+confianca: $('Code: Contexto + SDR').item.json.confianca ?? 1
+}
+
+---
+
+3. ADICIONAR TIPO DE INPUT
+
+Adicionar:
+
+tipo_input: $('Code: Contexto + SDR').item.json.tipo_input ?? "texto"
+
+---
+
+4. NORMALIZAÇÃO DE DADOS CRÍTICOS
+
+Garantir:
+
+financeiro: {
+valor_devido: context.financeiro?.valor_devido ?? 0,
+suspenso: context.financeiro?.is_suspended ?? false
+}
+
+conexao: {
+status: context.conexao?.status ?? "desconhecido"
+}
+
+---
+
+5. CONTROLE OPERACIONAL
+
+Adicionar:
+
+modo: {
+papel: "orquestrador",
+respeitar_intencao: true,
+permitir_mudanca_fluxo: true
+}
+
+---
+
+6. METADADOS OPERACIONAIS
+
+Adicionar:
+
+operacao: {
+origem: "n8n",
+canal: "whatsapp",
+versao: "v1"
+}
+
+---
+
+7. CONTEXTO EXISTENTE (MANTER)
+
+Preservar:
+
+* intent
+* fluxo_anterior
+* novo_fluxo
+* cliente_nome
+* primeira_mensagem
+* sessao
+
+---
+
+8. CÓDIGO DEFENSIVO
+
+Garantir:
+
+* null safety
+* fallback seguro
+* nenhuma exceção
+
+---
+
+9. RESULTADO FINAL (CONCEITO)
+
+context deve conter:
+
+{
+...dados atuais,
+controle_intencao: {...},
+tipo_input,
+modo: {...},
+operacao: {...}
+}
+
+---
+
+IMPORTANTE:
+
+Se houver dúvida:
+
+* NÃO simplificar
+* NÃO refatorar estrutura existente
+* NÃO remover campos
+
+Apenas EXTENDER com segurança
+
+---
+
+RESULTADO ESPERADO:
+
+* orquestrador mais inteligente
+* decisões mais consistentes
+* melhor troca de fluxo
+* base pronta para escala SaaS

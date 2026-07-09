@@ -1,0 +1,147 @@
+Create the automated billing and birthday schedulers for the ChatBanana ISP module.
+
+## Context
+- install node-cron if not already: npm install node-cron @types/node-cron
+- Both schedulers run daily for ALL active workspaces with ISP config
+- Use channel-router sendMessage for all sends
+- Log everything to isp_automation_logs table
+- Check actual column names in leads table (from Prompt 1 output) before writing birthday query
+
+## File to create: server/services/isp-schedulers.ts
+```typescriptimport cron from 'node-cron';
+import { db } from '../db';
+import { isp_configs, isp_billing_logs, isp_automation_logs, leads } from '../db/schema';
+import { eq, and, sql } from 'drizzle-orm';
+import * as sgpAdapter from './sgp-adapter';
+import { sendMessage } from './channel-router';// ─── Default message templates ───────────────────────────────────────────────const DEFAULT_PRE_DUE = `Olá, {{nome}}! 👋Sua fatura vence em {{vencimento}} no valor de {{valor}}.💳 Linha digitável: {{linha_digitavel}}
+🔗 Boleto: {{link_boleto}}Evite o corte — pague em dia! 😊`;const DEFAULT_OVERDUE = `Olá, {{nome}}! Sua fatura de {{valor}} venceu em {{vencimento}}.Para regularizar acesse: {{link_boleto}}💳 Linha digitável: {{linha_digitavel}}Regularize para evitar a suspensão do sinal. Qualquer dúvida, é só chamar! 🙏`;const DEFAULT_BIRTHDAY = `🎂 Feliz Aniversário, {{nome}}!A equipe {{empresa}} deseja a você um dia repleto de alegrias!É uma honra ter você como nosso cliente. Conte sempre com a gente! 🎉`;// ─── Start all ISP schedulers ────────────────────────────────────────────────export function startISPSchedulers() {
+// Billing: daily at 08:00 BRT
+cron.schedule('0 8 * * *', async () => {
+console.log('[ISP Billing] Starting daily billing run...');
+await runBillingForAllWorkspaces().catch(e => console.error('[ISP Billing] Fatal error:', e));
+}, { timezone: 'America/Sao_Paulo' });// Birthday: daily at 09:00 BRT
+cron.schedule('0 9 * * *', async () => {
+console.log('[ISP Birthday] Starting daily birthday check...');
+await runBirthdayForAllWorkspaces().catch(e => console.error('[ISP Birthday] Fatal error:', e));
+}, { timezone: 'America/Sao_Paulo' });console.log('[ISP Schedulers] ✅ Billing at 08:00 BRT | Birthday at 09:00 BRT');
+}// ─── BILLING ─────────────────────────────────────────────────────────────────async function runBillingForAllWorkspaces() {
+const configs = await db.select().from(isp_configs).where(
+and(eq(isp_configs.is_active, true), eq(isp_configs.billing_enabled, true))
+);
+for (const config of configs) {
+await runBillingForWorkspace(config).catch(e =>
+console.error([ISP Billing] Workspace ${config.workspace_id} error:, e)
+);
+}
+}async function runBillingForWorkspace(config: any) {
+const credentials = { baseUrl: config.sgp_base_url, apiToken: config.sgp_api_token };
+const workspaceId = config.workspace_id;
+let sent = 0, skipped = 0, errors = 0;// PRE-DUE reminders
+const daysBefore = config.billing_days_before || 3;
+const preDue = await sgpAdapter.getInvoicesDueSoon(credentials, daysBefore).catch(() => []);for (const { customer, invoice } of preDue) {
+const alreadySent = await checkAlreadySent(workspaceId, invoice.id, 'pre_due');
+if (alreadySent) { skipped++; continue; }const message = buildBillingMessage(config.billing_message_before || DEFAULT_PRE_DUE, customer, invoice);
+const result = await sendMessage({ workspaceId, to: customer.telefone, type: 'text', content: message });await logBilling(workspaceId, customer, invoice, 'pre_due', -daysBefore, result.success);
+await logAutomation(workspaceId, 'billing_pre_due', customer, message, result);result.success ? sent++ : errors++;
+await sleep(1500);
+}// OVERDUE notices
+const daysAfterList: number[] = config.billing_days_after || [1, 3, 7];for (const daysAfter of daysAfterList) {
+const overdue = await sgpAdapter.getOverdueCustomers(credentials, daysAfter).catch(() => []);
+const msgType = overdue_${daysAfter} as any;for (const { customer, invoices } of overdue) {
+  const invoice = invoices[0];
+  const alreadySent = await checkAlreadySent(workspaceId, invoice.id, msgType);
+  if (alreadySent) { skipped++; continue; }  const message = buildBillingMessage(config.billing_message_after || DEFAULT_OVERDUE, customer, invoice);
+  const result = await sendMessage({ workspaceId, to: customer.telefone, type: 'text', content: message });  await logBilling(workspaceId, customer, invoice, msgType, daysAfter, result.success);
+  await logAutomation(workspaceId, 'billing_overdue', customer, message, result);  result.success ? sent++ : errors++;
+  await sleep(1500);
+}
+}console.log([ISP Billing] Workspace ${workspaceId}: sent=${sent} skipped=${skipped} errors=${errors});
+}async function checkAlreadySent(workspaceId: string, invoiceId: string, messageType: string): Promise<boolean> {
+const log = await db.query.isp_billing_logs.findFirst({
+where: and(
+eq(isp_billing_logs.workspace_id, workspaceId),
+eq(isp_billing_logs.sgp_invoice_id, invoiceId),
+eq(isp_billing_logs.message_type, messageType),
+eq(isp_billing_logs.whatsapp_sent, true)
+)
+});
+return !!log;
+}async function logBilling(workspaceId: string, customer: any, invoice: any, type: string, daysOffset: number, success: boolean) {
+await db.insert(isp_billing_logs).values({
+workspace_id: workspaceId,
+sgp_customer_id: customer.id,
+sgp_invoice_id: invoice.id,
+customer_phone: customer.telefone,
+customer_name: customer.nome,
+invoice_due_date: new Date(invoice.vencimento),
+invoice_amount: invoice.valor,
+message_type: type,
+days_offset: daysOffset,
+whatsapp_sent: success,
+sent_at: success ? new Date() : null,
+}).onConflictDoNothing().catch(e => console.error('[ISP Billing] Log error:', e));
+}function buildBillingMessage(template: string, customer: any, invoice: any): string {
+return template
+.replace(/{{nome}}/g, customer.nome?.split(' ')[0] || '')
+.replace(/{{vencimento}}/g, new Date(invoice.vencimento).toLocaleDateString('pt-BR'))
+.replace(/{{valor}}/g, R$ ${Number(invoice.valor).toFixed(2)})
+.replace(/{{link_boleto}}/g, invoice.linkBoleto || '')
+.replace(/{{linha_digitavel}}/g, invoice.linhaDigitavel || '')
+.replace(/{{pix}}/g, invoice.pix || '');
+}// ─── BIRTHDAY ─────────────────────────────────────────────────────────────────async function runBirthdayForAllWorkspaces() {
+const configs = await db.select().from(isp_configs).where(
+and(eq(isp_configs.is_active, true), eq(isp_configs.birthday_enabled, true))
+);
+for (const config of configs) {
+await runBirthdayForWorkspace(config).catch(e =>
+console.error([ISP Birthday] Workspace ${config.workspace_id} error:, e)
+);
+}
+}async function runBirthdayForWorkspace(config: any) {
+const workspaceId = config.workspace_id;
+const today = new Date();
+const month = today.getMonth() + 1;
+const day = today.getDate();// Agent: use the actual column names from leads table found in Prompt 1
+// Adjust field names: nome/name, telefone/phone, data_nascimento/birthday/birth_date, status values
+const clients = await db.select().from(leads).where(
+and(
+eq(leads.workspace_id, workspaceId),
+sqlEXTRACT(MONTH FROM ${leads.data_nascimento}) = ${month},
+sqlEXTRACT(DAY FROM ${leads.data_nascimento}) = ${day},
+sql${leads.status} IN ('cliente', 'ativo', 'client', 'active')
+)
+).catch(() => []);if (!clients.length) {
+console.log([ISP Birthday] No birthdays today for workspace ${workspaceId});
+return;
+}console.log([ISP Birthday] ${clients.length} birthdays for workspace ${workspaceId});for (const client of clients) {
+const phone = (client as any).telefone || (client as any).phone;
+const name = (client as any).nome || (client as any).name || 'cliente';
+if (!phone) continue;const message = (config.birthday_message || DEFAULT_BIRTHDAY)
+  .replace(/\{\{nome\}\}/g, name.split(' ')[0])
+  .replace(/\{\{empresa\}\}/g, config.company_name || '');await sleep(1500);const result = await sendMessage({ workspaceId, to: phone, type: 'text', content: message });
+await logAutomation(workspaceId, 'birthday', { nome: name, telefone: phone }, message, result);console.log(`[ISP Birthday] ${result.success ? '✅' : '❌'} ${name} (${phone})`);
+}
+}// ─── Shared helpers ────────────────────────────────────────────────────────────async function logAutomation(workspaceId: string, type: string, customer: any, message: string, result: any) {
+await db.insert(isp_automation_logs).values({
+workspace_id: workspaceId,
+automation_type: type,
+customer_phone: customer.telefone || customer.phone || '',
+customer_name: customer.nome || customer.name || '',
+message_preview: message.substring(0, 100),
+channel: result.channel || 'whatsapp',
+success: result.success,
+error_message: result.error || null,
+sent_at: new Date()
+}).catch(e => console.error('[ISP] Automation log error:', e));
+}function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)); }
+
+## Register in server/index.ts
+```typescriptimport { startISPSchedulers } from './services/isp-schedulers';
+// After DB connection established, alongside other schedulers:
+startISPSchedulers();
+
+## After implementing
+1. Confirm server starts with:
+   - "[ISP Schedulers] ✅ Billing at 08:00 BRT | Birthday at 09:00 BRT"
+2. Report any column name errors from the leads table (adjust field names in birthday query)
+3. Confirm isp_automation_logs table is accessible

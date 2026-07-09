@@ -1,0 +1,223 @@
+PROMPT — Nó Resposta IA com Suporte a Mídia
+Atualize o nó "Resposta IA" da engine de automações para processar
+imagens, áudios e PDFs enviados pelo cliente via WhatsApp.
+
+## Contexto atual
+O nó já chama a OpenAI com texto. O webhook inbound do Z-API já processa
+mensagens e popula context.message. A Z-API entrega URLs públicas para mídias.
+
+---
+
+## PARTE 1: Detectar tipo de mídia no webhook inbound
+
+No handler do webhook Z-API (onde mensagens inbound são processadas),
+ao montar o context.message, extraia e normalize os dados de mídia:
+
+O payload do Z-API para diferentes tipos de mensagem:
+
+### Imagem
+message.imageMessage existe → {
+  type: "image",
+  url: message.imageMessage.url,
+  caption: message.imageMessage.caption || "",
+  mimetype: message.imageMessage.mimetype
+}
+
+### Áudio / PTT (mensagem de voz)
+message.audioMessage ou message.pttMessage existe → {
+  type: "audio",
+  url: message.audioMessage?.url || message.pttMessage?.url,
+  mimetype: "audio/ogg"
+}
+
+### Documento / PDF
+message.documentMessage existe → {
+  type: "document",
+  url: message.documentMessage.url,
+  filename: message.documentMessage.fileName,
+  mimetype: message.documentMessage.mimetype
+}
+
+### Texto normal
+message.conversation ou message.extendedTextMessage existe → {
+  type: "text",
+  text: message.conversation || message.extendedTextMessage?.text
+}
+
+Monte context.message assim:
+{
+  type: "text" | "image" | "audio" | "document",
+  text: string,           // texto ou caption
+  media_url?: string,     // URL pública da mídia
+  media_type?: string,    // mimetype
+  filename?: string,      // só para documentos
+  audio_transcript?: string  // preenchido depois pelo nó IA
+}
+
+---
+
+## PARTE 2: Instalar dependência para PDF
+
+No package.json, adicione e instale:
+"pdf-parse": "^1.1.1"
+
+---
+
+## PARTE 3: Atualizar o handler do nó Resposta IA
+
+Substitua a lógica atual de montagem do user message por esta:
+```typescript
+async function buildUserMessage(context, node) {
+  const msg = context.message
+  const lead = await getLead(context.leadId)
+
+  const leadContext = `Lead: ${lead.name}, telefone: ${lead.phone}, status: ${lead.status}
+Variáveis do fluxo: ${JSON.stringify(context.variables)}`
+
+  // CASO 1: Texto normal
+  if (!msg?.media_url || msg.type === 'text') {
+    return {
+      messages: [
+        { role: 'user', content: `${leadContext}\nMensagem: ${msg?.text || 'sem mensagem'}` }
+      ]
+    }
+  }
+
+  // CASO 2: Imagem → GPT-4o Vision
+  if (msg.type === 'image') {
+    return {
+      model: 'gpt-4o',  // vision exige gpt-4o, não mini
+      messages: [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'text',
+              text: `${leadContext}\nO cliente enviou uma imagem. Caption: "${msg.text || 'sem caption'}"\nDescreva e analise a imagem conforme o contexto do atendimento.`
+            },
+            {
+              type: 'image_url',
+              image_url: {
+                url: msg.media_url,
+                detail: 'auto'
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+
+  // CASO 3: Áudio → Whisper → GPT-4o
+  if (msg.type === 'audio') {
+    // 3a. Baixar o áudio da URL pública
+    const audioResponse = await fetch(msg.media_url)
+    const audioBuffer = await audioResponse.arrayBuffer()
+    const audioBlob = Buffer.from(audioBuffer)
+
+    // 3b. Transcrever via Whisper
+    const formData = new FormData()
+    formData.append('file', new Blob([audioBlob], { type: 'audio/ogg' }), 'audio.ogg')
+    formData.append('model', 'whisper-1')
+    formData.append('language', 'pt')
+
+    const whisperRes = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
+      body: formData
+    })
+    const whisperData = await whisperRes.json()
+    const transcript = whisperData.text || '[áudio não compreendido]'
+
+    // 3c. Salvar transcrição no context para uso posterior
+    context.message.audio_transcript = transcript
+    context.variables.last_audio_transcript = transcript
+
+    return {
+      messages: [
+        {
+          role: 'user',
+          content: `${leadContext}\nO cliente enviou um áudio de voz. Transcrição: "${transcript}"\nResponda com base na transcrição.`
+        }
+      ]
+    }
+  }
+
+  // CASO 4: PDF / Documento → extrai texto → GPT-4o
+  if (msg.type === 'document') {
+    let documentText = '[não foi possível extrair o conteúdo]'
+
+    try {
+      const docResponse = await fetch(msg.media_url)
+      const docBuffer = await docResponse.arrayBuffer()
+
+      if (msg.media_type?.includes('pdf') || msg.filename?.endsWith('.pdf')) {
+        const pdfParse = require('pdf-parse')
+        const data = await pdfParse(Buffer.from(docBuffer))
+        // Limita a 3000 chars para não estourar o contexto
+        documentText = data.text.slice(0, 3000)
+      }
+    } catch (e) {
+      documentText = '[erro ao processar documento]'
+    }
+
+    return {
+      messages: [
+        {
+          role: 'user',
+          content: `${leadContext}\nO cliente enviou o documento "${msg.filename || 'arquivo'}". Conteúdo extraído:\n\n${documentText}\n\nResponda com base no documento.`
+        }
+      ]
+    }
+  }
+}
+```
+
+## PARTE 4: Integrar no handler do nó
+
+No handler do nó "resposta_ia", substitua a montagem do user message por:
+```typescript
+const { messages: userMessages, model: overrideModel } = await buildUserMessage(context, node)
+
+const response = await fetch('https://api.openai.com/v1/chat/completions', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
+  },
+  body: JSON.stringify({
+    model: overrideModel || 'gpt-4o-mini',  // vision força gpt-4o
+    messages: [
+      { role: 'system', content: systemPrompt },
+      ...userMessages
+    ],
+    max_tokens: 500,
+    temperature: 0.7
+  })
+})
+```
+
+## PARTE 5: Log atualizado
+
+Adicione ao log do nó:
+{
+  success: true,
+  media_type: context.message.type,        // "text" | "image" | "audio" | "document"
+  audio_transcribed: !!transcript,
+  pdf_chars_extracted: documentText?.length,
+  model_used: overrideModel || 'gpt-4o-mini',
+  tokens_used: usage.total_tokens
+}
+
+---
+
+## Resumo do comportamento esperado após implementação
+
+| Cliente envia | Processamento | GPT recebe |
+|---|---|---|
+| Texto | Direto | Texto da mensagem |
+| Imagem | URL → Vision | Imagem + caption |
+| Áudio (voz) | Whisper transcreve | Transcrição em texto |
+| PDF | pdf-parse extrai | Primeiros 3000 chars |
+
+Confirme após implementar os 4 cenários funcionando.

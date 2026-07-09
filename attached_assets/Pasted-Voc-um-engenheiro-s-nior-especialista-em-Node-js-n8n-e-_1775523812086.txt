@@ -1,0 +1,230 @@
+Você é um engenheiro sênior especialista em Node.js, n8n e arquitetura SaaS multi-tenant.
+
+CONTEXTO:
+Existe um node HTTP no n8n responsável por enviar dados para um endpoint `/api/n8n/ai` (ChatBanana).
+
+O payload atual já está FUNCIONANDO em produção.
+
+IMPORTANTE:
+
+* NÃO pode haver breaking changes
+* NÃO pode remover campos existentes
+* NÃO pode alterar nomes de variáveis atuais
+* NÃO pode mudar estrutura atual do fluxo
+* Apenas EXTENDER o payload com melhorias
+
+---
+
+OBJETIVO:
+
+Melhorar o payload enviado para a IA tornando ele:
+
+* mais organizado
+* mais previsível
+* mais inteligente
+* pronto para escala SaaS
+
+---
+
+IMPLEMENTAÇÕES OBRIGATÓRIAS:
+
+1. PRESERVAR ESTRUTURA ATUAL
+
+Manter exatamente:
+
+* workspace_id
+* prompt_name
+* mensagem
+* context
+* historico
+
+---
+
+2. CONTROLE DINÂMICO DE PROMPT (SEM QUEBRAR)
+
+Substituir o valor fixo de prompt_name por lógica dinâmica:
+
+Regra:
+
+* Se ambiguidade → usar "orquestrador"
+* Caso contrário:
+
+  SUPORTE → agente_suporte_online
+  FINANCEIRO → agente_financeiro
+  COMERCIAL → agente_comercial
+  CANCELAMENTO → agente_cancelamento
+
+Fallback: "orquestrador"
+
+---
+
+3. FILTRAR CONTEXTO (CRÍTICO)
+
+REMOVER uso de:
+
+Object.assign({}, $json, ...)
+
+E substituir por um objeto controlado.
+
+O novo contexto DEVE conter:
+
+* intent
+* fluxo_atual
+* cliente_nome
+* ja_identificado
+* motivo
+* prioridade
+* mudou_intencao
+* ambiguidade
+
+---
+
+4. ADICIONAR DADOS FINANCEIROS
+
+Dentro do context:
+
+financeiro: {
+valor_devido
+suspenso
+}
+
+Com fallback seguro (0 / false)
+
+---
+
+5. ADICIONAR DADOS DE CONEXÃO
+
+conexao: {
+status
+}
+
+---
+
+6. IDENTIFICAÇÃO DO INPUT
+
+Adicionar:
+
+tipo_input: texto | audio | imagem
+
+Fallback: "texto"
+
+---
+
+7. CONTROLE DE COMPORTAMENTO DA IA
+
+Adicionar:
+
+modo: {
+respeitar_intencao: true,
+ignorar_fluxo_anterior: mudou_intencao
+}
+
+---
+
+8. METADADOS OPERACIONAIS
+
+Adicionar:
+
+operacao: {
+origem: "n8n",
+canal: "whatsapp",
+versao: "v1"
+}
+
+---
+
+9. MANTER CONTEXTO EXISTENTE
+
+Preservar:
+
+* conversation_id
+* telefone
+* contact_name
+* sessao
+* briefing (do orquestrador)
+
+---
+
+10. COMPATIBILIDADE TOTAL
+
+Garantir:
+
+* Nenhuma chave atual seja removida
+* Nenhum campo existente seja alterado
+* Sistema funcione mesmo se novos campos forem ignorados
+* Código null-safe
+
+---
+
+11. RESULTADO FINAL (ESTRUTURA)
+
+O payload final deve ser equivalente a:
+
+{
+workspace_id,
+prompt_name,
+mensagem,
+context: {
+intent,
+fluxo_atual,
+cliente_nome,
+ja_identificado,
+motivo,
+prioridade,
+mudou_intencao,
+ambiguidade,
+tipo_input,
+
+```
+financeiro: {
+  valor_devido,
+  suspenso
+},
+
+conexao: {
+  status
+},
+
+conversation_id,
+telefone,
+contact_name,
+sessao,
+briefing,
+
+modo: {
+  respeitar_intencao: true,
+  ignorar_fluxo_anterior
+},
+
+operacao: {
+  origem: "n8n",
+  canal: "whatsapp",
+  versao: "v1"
+}
+```
+
+},
+historico
+}
+
+---
+
+IMPORTANTE:
+
+Se houver qualquer dúvida:
+
+* NÃO simplificar
+* NÃO refatorar estrutura existente
+* NÃO remover dados
+* NÃO alterar comportamento atual
+
+Apenas melhorar e estruturar melhor o payload.
+
+---
+
+RESULTADO ESPERADO:
+
+* IA mais precisa
+* menos ruído no contexto
+* comportamento mais previsível
+* base pronta para escalar múltiplos provedores

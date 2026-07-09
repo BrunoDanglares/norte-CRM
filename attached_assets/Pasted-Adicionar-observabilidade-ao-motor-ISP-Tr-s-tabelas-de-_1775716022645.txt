@@ -1,0 +1,239 @@
+Adicionar observabilidade ao motor ISP. Três tabelas de métricas
+e um serviço centralizado de log. Nenhum comportamento existente
+é alterado — apenas instrumentação adicionada.
+
+══ PASSO 1 — Migration: tabela isp_session_metrics ══
+
+Adicione ao schema Drizzle:
+
+  export const ispSessionMetrics = pgTable('isp_session_metrics', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    workspace_id: uuid('workspace_id').notNull(),
+    conversation_id: varchar('conversation_id', { length: 255 }).notNull(),
+    session_start: timestamp('session_start').notNull(),
+    session_end: timestamp('session_end'),
+    total_turns: integer('total_turns').default(0),
+    fluxos_visitados: jsonb('fluxos_visitados').default('[]'),
+    situacoes_ativadas: jsonb('situacoes_ativadas').default('[]'),
+    input_types: jsonb('input_types').default('{}'),
+    guard_blocks: integer('guard_blocks').default(0),
+    guard_redirects: integer('guard_redirects').default(0),
+    fluid_swaps: integer('fluid_swaps').default(0),
+    escalou_humano: boolean('escalou_humano').default(false),
+    motivo_encerramento: varchar('motivo_encerramento', { length: 100 }),
+    resolved: boolean('resolved').default(false),
+    created_at: timestamp('created_at').defaultNow(),
+  });
+
+  export const ispSituationStats = pgTable('isp_situation_stats', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    workspace_id: uuid('workspace_id').notNull(),
+    situation_code: varchar('situation_code', { length: 10 }).notNull(),
+    agent: varchar('agent', { length: 30 }).notNull(),
+    date: date('date').notNull(),
+    activations: integer('activations').default(0),
+    escalations: integer('escalations').default(0),
+    guard_blocks: integer('guard_blocks').default(0),
+    avg_turns_to_resolve: numeric('avg_turns_to_resolve', {
+      precision: 5, scale: 2
+    }),
+    created_at: timestamp('created_at').defaultNow(),
+  });
+
+Índice único em isp_situation_stats: (workspace_id, situation_code, date).
+
+Rode migration via POST /api/n8n/setup-db.
+
+══ PASSO 2 — CRIAR server/services/agents/sessionMetrics.ts ══
+
+export interface TurnEvent {
+  type: 'intent' | 'situation' | 'guard' | 'swap' | 'escalation' | 'input';
+  payload: Record<string, any>;
+  timestamp: Date;
+}
+
+class SessionMetricsService {
+  private sessions: Map<string, {
+    workspaceId: string;
+    conversationId: string;
+    startTime: Date;
+    turns: number;
+    fluxos: string[];
+    situacoes: string[];
+    inputTypes: Record<string, number>;
+    guardBlocks: number;
+    guardRedirects: number;
+    fluidSwaps: number;
+    escalouHumano: boolean;
+  }> = new Map();
+
+  init(conversationId: string, workspaceId: string): void {
+    if (this.sessions.has(conversationId)) return;
+    this.sessions.set(conversationId, {
+      workspaceId,
+      conversationId,
+      startTime: new Date(),
+      turns: 0,
+      fluxos: [],
+      situacoes: [],
+      inputTypes: { text: 0, button: 0, audio: 0 },
+      guardBlocks: 0,
+      guardRedirects: 0,
+      fluidSwaps: 0,
+      escalouHumano: false,
+    });
+  }
+
+  recordTurn(conversationId: string, inputType: string): void {
+    const s = this.sessions.get(conversationId);
+    if (!s) return;
+    s.turns++;
+    s.inputTypes[inputType] = (s.inputTypes[inputType] ?? 0) + 1;
+  }
+
+  recordFluxo(conversationId: string, fluxo: string): void {
+    const s = this.sessions.get(conversationId);
+    if (!s) return;
+    const last = s.fluxos[s.fluxos.length - 1];
+    if (last !== fluxo) s.fluxos.push(fluxo);
+  }
+
+  recordSituation(conversationId: string, code: string): void {
+    const s = this.sessions.get(conversationId);
+    if (!s) return;
+    if (!s.situacoes.includes(code)) s.situacoes.push(code);
+  }
+
+  recordGuardBlock(conversationId: string): void {
+    const s = this.sessions.get(conversationId);
+    if (!s) return;
+    s.guardBlocks++;
+  }
+
+  recordGuardRedirect(conversationId: string): void {
+    const s = this.sessions.get(conversationId);
+    if (!s) return;
+    s.guardRedirects++;
+  }
+
+  recordFluidSwap(conversationId: string): void {
+    const s = this.sessions.get(conversationId);
+    if (!s) return;
+    s.fluidSwaps++;
+  }
+
+  recordEscalation(conversationId: string): void {
+    const s = this.sessions.get(conversationId);
+    if (!s) return;
+    s.escalouHumano = true;
+  }
+
+  async flush(
+    conversationId: string,
+    motivo: string,
+    resolved: boolean,
+    db: any
+  ): Promise<void> {
+    const s = this.sessions.get(conversationId);
+    if (!s) return;
+
+    try {
+      await db.insert(ispSessionMetrics).values({
+        workspace_id: s.workspaceId,
+        conversation_id: conversationId,
+        session_start: s.startTime,
+        session_end: new Date(),
+        total_turns: s.turns,
+        fluxos_visitados: s.fluxos,
+        situacoes_ativadas: s.situacoes,
+        input_types: s.inputTypes,
+        guard_blocks: s.guardBlocks,
+        guard_redirects: s.guardRedirects,
+        fluid_swaps: s.fluidSwaps,
+        escalou_humano: s.escalouHumano,
+        motivo_encerramento: motivo,
+        resolved,
+      }).onConflictDoNothing();
+
+      // Incrementar isp_situation_stats por situação
+      const today = new Date().toISOString().split('T')[0];
+      for (const code of s.situacoes) {
+        const agent = code.startsWith('F') ? 'financeiro'
+          : code.startsWith('S') ? 'suporte'
+          : code.startsWith('C') ? 'comercial'
+          : 'geral';
+
+        await db
+          .insert(ispSituationStats)
+          .values({
+            workspace_id: s.workspaceId,
+            situation_code: code,
+            agent,
+            date: today,
+            activations: 1,
+            escalations: s.escalouHumano ? 1 : 0,
+            guard_blocks: s.guardBlocks,
+          })
+          .onConflictDoUpdate({
+            target: [
+              ispSituationStats.workspace_id,
+              ispSituationStats.situation_code,
+              ispSituationStats.date,
+            ],
+            set: {
+              activations: sql`${ispSituationStats.activations} + 1`,
+              escalations: sql`${ispSituationStats.escalations} +
+                ${s.escalouHumano ? 1 : 0}`,
+              guard_blocks: sql`${ispSituationStats.guard_blocks} +
+                ${s.guardBlocks}`,
+            },
+          });
+      }
+    } catch (e) {
+      console.error('[SessionMetrics] Erro ao salvar métricas:', e);
+    } finally {
+      this.sessions.delete(conversationId);
+    }
+  }
+}
+
+export const sessionMetrics = new SessionMetricsService();
+
+Adicione ao index.ts:
+  export { sessionMetrics } from './sessionMetrics';
+
+══ PASSO 3 — Instrumentar o ispAgentEngine.ts ══
+
+Importe sessionMetrics no topo:
+  import { sessionMetrics } from './agents/sessionMetrics';
+
+No início do processamento de cada mensagem:
+  sessionMetrics.init(conversaId, workspaceId);
+  sessionMetrics.recordTurn(conversaId, inputType);
+
+Após o avaliarSwap quando swap.swap = true:
+  sessionMetrics.recordFluidSwap(conversaId);
+  sessionMetrics.recordFluxo(conversaId, intentResolvido);
+
+Quando situationCode for detectado por qualquer agente:
+  sessionMetrics.recordSituation(conversaId, situationCode);
+
+No runGuardLayer após GUARD_BLOCK:
+  sessionMetrics.recordGuardBlock(conversaId);
+
+No runGuardLayer após GUARD_REDIRECT:
+  sessionMetrics.recordGuardRedirect(conversaId);
+
+Quando fluxo mudar para HUMANO:
+  sessionMetrics.recordEscalation(conversaId);
+
+Quando a sessão encerrar (cliente digitar encerrar/sair
+ou sessão stale ser resetada):
+  await sessionMetrics.flush(
+    conversaId, 'encerrado_pelo_cliente', true, db
+  );
+
+Quando sessão stale for resetada por timeout:
+  await sessionMetrics.flush(
+    conversaId, 'timeout_4h', false, db
+  );

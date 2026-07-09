@@ -1,0 +1,152 @@
+Você é um engenheiro sênior especialista em Node.js, n8n e arquitetura SaaS.
+
+CONTEXTO:
+Existe um node no n8n responsável por transferir o atendimento da IA para um atendente humano.
+
+O código atual já está FUNCIONANDO em produção e faz:
+
+* gera mensagem de transição para o cliente
+* monta um resumo simples da conversa
+* envia conversation_id e workspace_id
+
+IMPORTANTE:
+
+* NÃO pode haver breaking changes
+* NÃO pode remover campos existentes
+* NÃO pode alterar nomes atuais
+* NÃO pode mudar comportamento atual
+* Apenas EXTENDER com melhorias
+
+---
+
+OBJETIVO:
+
+Melhorar a qualidade da transferência (handoff), tornando:
+
+* o resumo mais legível
+* a mensagem mais profissional
+* o contexto mais útil para o atendente humano
+* preparado para escala e priorização
+
+---
+
+IMPLEMENTAÇÕES OBRIGATÓRIAS:
+
+1. MELHORAR RESUMO DA CONVERSA
+
+Atual comportamento:
+
+* concatena mensagens simples
+
+Melhoria:
+
+* limitar histórico às últimas 6 mensagens
+* limitar cada mensagem a no máximo 200 caracteres
+* adicionar prefixos claros:
+
+👤 Cliente:
+🤖 Agente:
+
+IMPORTANTE:
+
+* não remover estrutura atual
+* apenas melhorar formatação
+
+---
+
+2. GARANTIR SEGURANÇA DO NOME
+
+Criar fallback:
+
+const nome = ctx.cliente_nome?.split(' ')[0] || "cliente";
+
+Usar nome seguro na mensagem
+
+---
+
+3. MELHORAR MENSAGEM AO CLIENTE
+
+Substituir mensagem simples por:
+
+* mais humana
+* mais clara
+* mais profissional
+* explicar que o atendente já terá o histórico
+
+---
+
+4. ADICIONAR METADADOS (SEM QUEBRAR)
+
+Adicionar novo objeto:
+
+meta: {
+motivo: ctx.intent ?? "NAO_IDENTIFICADO",
+prioridade: "normal" | "alta",
+origem: "ia",
+timestamp: new Date().toISOString()
+}
+
+---
+
+5. DEFINIR PRIORIDADE
+
+Regra:
+
+* Se intent = FINANCEIRO e cliente suspenso → prioridade = "alta"
+* Caso contrário → "normal"
+
+---
+
+6. NÃO ALTERAR ESTRUTURA EXISTENTE
+
+Preservar:
+
+* mensagem_transferencia
+* resumo_conversa
+* conversation_id
+* workspace_id
+
+---
+
+7. CÓDIGO DEFENSIVO
+
+Garantir:
+
+* null safety
+* fallback seguro
+* nenhuma exceção
+
+---
+
+8. ESTRUTURA FINAL
+
+O retorno deve conter:
+
+{
+mensagem_transferencia,
+resumo_conversa,
+conversation_id,
+workspace_id,
+meta
+}
+
+---
+
+IMPORTANTE:
+
+Se houver dúvida:
+
+* NÃO simplificar
+* NÃO remover código existente
+* NÃO refatorar estrutura
+
+Apenas EXTENDER com segurança
+
+---
+
+RESULTADO ESPERADO:
+
+* humano entende rapidamente o caso
+* cliente sente continuidade no atendimento
+* base para fila inteligente e priorização
+* sistema pronto para escala SaaS

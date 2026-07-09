@@ -1,0 +1,155 @@
+PROMPT 1 — Backend: JWT + Middleware + Rotas Protegidas
+Implemente autenticação real no FlowCRM usando JWT.
+Hoje o login usa setTimeout redirect sem validação real.
+O codebase já tem scrypt para hash de senha e jsonwebtoken instalado.
+
+## PARTE 1: Variável de ambiente
+
+Adicione ao .env (e Replit Secrets):
+JWT_SECRET=<gere uma string aleatória de 64 chars>
+
+Use process.env.JWT_SECRET em todo o código de auth.
+
+## PARTE 2: Middleware requireAuth
+
+Crie server/middleware/requireAuth.ts:
+```typescript
+import { Request, Response, NextFunction } from 'express'
+import jwt from 'jsonwebtoken'
+
+export interface AuthRequest extends Request {
+  user?: {
+    id: number
+    tenantId: number
+    email: string
+    role: string
+  }
+}
+
+export function requireAuth(req: AuthRequest, res: Response, next: NextFunction) {
+  const header = req.headers.authorization
+  if (!header?.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Token não fornecido' })
+  }
+
+  const token = header.split(' ')[1]
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET!) as any
+    req.user = {
+      id: decoded.id,
+      tenantId: decoded.tenantId,
+      email: decoded.email,
+      role: decoded.role
+    }
+    next()
+  } catch (e) {
+    return res.status(401).json({ error: 'Token inválido ou expirado' })
+  }
+}
+```
+
+## PARTE 3: Rota de login real
+
+Na rota POST /api/auth/login (crie se não existir):
+```typescript
+import { scrypt, timingSafeEqual } from 'crypto'
+import { promisify } from 'util'
+import jwt from 'jsonwebtoken'
+
+const scryptAsync = promisify(scrypt)
+
+router.post('/api/auth/login', async (req, res) => {
+  const { email, password } = req.body
+
+  if (!email || !password) {
+    return res.status(400).json({ error: 'Email e senha obrigatórios' })
+  }
+
+  // Busca usuário pelo email
+  const user = await db.query(
+    'SELECT * FROM users WHERE email = $1 AND active = true LIMIT 1',
+    [email.toLowerCase().trim()]
+  )
+
+  if (!user.rows[0]) {
+    return res.status(401).json({ error: 'Credenciais inválidas' })
+  }
+
+  const u = user.rows[0]
+
+  // Valida senha com scrypt
+  // Assume que a senha está salva como "hash:salt" ou apenas hash
+  // Verifique como o scrypt está salvando no codebase atual e adapte
+  const [hashed, salt] = u.password.split(':')
+  const hashedBuffer = Buffer.from(hashed, 'hex')
+  const derivedKey = await scryptAsync(password, salt, 64) as Buffer
+
+  const match = timingSafeEqual(hashedBuffer, derivedKey)
+  if (!match) {
+    return res.status(401).json({ error: 'Credenciais inválidas' })
+  }
+
+  // Gera JWT
+  const token = jwt.sign(
+    {
+      id: u.id,
+      tenantId: u.tenant_id,
+      email: u.email,
+      role: u.role
+    },
+    process.env.JWT_SECRET!,
+    { expiresIn: '7d' }
+  )
+
+  return res.json({
+    token,
+    user: {
+      id: u.id,
+      name: u.name,
+      email: u.email,
+      role: u.role,
+      tenantId: u.tenant_id
+    }
+  })
+})
+```
+
+## PARTE 4: Rota de validação de sessão
+
+Adicione GET /api/auth/me (protegida):
+```typescript
+router.get('/api/auth/me', requireAuth, async (req: AuthRequest, res) => {
+  const user = await db.query(
+    'SELECT id, name, email, role, tenant_id FROM users WHERE id = $1',
+    [req.user!.id]
+  )
+  if (!user.rows[0]) return res.status(404).json({ error: 'Usuário não encontrado' })
+  return res.json(user.rows[0])
+})
+```
+
+## PARTE 5: Proteger todas as rotas existentes
+
+No arquivo principal de rotas (server/routes.ts ou app.ts),
+adicione requireAuth como middleware global APÓS as rotas públicas:
+```typescript
+// Rotas PÚBLICAS (sem auth) — devem vir ANTES do middleware
+app.post('/api/auth/login', loginHandler)
+app.post('/api/webhooks/zapi', zapiWebhookHandler)      // webhook Z-API é público
+app.post('/api/webhooks/n8n', n8nWebhookHandler)        // webhook N8n é público
+app.post('/api/webhooks/stripe', stripeWebhookHandler)  // webhook Stripe é público
+
+// A partir daqui, TODAS as rotas exigem auth
+app.use('/api', requireAuth)
+
+// Rotas protegidas vêm depois
+app.use('/api/leads', leadsRouter)
+app.use('/api/automacoes', automacoesRouter)
+// ... todas as outras rotas
+```
+
+Confirme:
+1. Middleware requireAuth criado
+2. POST /api/auth/login valida senha com scrypt e retorna JWT
+3. GET /api/auth/me retorna dados do usuário autenticado
+4. Todas as rotas /api/* protegidas exceto login e webhooks

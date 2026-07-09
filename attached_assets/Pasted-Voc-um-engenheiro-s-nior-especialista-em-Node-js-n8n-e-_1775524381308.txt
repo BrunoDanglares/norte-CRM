@@ -1,0 +1,141 @@
+Você é um engenheiro sênior especialista em Node.js, n8n e integrações HTTP.
+
+CONTEXTO:
+Existe um node HTTP no n8n responsável por enviar mensagens para o endpoint `/api/n8n/send`.
+
+O payload atual já está FUNCIONANDO em produção:
+
+{
+conversation_id,
+message,
+humanize: true
+}
+
+IMPORTANTE:
+
+* NÃO pode haver breaking changes
+* NÃO pode remover campos existentes
+* NÃO pode alterar nomes atuais
+* NÃO pode mudar comportamento existente
+* Apenas EXTENDER com melhorias
+
+---
+
+OBJETIVO:
+
+Criar uma camada de envio robusta, resiliente e preparada para escala SaaS.
+
+---
+
+IMPLEMENTAÇÕES OBRIGATÓRIAS:
+
+1. PROTEÇÃO CONTRA RESPOSTA VAZIA (CRÍTICO)
+
+Criar validação:
+
+* Se message for null, undefined, vazio ou inválido
+* Substituir por:
+
+"Desculpa, tive um problema aqui 😕 Pode repetir pra mim?"
+
+---
+
+2. NORMALIZAÇÃO DE TIPO
+
+Garantir:
+
+* message sempre seja string
+* Se não for → converter ou fallback
+
+---
+
+3. VARIÁVEL INTERNA DE RESPOSTA
+
+Criar:
+
+const resposta = ...
+
+Validar antes de enviar
+
+---
+
+4. IDENTIFICAÇÃO DA RESPOSTA
+
+Adicionar:
+
+tipo: "texto"
+origem: "ia"
+
+---
+
+5. METADADOS (ESSENCIAL PARA ANALYTICS)
+
+Adicionar:
+
+meta: {
+intent: $json.intent ?? null,
+agente: $json.prompt_name ?? null,
+timestamp: new Date().toISOString()
+}
+
+---
+
+6. COMPATIBILIDADE TOTAL
+
+Garantir:
+
+* Nenhuma chave existente seja alterada
+* Backend continue funcionando mesmo ignorando novos campos
+* Nenhuma dependência externa seja criada
+
+---
+
+7. CÓDIGO DEFENSIVO
+
+Garantir:
+
+* null safety
+* fallback seguro
+* nenhuma exceção em runtime
+
+---
+
+8. ESTRUTURA FINAL (REFERÊNCIA)
+
+O payload final deve ser equivalente a:
+
+{
+conversation_id,
+message,
+humanize: true,
+
+tipo: "texto",
+origem: "ia",
+
+meta: {
+intent,
+agente,
+timestamp
+}
+}
+
+---
+
+IMPORTANTE:
+
+Se houver qualquer dúvida:
+
+* NÃO simplificar
+* NÃO refatorar
+* NÃO remover código existente
+
+Apenas EXTENDER com segurança.
+
+---
+
+RESULTADO ESPERADO:
+
+* nunca enviar mensagem vazia
+* evitar falhas visíveis ao cliente
+* permitir rastreamento completo
+* base pronta para métricas

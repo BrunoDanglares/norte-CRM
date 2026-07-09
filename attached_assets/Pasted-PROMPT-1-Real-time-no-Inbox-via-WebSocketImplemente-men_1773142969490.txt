@@ -1,0 +1,175 @@
+PROMPT 1 — Real-time no Inbox via WebSocketImplemente mensagens em tempo real no Inbox do FlowCRM usando WebSocket.
+Hoje o inbox só atualiza ao recarregar a página.
+
+---
+
+## PARTE 1: Backend — servidor WebSocket
+
+No arquivo principal do servidor (server/index.ts), adicione WebSocket
+usando o pacote 'ws' (já disponível no Node.js ou instale: npm install ws @types/ws):
+```typescriptimport { WebSocketServer, WebSocket } from 'ws'
+import { IncomingMessage } from 'http'
+import jwt from 'jsonwebtoken'// Mapa de conexões ativas: workspaceId → Set de WebSocket clients
+const wsClients = new Map<string, Set<WebSocket>>()// Inicializa WSS no mesmo servidor HTTP do Express
+const wss = new WebSocketServer({ server: httpServer, path: '/ws' })wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
+// Autenticar via token na query string: /ws?token=<jwt>
+const url = new URL(req.url!, http://${req.headers.host})
+const token = url.searchParams.get('token')if (!token) { ws.close(1008, 'Token required'); return }let workspaceId: string
+try {
+const decoded = jwt.verify(token, process.env.JWT_SECRET!) as any
+workspaceId = decoded.workspaceId || decoded.tenantId
+} catch {
+ws.close(1008, 'Invalid token'); return
+}// Registrar cliente no workspace
+if (!wsClients.has(workspaceId)) wsClients.set(workspaceId, new Set())
+wsClients.get(workspaceId)!.add(ws)// Ping/pong para manter conexão viva
+const pingInterval = setInterval(() => {
+if (ws.readyState === WebSocket.OPEN) ws.ping()
+}, 30000)ws.on('close', () => {
+clearInterval(pingInterval)
+wsClients.get(workspaceId)?.delete(ws)
+})ws.on('error', () => {
+clearInterval(pingInterval)
+wsClients.get(workspaceId)?.delete(ws)
+})
+})// Função para broadcast — use em qualquer parte do servidor
+export function broadcastToWorkspace(workspaceId: string, event: string, data: object) {
+const clients = wsClients.get(workspaceId)
+if (!clients?.size) returnconst payload = JSON.stringify({ event, data, timestamp: new Date().toISOString() })
+clients.forEach(client => {
+if (client.readyState === WebSocket.OPEN) client.send(payload)
+})
+}
+
+## PARTE 2: Disparar eventos WebSocket nos pontos certos
+
+### Mensagem inbound (webhook Z-API)
+Após salvar a mensagem no banco, adicione:
+```typescriptbroadcastToWorkspace(workspaceId, 'new_message', {
+conversationId: conversation.id,
+message: {
+id: savedMessage.id,
+content: savedMessage.content,
+type: savedMessage.type,
+sender: 'client',
+created_at: savedMessage.created_at,
+media_url: savedMessage.media_url || null
+},
+conversation: {
+id: conversation.id,
+contact_name: lead.name,
+unread_count: updatedUnreadCount
+}
+})
+
+### Mensagem outbound (envio manual pelo agente)
+Na rota POST /api/conversations/:id/messages, após salvar:
+```typescriptbroadcastToWorkspace(workspaceId, 'new_message', {
+conversationId: conversation.id,
+message: {
+id: savedMessage.id,
+content: savedMessage.content,
+sender: 'agent',
+created_at: savedMessage.created_at
+}
+})
+
+### Conversa criada ou atualizada
+```typescriptbroadcastToWorkspace(workspaceId, 'conversation_updated', {
+conversationId: conversation.id,
+status: conversation.status,
+unread_count: conversation.unread_count,
+last_message: messageContent,
+last_message_at: new Date().toISOString()
+})
+
+---
+
+## PARTE 3: Frontend — hook useWebSocket
+
+Crie client/src/hooks/useWebSocket.ts:
+```typescriptimport { useEffect, useRef, useCallback } from 'react'
+import { useAuth } from '../contexts/AuthContext'type WSEventHandler = (data: any) => voidexport function useWebSocket(handlers: Record<string, WSEventHandler>) {
+const { token } = useAuth()
+const wsRef = useRef<WebSocket | null>(null)
+const handlersRef = useRef(handlers)
+handlersRef.current = handlersconst connect = useCallback(() => {
+if (!token) return
+if (wsRef.current?.readyState === WebSocket.OPEN) returnconst protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+const ws = new WebSocket(`${protocol}//${window.location.host}/ws?token=${token}`)ws.onopen = () => console.log('[WS] Conectado')ws.onmessage = (event) => {
+  try {
+    const { event: eventName, data } = JSON.parse(event.data)
+    handlersRef.current[eventName]?.(data)
+  } catch {}
+}ws.onclose = (e) => {
+  if (e.code !== 1008) {
+    // Reconectar após 3 segundos (exceto se token inválido)
+    setTimeout(connect, 3000)
+  }
+}wsRef.current = ws
+}, [token])useEffect(() => {
+connect()
+return () => wsRef.current?.close()
+}, [connect])
+}
+
+---
+
+## PARTE 4: Usar o hook no Inbox
+
+No componente da página Inbox (client/src/pages/inbox.tsx):
+```typescriptimport { useWebSocket } from '../hooks/useWebSocket'// Dentro do componente:
+useWebSocket({
+// Nova mensagem recebida ou enviada
+new_message: (data) => {
+const { conversationId, message } = data// 1. Se a conversa está aberta, adiciona a mensagem ao histórico
+if (selectedConversation?.id === conversationId) {
+  setMessages(prev => {
+    // Evitar duplicata
+    if (prev.find(m => m.id === message.id)) return prev
+    return [...prev, message]
+  })
+  // Scroll automático para o final
+  setTimeout(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, 50)
+}// 2. Atualiza a lista de conversas (última mensagem + unread)
+setConversations(prev => prev.map(conv =>
+  conv.id === conversationId
+    ? {
+        ...conv,
+        last_message: message.content,
+        last_message_at: message.created_at,
+        unread_count: selectedConversation?.id === conversationId
+          ? 0  // já está aberta, não incrementa
+          : (conv.unread_count || 0) + 1
+      }
+    : conv
+).sort((a, b) =>
+  new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime()
+))
+},// Conversa criada ou atualizada
+conversation_updated: (data) => {
+setConversations(prev => {
+const exists = prev.find(c => c.id === data.conversationId)
+if (!exists) {
+// Nova conversa — recarrega a lista
+fetchConversations()
+return prev
+}
+return prev.map(c =>
+c.id === data.conversationId ? { ...c, ...data } : c
+)
+})
+}
+})// Indicador de conexão (opcional mas recomendado)
+// Adicione um ponto verde/vermelho no header do Inbox
+// Verde = WebSocket conectado, Vermelho = reconectando
+
+---
+
+## Confirme após implementar:
+1. Abrir o Inbox em duas abas — mensagem enviada em uma aparece na outra sem recarregar
+2. Mensagem inbound do WhatsApp aparece em tempo real no Inbox aberto
+3. Lista de conversas reordena automaticamente quando chega nova mensagem
+4. Após desconexão (fechar e abrir aba), WebSocket reconecta automaticamente

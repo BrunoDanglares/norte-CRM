@@ -1,0 +1,42 @@
+node_modules
+dist
+.DS_Store
+server/public
+vite.config.ts.*
+*.tar.gz
+.env
+.env.*
+uploads/
+.claude/
+
+# Logs locais (não commitar)
+dev.log
+dev.err.log
+cloudflared.log
+cloudflared.err.log
+*.log
+
+# Scripts ad-hoc de debug (prefixados com _, em qualquer subpasta — alguns têm credencial de ERP hardcoded)
+scripts/_*.ts
+scripts/**/_*.ts
+
+# IDE local
+.vscode/
+
+# Segredos — nunca commitar
+**/client_secret*
+**/credentials.json
+**/*_private_key*
+**/service-account*.json.replit
+.replit.md
+# Auditoria 2026-06-19: o arquivo `..replit` (segredos da era Replit: MP/JWT/super-admin)
+# escapou dos padrões acima. *.replit cobre a classe inteira (não pega replit.md).
+*.replit
+..replit
+# Auditoria 2026-06-20: scripts de patch descartáveis com API key do n8n (sem expiração)
+# hardcoded — nunca versionar scripts ad-hoc de fix.
+fix_all.cjs
+.fix_all.cjs
+# Dumps de prompt/log de dev colados como anexo (já vazaram build-args com segredos de prod) — nunca versionar
+attached_assets/*.txt
+.attached_assets/*.txt

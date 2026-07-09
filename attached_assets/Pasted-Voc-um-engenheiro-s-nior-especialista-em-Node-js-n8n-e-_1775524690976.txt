@@ -1,0 +1,148 @@
+Você é um engenheiro sênior especialista em Node.js, n8n e processamento de mensagens.
+
+CONTEXTO:
+Existe um node no n8n responsável por normalizar a entrada do usuário (texto, áudio, imagem ou botão).
+
+O código atual já está FUNCIONANDO em produção.
+
+IMPORTANTE:
+
+* NÃO pode haver breaking changes
+* NÃO pode remover campos existentes
+* NÃO pode alterar nomes atuais
+* Apenas EXTENDER com melhorias
+
+---
+
+OBJETIVO:
+
+Melhorar a normalização de entrada tornando o sistema:
+
+* mais robusto
+* mais previsível
+* preparado para múltiplos formatos (texto, áudio, imagem, botão)
+
+---
+
+IMPLEMENTAÇÕES OBRIGATÓRIAS:
+
+1. NORMALIZAÇÃO DE TEXTO
+
+* Garantir que mensagem seja string
+* Aplicar trim()
+* Criar variável limpa antes de retornar
+
+---
+
+2. PRESERVAR MENSAGEM ORIGINAL
+
+Adicionar novo campo:
+
+mensagem_original
+
+Sem remover mensagem_normalizada
+
+---
+
+3. DETECÇÃO DE TIPO DE INPUT
+
+Adicionar novo campo:
+
+tipo_input
+
+Valores possíveis:
+
+* "texto"
+* "audio"
+* "imagem"
+* "botao"
+* "vazio"
+
+Regras:
+
+* Se button_id → botao
+* Se media_transcription → audio
+* Se media_description → imagem
+* Caso contrário → texto
+* Se não tiver conteúdo → vazio
+
+---
+
+4. PROTEÇÃO DE INPUT VAZIO
+
+Adicionar:
+
+tem_conteudo: boolean
+
+Regra:
+
+true → se tiver texto OU botão
+false → caso contrário
+
+---
+
+5. SEGURANÇA DO intent_direto
+
+Garantir:
+
+* Sempre string
+* Sempre uppercase
+* Null-safe
+
+---
+
+6. NÃO ALTERAR CAMPOS EXISTENTES
+
+Preservar exatamente:
+
+* mensagem_normalizada
+* origem_input
+* intent_direto
+
+---
+
+7. CÓDIGO DEFENSIVO
+
+Garantir:
+
+* null safety em todos os campos
+* fallback seguro
+* nenhuma exceção
+
+---
+
+8. RESULTADO FINAL (ESTRUTURA)
+
+O retorno deve conter:
+
+{
+...dados existentes,
+mensagem_normalizada,
+origem_input,
+intent_direto,
+
+mensagem_original,
+tipo_input,
+tem_conteudo
+}
+
+---
+
+IMPORTANTE:
+
+Se houver qualquer dúvida:
+
+* NÃO simplificar
+* NÃO refatorar estrutura existente
+* NÃO remover campos
+
+Apenas EXTENDER com segurança
+
+---
+
+RESULTADO ESPERADO:
+
+* entrada consistente
+* melhor precisão do SDR
+* menos erros de fluxo
+* base pronta para escala SaaS

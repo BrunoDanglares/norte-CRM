@@ -1,0 +1,139 @@
+PROMPT 1 — Backend (Auth completo)Preciso implementar autenticação real no backend deste projeto Node.js/Express/TypeScript.
+
+CONTEXTO DO QUE JÁ EXISTE:
+- Tabela `users` no banco com colunas: id, email, password, nome, role, status, cargo, etc.
+- Senhas já hasheadas com scryptSync do módulo nativo `crypto` no formato "salt:hash"
+- Função hashPassword já existe no código
+- NÃO existe função verifyPassword — precisa criar
+- NÃO existe nenhuma rota de auth (/login, /me, /logout)
+- NÃO existe middleware JWT — jsonwebtoken não está instalado
+- express-session está no package.json mas nunca foi configurado — ignorar, não usar
+- 5 usuários já cadastrados no banco (joao@flowcrm.com, ana@flowcrm.com, etc.)
+
+---
+
+PASSO 1 — Adicionar verifyPassword
+
+Localize a função hashPassword no código e adicione logo abaixo:
+
+function verifyPassword(plain: string, stored: string): boolean {
+  const [salt, hash] = stored.split(":");
+  const attempt = scryptSync(plain, salt, 64).toString("hex");
+  return attempt === hash;
+}
+
+---
+
+PASSO 2 — Instalar jsonwebtoken
+
+Execute: npm install jsonwebtoken @types/jsonwebtoken
+
+---
+
+PASSO 3 — Criar as 3 rotas de autenticação
+
+POST /api/auth/login
+- Body: { email, senha }
+- Se email ou senha faltando: status 400, { error: "Email e senha são obrigatórios" }
+- Busca usuário pelo email no banco
+- Se não encontrado: status 401, { error: "Credenciais inválidas" }
+- Se status INACTIVE: status 403, { error: "Usuário desativado. Contate o administrador." }
+- Se status INVITED: status 403, { error: "Conta não ativada. Verifique seu e-mail." }
+- Chama verifyPassword(senha, user.password)
+- Se senha errada: status 401, { error: "Credenciais inválidas" }
+- Gera JWT com payload: { id: user.id, email: user.email, role: user.role, nome: user.nome }
+- JWT_SECRET = process.env.JWT_SECRET || "flowcrm-secret-2025"
+- JWT expira em 7 dias
+- Atualiza ultimo_acesso = new Date() no banco
+- Resposta 200: {
+    ok: true,
+    data: {
+      token,
+      user: { id, nome, email, role, cargo, avatar, status, online }
+    }
+  }
+
+GET /api/auth/me
+- Lê o token do header: Authorization: Bearer <token>
+- Se não tiver header ou não começar com "Bearer ": status 401, { error: "Não autenticado" }
+- Verifica e decodifica o JWT
+- Se inválido ou expirado: status 401, { error: "Token inválido ou expirado" }
+- Busca usuário no banco pelo id do payload
+- Se não encontrar: status 401, { error: "Usuário não encontrado" }
+- Resposta: { ok: true, data: { id, nome, email, role, cargo, avatar, status, online } }
+
+POST /api/auth/logout
+- Não requer validação
+- Resposta: { ok: true, message: "Logout realizado" }
+
+---
+
+PASSO 4 — Criar middleware requireAuth
+
+Crie em server/middleware/auth.ts (ou equivalente):
+
+import jwt from "jsonwebtoken";
+
+export function requireAuth(req: any, res: any, next: any) {
+  const header = req.headers.authorization;
+  if (!header || !header.startsWith("Bearer ")) {
+    return res.status(401).json({ error: "Não autenticado" });
+  }
+  const token = header.split(" ")[1];
+  try {
+    const payload = jwt.verify(
+      token,
+      process.env.JWT_SECRET || "flowcrm-secret-2025"
+    );
+    req.user = payload;
+    next();
+  } catch (err) {
+    return res.status(401).json({ error: "Token inválido ou expirado" });
+  }
+}
+
+---
+
+PASSO 5 — Proteger todas as rotas existentes com requireAuth
+
+Aplique o middleware requireAuth em TODAS as rotas privadas:
+- /api/leads (todos os métodos)
+- /api/contatos (todos os métodos)
+- /api/usuarios (exceto POST /aceitar-convite que é público)
+- /api/automacoes (todos os métodos)
+- /api/campanhas (todos os métodos)
+- /api/agenda (todos os métodos)
+- /api/financeiro (todos os métodos)
+- /api/equipes (todos os métodos)
+- /api/permissoes (todos os métodos)
+- /api/webhooks (todos os métodos)
+- /api/tokens (todos os métodos)
+- /api/ia (todos os métodos)
+- /api/relatorios (todos os métodos)
+- /api/conexoes (todos os métodos)
+- /api/planos (todos os métodos)
+
+Rotas que NÃO precisam de auth (permanecem públicas):
+- POST /api/auth/login
+- GET /api/auth/me (tem sua própria validação interna)
+- POST /api/auth/logout
+- POST /api/usuarios/aceitar-convite
+- POST /api/webhook/zapi
+
+---
+
+PASSO 6 — Definir senha conhecida para testes
+
+Verifique se a senha "senha123" funciona para joao@flowcrm.com.
+Se não souber a senha atual, redefina com:
+
+const novoHash = hashPassword("senha123");
+UPDATE users SET password = '<novoHash>' WHERE email = 'joao@flowcrm.com';
+
+Confirme ao final:
+- verifyPassword criada e funcionando
+- jsonwebtoken instalado
+- 3 rotas de auth criadas
+- Middleware requireAuth criado
+- Todas as rotas protegidas
+- Login com joao@flowcrm.com / senha123 retorna token JWT real

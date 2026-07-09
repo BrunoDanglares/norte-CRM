@@ -1,0 +1,136 @@
+Quero que você construa uma arquitetura de atendimento multiagente para WhatsApp (estilo ChatBanana), com controle de estado de conversa (session state), garantindo fluidez, contexto contínuo e troca inteligente de agentes.
+
+## 🎯 OBJETIVO
+
+Criar um sistema onde:
+- O atendimento nunca perde contexto
+- A intenção do cliente pode mudar a qualquer momento
+- Existe um agente orquestrador que decide tudo
+- Existem agentes especialistas por área
+- O estado da conversa é salvo e atualizado a cada interação
+
+---
+
+## 🧠 ARQUITETURA
+
+### 1. AGENTE ORQUESTRADOR
+
+Responsável por:
+- Detectar intenção do cliente
+- Ler o estado atual da conversa
+- Definir qual agente deve atuar
+- Atualizar o estado
+- Redirecionar fluxo quando necessário
+
+Ele NÃO responde diretamente o cliente.
+
+---
+
+### 2. AGENTES ESPECIALISTAS
+
+Criar os seguintes agentes:
+
+- financeiro_agent
+- suporte_agent
+- comercial_agent
+- humano_agent
+
+Cada um responsável por resolver apenas seu contexto.
+
+---
+
+## 🧩 ESTADO DA CONVERSA (SESSION STATE)
+
+Criar estrutura padrão:
+
+{
+  "fluxo_atual": null,
+  "etapa": null,
+  "ultima_intencao": null,
+  "cliente_identificado": false
+}
+
+---
+
+## 🔁 FLUXO DE EXECUÇÃO
+
+A cada mensagem recebida:
+
+1. Buscar estado atual da conversa
+2. Enviar mensagem + estado para o orquestrador
+3. Orquestrador retorna:
+   - intenção
+   - próximo agente
+   - atualização de estado
+4. Executar agente especialista
+5. Agente responde + atualiza estado
+6. Salvar estado atualizado
+
+---
+
+## 🧠 REGRAS IMPORTANTES
+
+- O sistema NUNCA pode perder contexto
+- Se o cliente repetir algo → considerar reforço de intenção
+- Se mudar de assunto → trocar fluxo imediatamente
+- Nunca retornar erro genérico
+- Sempre ter fallback:
+  → pedir mais detalhes se necessário
+
+---
+
+## 🔍 INTENÇÕES SUPORTADAS
+
+- financeiro → boleto, fatura, pagamento, desbloqueio
+- suporte → internet lenta, queda, sem conexão
+- comercial → planos, upgrade
+- humano → falar com atendente
+- desconhecido → pedir esclarecimento
+
+---
+
+## ⚙️ IMPLEMENTAÇÃO
+
+- Criar funções separadas para cada agente
+- Criar função principal: handleMessage(message, state)
+- Criar sistema de persistência de estado (pode ser em memória, Redis ou banco)
+- Simular entrada e saída estilo webhook (JSON)
+
+---
+
+## 📦 EXEMPLO DE ENTRADA
+
+{
+  "message": "quero minha fatura",
+  "state": {
+    "fluxo_atual": null,
+    "etapa": null,
+    "ultima_intencao": null,
+    "cliente_identificado": true
+  }
+}
+
+---
+
+## 📤 EXEMPLO DE SAÍDA
+
+{
+  "response": "Aqui está sua fatura...",
+  "state": {
+    "fluxo_atual": "financeiro",
+    "etapa": "fatura_enviada",
+    "ultima_intencao": "segunda_via",
+    "cliente_identificado": true
+  }
+}
+
+---
+
+## 🚀 EXTRA
+
+- Simular mudança de intenção no meio da conversa
+- Garantir que o sistema se adapta sem quebrar fluxo
+
+---
+
+Quero o código organizado, limpo, bem estruturado e pronto para evoluir para produção.

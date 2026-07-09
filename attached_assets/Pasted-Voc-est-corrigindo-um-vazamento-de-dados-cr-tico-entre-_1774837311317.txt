@@ -1,0 +1,50 @@
+Você está corrigindo um vazamento de dados crítico entre tenants no ChatBanana.
+
+PROBLEMA: Em server/services/whatsappWebJS.ts, nas linhas 179, 199 e 535, existem queries que buscam leads pelo campo `nome` (pushName do WhatsApp) SEM filtrar por workspaceId. Isso pode retornar leads de outros workspaces, violando o isolamento multi-tenant.
+
+TAREFA: Corrigir as três ocorrências adicionando o filtro por workspaceId.
+
+INSTRUÇÕES EXATAS:
+
+1. Abra server/services/whatsappWebJS.ts
+
+2. Localize todas as ocorrências de queries no padrão:
+   `db.select().from(leads).where(eq(leads.nome, pushName))`
+   ou similar que busquem por nome/pushName sem workspaceId.
+
+3. Para CADA ocorrência encontrada, verifique se o workspaceId está disponível no escopo da função. Ele deve vir de alguma das seguintes fontes:
+   - Parâmetro da função
+   - Variável da instância/conexão Z-API ou WhatsApp
+   - Contexto da mensagem recebida
+
+4. Corrija cada query adicionando o filtro de workspace. O padrão correto é:
+
+```typescript
+// ANTES (inseguro):
+const existingLeads = await db
+  .select()
+  .from(leads)
+  .where(eq(leads.nome, pushName))
+  .limit(1);
+
+// DEPOIS (correto):
+const existingLeads = await db
+  .select()
+  .from(leads)
+  .where(
+    and(
+      eq(leads.nome, pushName),
+      eq(leads.workspaceId, workspaceId)
+    )
+  )
+  .limit(1);
+```
+
+5. Se `and` não estiver importado de drizzle-orm, adicione ao import existente:
+   `import { eq, and } from "drizzle-orm";`
+
+6. Se em alguma das ocorrências o workspaceId NÃO estiver disponível no escopo, NÃO invente um valor. Em vez disso, sinalize nos comentários do código com `// TODO: workspaceId não disponível aqui — revisar` e me informe quais linhas ficaram pendentes.
+
+7. Faça o mesmo levantamento para qualquer outra query no mesmo arquivo que busque em tabelas `leads`, `contacts` ou `conversations` sem filtrar por workspaceId — corrija todas que encontrar.
+
+VALIDAÇÃO: Após a alteração, grep pelo padrão `.from(leads).where(eq(leads.nome` e confirme que nenhuma ocorrência está sem o `and(..., eq(leads.workspaceId, workspaceId))`.

@@ -1,0 +1,66 @@
+PROMPT 2 — Backend: Storage layerAdicionar os métodos de parceiro na camada de storage 
+(server/storage.ts). Adicionar à interface IStorage e implementar 
+na classe DatabaseStorage os seguintes métodos:
+
+// Partner - sub-workspaces
+getPartnerClients(partnerWorkspaceId: string): Promise<any[]>
+  - Retorna todos os workspaces onde parent_workspace_id = partnerWorkspaceId
+  - Faz join com users para trazer o admin de cada workspace
+  - Inclui count de conversas ativas e leads de cada sub-workspace
+
+createClientWorkspace(data: {
+  partnerWorkspaceId: string,
+  businessName: string,
+  adminName: string,
+  adminEmail: string,
+  adminPassword: string,
+  phone?: string
+}): Promise<{ workspace: any, user: any }>
+  - Cria workspace com parent_workspace_id = partnerWorkspaceId
+  - Cria usuário admin com role 'admin' nesse workspace
+  - Cria 5 pipeline stages padrão igual ao registro normal
+  - Hash da senha com scrypt igual ao padrão do sistema
+  - Retorna workspace e user criados
+
+getPartnerStats(partnerWorkspaceId: string): Promise<{
+  totalClients: number,
+  activeClients: number,  // ativos nos últimos 30 dias
+  totalLeads: number,     // soma de leads de todos os sub-workspaces
+  totalConversations: number
+}>
+
+// Partner invites
+createPartnerInvite(data: {
+  partnerWorkspaceId: string,
+  clientEmail: string,
+  clientName: string,
+  businessName: string
+}): Promise<any>
+  - Gera invite_token com crypto.randomBytes(32).toString('hex')
+  - expires_at = now + 7 dias
+  - workspace_id = partnerWorkspaceId
+
+getPartnerInvite(token: string): Promise<any | null>
+getPartnerInvites(partnerWorkspaceId: string): Promise<any[]>
+updatePartnerInvite(id: string, data: Partial<any>): Promise<any>
+
+// Impersonation
+createImpersonationToken(data: {
+  partnerWorkspaceId: string,
+  targetWorkspaceId: string,
+  partnerUserId: string
+}): Promise<string>
+  - Gera token único com crypto.randomBytes(32).toString('hex')
+  - expires_at = now + 2 horas
+  - Salva na tabela partner_impersonation_tokens
+  - Retorna o token string
+
+validateImpersonationToken(token: string): Promise<{
+  valid: boolean,
+  targetWorkspaceId?: string,
+  partnerWorkspaceId?: string
+}>
+  - Verifica se token existe, não foi usado e não expirou
+  - Marca como used_at = now ao validar
+
+Confirme quando todos os métodos estiverem implementados.

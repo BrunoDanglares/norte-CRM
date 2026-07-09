@@ -1,0 +1,112 @@
+Create all backend Express routes for the ISP module in ChatBanana.
+
+## Context
+- Follow routing patterns of existing modules
+- All routes protected with requireAuth middleware
+- All queries scoped by workspace_id using resolveWorkspaceId(req)
+- Import sgp-adapter functions from server/services/sgp-adapter.ts
+- Import channel-router sendMessage from server/services/channel-router.ts
+- File to create: server/routes/isp.ts
+
+## Routes
+
+### Config
+
+GET /api/isp/config
+- Return isp_config for workspace
+- Replace sgp_api_token with "••••••••" for security
+- Return { configured: false } if none exists
+
+POST /api/isp/config
+- Upsert ISP config for workspace
+- Body: { company_name, sgp_base_url, sgp_api_token, support_phone, billing_enabled, billing_days_before, billing_days_after, billing_message_before, billing_message_after, onboarding_enabled, onboarding_message, onboarding_delay_minutes, birthday_enabled, birthday_message, birthday_time }
+- Required: company_name, sgp_base_url, sgp_api_token
+- Test SGP connection before saving: call searchCustomerByCPF with CPF '00000000000' — if it throws a network error (not 404), return 400 { error: 'Não foi possível conectar ao SGP' }
+- Return saved config (with token masked)
+
+PATCH /api/isp/config
+- Partial update — only updates fields present in body
+- Used for saving onboarding/birthday settings without re-entering token
+- Return updated config
+
+DELETE /api/isp/config
+- Soft delete: set is_active = false
+
+### Customer
+
+GET /api/isp/customer/:cpf
+- Search customer in SGP by CPF
+- Return customer data or 404 { error: 'Cliente não encontrado' }
+- Catch SGPError: return 502
+
+GET /api/isp/customer/:cpf/invoices
+- Search customer by CPF → get open invoices
+- Return { customer, invoices }
+
+POST /api/isp/invoice/:invoiceId/second-copy
+- Generate second copy
+- Return { linhaDigitavel, linkBoleto, pix, vencimento, valor }
+
+### Support Tickets
+
+POST /api/isp/ticket
+- Body: { cpf, ticket_type, description }
+- Search customer by CPF first → 404 if not found
+- Create ticket in SGP via createSupportTicket()
+- Save to isp_support_tickets table
+- Log to isp_automation_logs (type: 'support_opened')
+- Return { protocolo, sgp_ticket_id, message: 'Chamado aberto com sucesso' }
+
+GET /api/isp/ticket/:id
+- Get from local DB + refresh status from SGP
+- Update local status if changed
+- Return merged ticket data
+
+GET /api/isp/tickets
+- List tickets for workspace
+- Query params: ?status=aberto&limit=50&offset=0
+- Return { tickets, total }
+
+### Billing
+
+GET /api/isp/billing/preview
+- Preview who would receive billing messages if run now
+- Query params: ?type=pre_due|overdue&days=3
+- Cross-reference with isp_billing_logs to show already-notified
+- Return { total, preview: first 10 customers, already_sent: count }
+
+POST /api/isp/billing/send
+- Manual trigger billing run
+- Body: { type: 'pre_due' | 'overdue', days_offset: number }
+- For each customer:
+  a. Check isp_billing_logs — skip if already sent
+  b. Build message from template
+  c. Send via sendMessage (channel-router)
+  d. Log to isp_billing_logs AND isp_automation_logs
+  e. Sleep 1500ms between sends
+- Return { sent, skipped, errors }
+
+GET /api/isp/billing/logs
+- List billing logs for workspace
+- Query params: ?limit=50&offset=0&type=pre_due
+- Return { logs, total }
+
+### Reports
+
+GET /api/isp/reports/summary
+- Return counts from isp_automation_logs for workspace:
+  { total_sent_today, total_sent_month, billing_sent, onboarding_sent, birthday_sent, success_rate }
+
+## Error handling
+- SGPError → 502 { error: 'SGP API error', detail: err.sgpMessage }
+- Other errors → 500 { error: err.message }
+- Never expose credentials in errors
+
+## Register in server/index.ts
+import ispRouter from './routes/isp';
+app.use('/api/isp', requireAuth, ispRouter);
+
+## After implementing
+1. Test GET /api/isp/config → should return { configured: false }
+2. Confirm server starts without TypeScript errors
+3. Confirm route registered in boot logs

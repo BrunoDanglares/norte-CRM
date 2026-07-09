@@ -1,0 +1,55 @@
+PROMPT 3 — Validação Final
+Faça a validação completa do módulo de Perfil implementado.
+
+1. CARREGAMENTO DE DADOS:
+   [ ] GET /api/perfil/me retorna todos os campos do usuário logado
+   [ ] Página de Perfil exibe nome real (não "Joao Demo")
+   [ ] Email exibido é o real do banco (não "joao@crmpro.com")
+   [ ] Campo email está readonly e tem tooltip explicativo
+   [ ] Loading/skeleton aparece enquanto carrega
+
+2. EDIÇÃO DO PERFIL:
+   [ ] Alterar nome e salvar → banco atualizado, tela reflete mudança
+   [ ] Alterar cargo e salvar → banco atualizado
+   [ ] Alterar telefone e salvar → banco atualizado
+   [ ] Alterar bio e salvar → banco atualizado
+   [ ] Redes sociais salvas corretamente
+   [ ] Notificação de sucesso aparece após salvar
+
+3. ALTERAR SENHA:
+   [ ] Senha atual incorreta → erro 401 exibido no campo correto
+   [ ] Senhas não coincidem → erro exibido antes de chamar a API
+   [ ] Senha nova com menos de 6 chars → erro de validação
+   [ ] Senha correta → banco atualizado, campos limpos, notificação de sucesso
+   [ ] Login com nova senha funciona após alteração
+
+4. AVATAR:
+   [ ] Botão "Alterar foto" abre modal com campo de URL
+   [ ] Salvar URL válida → avatarUrl atualizado no banco
+   [ ] Avatar na página atualiza imediatamente após salvar
+
+5. APARÊNCIA E NOTIFICAÇÕES:
+   [ ] Seletor de tema salva via API ao mudar
+   [ ] Cada switch de notificação salva via API ao alternar
+   [ ] Ao recarregar a página, configurações persistem (vêm do banco)
+
+6. EXCLUIR CONTA:
+   [ ] Botão abre modal de confirmação com campo de senha
+   [ ] Senha incorreta exibe erro no modal
+   [ ] Senha correta → usuário marcado como INACTIVE no banco
+   [ ] Após confirmar → logout automático → redireciona para /login
+
+7. TOPBAR / SIDEBAR:
+   [ ] Nome exibido no topbar/header é o do usuário real logado
+   [ ] Avatar no topbar reflete o avatarUrl real (ou inicial do nome como fallback)
+   [ ] Após atualizar perfil, topbar reflete as mudanças sem recarregar a página
+
+8. SEGURANÇA:
+   [ ] PUT /api/perfil/me sem token retorna 401
+   [ ] PUT /api/perfil/me não permite alterar email ou role
+   [ ] POST /api/perfil/alterar-senha sem token retorna 401
+   [ ] Usuário A não consegue editar perfil do usuário B
+     (teste chamando PUT /api/perfil/me com token do usuário A —
+      deve sempre atualizar apenas os dados de A)
+
+Relate cada item e o que foi corrigido.

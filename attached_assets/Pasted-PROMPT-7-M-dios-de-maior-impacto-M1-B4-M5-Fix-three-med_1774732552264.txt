@@ -1,0 +1,136 @@
+PROMPT 7 — Médios de maior impacto (M1 + B4 + M5)
+Fix three medium-priority issues in ChatBanana that have real production impact.
+
+## FIX 1: Replace raw fetch() with apiFetch in frontend (M1)
+
+Files: inbox.tsx (9 occurrences), leads.tsx (3), pipeline.tsx (2), App.tsx (1)
+
+PROBLEM: Manual fetch() calls with Authorization header built by hand.
+These don't handle 401 consistently and bypass the centralized auth layer.
+
+Find all instances of this pattern in the listed files:
+```typescript
+// WRONG — manual auth header:
+const response = await fetch('/api/something', {
+  headers: {
+    'Authorization': `Bearer ${token}`,
+    'Content-Type': 'application/json'
+  }
+});
+```
+
+Replace with the existing apiFetch helper:
+```typescript
+// CORRECT — centralized auth:
+import { apiFetch } from '../lib/api'; // adjust import path
+
+const data = await apiFetch('/api/something');
+// or for POST:
+const data = await apiFetch('/api/something', {
+  method: 'POST',
+  body: JSON.stringify(payload)
+});
+```
+
+Find the existing apiFetch import path by checking another page that
+already uses it correctly (e.g., configuracoes.tsx or conexoes.tsx).
+Use the same import path.
+
+Search for ALL raw fetch() calls in:
+- client/src/pages/inbox.tsx
+- client/src/pages/leads.tsx  
+- client/src/pages/pipeline.tsx
+- client/src/App.tsx
+
+Replace each one with apiFetch. Do NOT change:
+- fetch() calls inside useWebSocket or WebSocket setup
+- fetch() calls to external URLs (not /api/*)
+- Any fetch polyfills or library internals
+
+---
+
+## FIX 2: Add missing unique constraints (B4)
+
+File: shared/schema.ts
+
+PROBLEM: No unique constraints on contacts(workspace_id, phone) or
+messages(workspace_id, wamid) — duplicates can silently accumulate.
+
+Add unique indexes:
+```typescript
+// After contacts table definition:
+export const contactsWorkspacePhoneUnique = uniqueIndex("idx_contacts_workspace_phone_unique")
+  .on(contacts.workspaceId, contacts.telefone);
+
+// After messages table definition:
+// Only add this if messages table has a 'wamid' column
+// Check schema first — if column exists, add:
+export const messagesWamidUnique = uniqueIndex("idx_messages_wamid_unique")  
+  .on(messages.workspaceId, messages.wamid);
+```
+
+IMPORTANT before running migration:
+1. Check for existing duplicate contacts (same workspace_id + phone):
+```sql
+SELECT workspace_id, telefone, COUNT(*) 
+FROM contacts 
+GROUP BY workspace_id, telefone 
+HAVING COUNT(*) > 1;
+```
+2. If duplicates exist, deduplicate first (keep the most recent):
+```sql
+DELETE FROM contacts
+WHERE id NOT IN (
+  SELECT MAX(id) 
+  FROM contacts 
+  GROUP BY workspace_id, telefone
+);
+```
+3. Then run npm run db:push to add the unique constraint.
+
+Same process for messages.wamid if duplicates exist.
+
+---
+
+## FIX 3: Add ON DELETE CASCADE to core tables (M5)
+
+File: shared/schema.ts
+
+PROBLEM: Core tables (leads, contacts, conversations, messages) don't have
+CASCADE on their workspace foreign keys. Deleting a workspace would fail
+if it has any data.
+
+Find the foreign key references to workspaces in these tables:
+```typescript
+// BEFORE (no cascade):
+workspaceId: uuid("workspace_id").references(() => workspaces.id),
+
+// AFTER (with cascade):
+workspaceId: uuid("workspace_id")
+  .references(() => workspaces.id, { onDelete: 'cascade' }),
+```
+
+Apply to ALL core tables:
+- leads
+- contacts  
+- conversations
+- messages
+- deals
+- appointments
+- transactions
+
+Note: ISP tables already have cascade — only fix the core tables.
+
+IMPORTANT: This migration is safe on existing data. CASCADE only affects
+future DELETE operations on the workspaces table.
+
+Run npm run db:push after changes.
+Confirm server starts and basic CRUD operations still work.
+
+## After all fixes:
+1. TypeScript compiles without errors
+2. Test: create a lead via UI — confirm it works
+3. Test: check Network tab — no more raw fetch() calls to /api/* in fixed pages
+4. Run: SELECT * FROM contacts GROUP BY workspace_id, telefone HAVING COUNT(*) > 1
+   → Should return 0 rows (no duplicates)
+5. Confirm npm run build succeeds

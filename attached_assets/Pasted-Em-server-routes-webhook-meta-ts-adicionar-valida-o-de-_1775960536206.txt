@@ -1,0 +1,65 @@
+Em server/routes/webhook-meta.ts, adicionar validação de assinatura HMAC-SHA256 
+em TODAS as requisições POST recebidas do Meta.
+
+1. Criar middleware de validação (antes de qualquer processamento):
+
+import crypto from 'crypto';
+
+function verifyMetaSignature(req: Request, res: Response, next: NextFunction) {
+  const signature = req.headers['x-hub-signature-256'] as string;
+  
+  if (!signature) {
+    console.warn('[Webhook Meta] Requisição sem assinatura recebida — rejeitada');
+    return res.status(401).json({ error: 'Missing signature' });
+  }
+
+  const appSecret = process.env.META_APP_SECRET;
+  if (!appSecret) {
+    console.error('[Webhook Meta] META_APP_SECRET não configurado');
+    return res.status(500).json({ error: 'Server misconfiguration' });
+  }
+
+  const expectedSignature = 'sha256=' + crypto
+    .createHmac('sha256', appSecret)
+    .update(req.body) // req.body deve ser o raw buffer aqui
+    .digest('hex');
+
+  const signatureValid = crypto.timingSafeEqual(
+    Buffer.from(signature),
+    Buffer.from(expectedSignature)
+  );
+
+  if (!signatureValid) {
+    console.warn('[Webhook Meta] Assinatura inválida — requisição rejeitada');
+    return res.status(403).json({ error: 'Invalid signature' });
+  }
+
+  next();
+}
+
+2. IMPORTANTE — Para o HMAC funcionar, o body precisa ser o raw buffer (não parsed JSON).
+Em server/index.ts, ANTES do app.use(express.json()), adicionar:
+
+app.use('/api/webhook/meta', express.raw({ type: 'application/json' }));
+
+Isso faz o body chegar como Buffer no webhook do Meta, enquanto todas as outras rotas 
+continuam recebendo JSON parsed normalmente.
+
+3. Dentro do handler do webhook, após o middleware, fazer o parse manual:
+
+const body = JSON.parse(req.body.toString());
+// Usar 'body' no lugar de 'req.body' daqui em diante no handler
+
+4. Aplicar o middleware na rota:
+
+router.post('/', verifyMetaSignature, async (req, res) => { ... });
+
+5. Adicionar META_APP_SECRET ao .env.example com comentário:
+# Meta App Secret — encontrado em Meta for Developers → seu app → Configurações Básicas → App Secret
+META_APP_SECRET=seu_app_secret_aqui
+
+Verificar se META_APP_SECRET já existe no .env atual. Se não existir, 
+instruir o usuário a adicionar (não gerar valor fictício).
+
+6. ATENÇÃO: o endpoint GET do webhook (verificação do token) NÃO deve ter o middleware HMAC.
+Apenas o POST deve ser protegido.

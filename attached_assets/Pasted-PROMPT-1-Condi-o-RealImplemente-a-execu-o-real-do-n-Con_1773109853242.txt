@@ -1,0 +1,80 @@
+PROMPT 1 — Condição RealImplemente a execução real do nó "Condição" na engine de automações do FlowCRM.
+Hoje ele sempre retorna true. Substitua pela avaliação real de expressões.
+
+## Parâmetros do nó
+{
+  field: string,        // campo a avaliar (ex: "lead.status", "lead.value", "variables.score")
+  operator: string,     // operador
+  value: string | number // valor de comparação
+}
+
+## Operadores suportados
+equals, not_equals, contains, not_contains, greater_than, less_than,
+greater_or_equal, less_or_equal, is_empty, is_not_empty, starts_with, ends_with
+
+## Implementação
+
+1. Resolva o valor do campo usando context:
+   - Se field começa com "lead." → busque o lead no banco pelo context.leadId
+     Campos disponíveis: name, email, phone, status, stage, value, priority, tags, notes
+   - Se field começa com "variables." → leia de context.variables
+   - Se field começa com "message." → leia de context.message (última mensagem recebida)
+
+2. Aplique o operador:
+   - Comparações numéricas: converta ambos para Number antes de comparar
+   - contains/not_contains: use String.includes()
+   - is_empty: valor === null || valor === undefined || valor === ""
+   - starts_with/ends_with: use String.startsWith/endsWith
+
+3. O resultado (true ou false) determina qual saída seguir:
+   - Handle "true" → próximo nó se condição verdadeira
+   - Handle "false" → próximo nó se condição falsa
+
+4. Log: { success: true, field, operator, value, resolved_value, result: boolean }
+
+## Validação
+Se o campo não existir no lead ou nas variables, trate como is_empty (false para comparações).
+Nunca lance exceção — em caso de erro avalie como false e logue o erro.PROMPT 2 — Resposta IA via OpenAIImplemente a execução real do nó "Resposta IA" na engine de automações do FlowCRM.
+Hoje retorna "[Resposta simulada]". Substitua pela chamada real à OpenAI.
+
+## Parâmetros do nó
+{
+  prompt_slug?: string,   // slug de um prompt salvo na tabela ia_prompts
+  custom_prompt?: string, // ou prompt customizado direto
+  save_to?: string        // nome da variável onde salvar a resposta (ex: "variables.resposta_ia")
+}
+
+## Implementação
+
+1. Resolva o system prompt:
+   - Se prompt_slug informado → busque na tabela ia_prompts WHERE slug = prompt_slug
+   - Se custom_prompt informado → use diretamente
+   - Se nenhum → use prompt padrão: "Você é um assistente prestativo."
+
+2. Monte o user message com contexto do lead:
+   - Busque o lead pelo context.leadId
+   - User message: 
+     "Lead: {name}, telefone: {phone}, status: {status}
+      Última mensagem recebida: {context.message?.text || 'não disponível'}
+      Variáveis do fluxo: {JSON.stringify(context.variables)}"
+
+3. Chame a OpenAI (credencial já existe no sistema — use a mesma usada pela Base de IA):
+   POST https://api.openai.com/v1/chat/completions
+   {
+     model: "gpt-4o-mini",
+     messages: [
+       { role: "system", content: systemPrompt },
+       { role: "user", content: userMessage }
+     ],
+     max_tokens: 500,
+     temperature: 0.7
+   }
+
+4. Salve a resposta:
+   - Se save_to informado → context.variables[save_to] = response.choices[0].message.content
+   - Sempre salve em context.variables.last_ai_response também
+
+5. Log: { success: true, prompt_slug, tokens_used: usage.total_tokens, response_preview: primeiros 100 chars }
+
+## Tratamento de erro
+Se OpenAI falhar, salve "" em save_to, log { success: false, error } e continue o fluxo.

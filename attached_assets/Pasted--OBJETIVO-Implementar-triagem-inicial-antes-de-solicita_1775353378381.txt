@@ -1,0 +1,154 @@
+## OBJETIVO
+Implementar triagem inicial antes de solicitar CPF.
+Hoje o bot pede CPF para TODOS os contatos — isso bloqueia
+novos clientes e oportunidades comerciais.
+
+## NOVA LÓGICA DE ENTRADA
+
+Primeira mensagem de um contato novo ou sem sessão ativa:
+1. Bot envia boas-vindas + lista interativa com 2 opções
+2. Cliente escolhe "Já sou cliente" ou "Quero ser cliente"
+3. Se já cliente → fluxo atual (solicita CPF)
+4. Se novo cliente → fluxo comercial (sem CPF)
+
+## PASSO 1 — IDENTIFICAR PONTO DE ENTRADA
+Em server/services/ispAgentEngine.ts verificar:
+- Onde a engine decide solicitar CPF
+- Como detecta se é primeira mensagem do contato
+- Se existe flag de sessão para "cpf_confirmado" ou similar
+Reportar antes de modificar.
+
+## PASSO 2 — IMPLEMENTAR TRIAGEM
+
+Adicionar no início do fluxo da engine, antes de qualquer
+solicitação de CPF:
+```typescript
+// Verifica se já tem sessão ativa com cliente identificado
+const temSessaoAtiva = session.cpf_confirmado === true;
+
+if (!temSessaoAtiva) {
+  // Verifica se já enviamos a triagem e estamos aguardando resposta
+  if (session.aguardando_triagem === true) {
+    // Cliente respondeu à triagem — processar escolha
+    const input = mensagem.toLowerCase();
+    
+    const escolheuNovoCliente =
+      input.includes('novo') ||
+      input.includes('contratar') ||
+      input.includes('quero ser') ||
+      buttonId === 'NOVO_CLIENTE' ||
+      buttonId === 'COMERCIAL';
+    
+    const escolheuJaCliente =
+      input.includes('já') ||
+      input.includes('ja sou') ||
+      input.includes('cliente') ||
+      buttonId === 'JA_CLIENTE' ||
+      buttonId === 'SUPORTE';
+
+    if (escolheuNovoCliente) {
+      session.aguardando_triagem = false;
+      session.tipo_cliente = 'novo';
+      session.fluxo_atual = 'COMERCIAL';
+      // Chama agente comercial diretamente sem pedir CPF
+      return await chamarAgenteComercial(session, mensagem, workspaceId);
+    }
+
+    if (escolheuJaCliente) {
+      session.aguardando_triagem = false;
+      session.tipo_cliente = 'existente';
+      // Continua para solicitar CPF normalmente
+    }
+  } else {
+    // Primeira mensagem — envia triagem
+    session.aguardando_triagem = true;
+    
+    await sendWhatsAppListMessage({
+      to: phone,
+      workspaceId,
+      body: 'Olá! Seja bem-vindo(a). Como posso te ajudar hoje? 😊',
+      footer: 'Escolha uma opção ou digite sua dúvida',
+      buttonLabel: 'Ver opções',
+      sections: [{
+        title: 'Como posso ajudar?',
+        rows: [
+          { id: 'JA_CLIENTE', title: 'Já sou cliente' },
+          { id: 'NOVO_CLIENTE', title: 'Quero contratar' }
+        ]
+      }]
+    });
+    
+    return; // Para aqui — aguarda resposta
+  }
+}
+// Se chegou aqui, é cliente existente → fluxo normal de CPF
+```
+
+## PASSO 3 — FLUXO NOVO CLIENTE (sem CPF)
+Implementar função chamarAgenteComercial que:
+- Chama agente_vendas com contexto de novo cliente
+- Injeta instrução: "Cliente novo, sem cadastro no ERP.
+  Colete: nome completo, CEP/endereço, telefone de contato.
+  Apresente os planos disponíveis. Nunca peça CPF nesse momento."
+- Salva na sessão: tipo_cliente = 'novo'
+- Cria lead no CRM com status 'prospecto' e tag '#novo-cliente'
+
+## PASSO 4 — PERSISTÊNCIA DA SESSÃO
+Garantir que session.cpf_confirmado, session.aguardando_triagem
+e session.tipo_cliente persistem entre mensagens.
+Verificar como a sessão é salva hoje (Redis, banco, memória)
+e adaptar se necessário.
+
+## PASSO 5 — CASO ESPECIAL: CLIENTE DIGITA LIVREMENTE
+Se cliente ignorar os botões e digitar diretamente
+(ex: "quero pagar minha fatura"):
+- NÃO enviar triagem novamente
+- Classificar intenção normalmente via SDR
+- Se intent = FINANCEIRO, SUPORTE, CANCELAMENTO → solicitar CPF
+- Se intent = COMERCIAL → tratar como novo cliente
+
+Adicionar detecção de intent antes da triagem:
+```typescript
+const intentObvio = detectarIntentSimples(mensagem);
+// intentObvio retorna 'COMERCIAL' | 'CLIENTE_EXISTENTE' | null
+
+if (intentObvio === 'COMERCIAL') {
+  session.tipo_cliente = 'novo';
+  session.fluxo_atual = 'COMERCIAL';
+  return await chamarAgenteComercial(session, mensagem, workspaceId);
+}
+
+if (intentObvio === 'CLIENTE_EXISTENTE') {
+  // Pular triagem, ir direto para CPF
+  session.tipo_cliente = 'existente';
+}
+```
+
+Keywords para detectarIntentSimples:
+- COMERCIAL: "quero contratar", "quanto custa", "tem internet aqui",
+  "qual o plano", "nova instalação", "instalar", "novo cliente"
+- CLIENTE_EXISTENTE: "minha conta", "meu boleto", "minha internet",
+  "tô sem internet", "caiu", "lentidão", "cancelar", "meu plano"
+
+## PASSO 6 — CRIAR LEAD PROSPECTO NO CRM
+Quando tipo_cliente = 'novo', criar registro na tabela leads:
+```typescript
+await db.insert(leads).values({
+  workspaceId,
+  nome: 'Prospecto WhatsApp',
+  telefone: phone,
+  status: 'novo',
+  tags: ['#novo-cliente', '#prospecto'],
+  origem: 'whatsapp',
+  pipelineStage: 'prospecto',
+  createdAt: new Date()
+});
+```
+
+## REGRAS
+- Se cliente não responder triagem em 10 min e mandar nova mensagem,
+  enviar triagem novamente (session.aguardando_triagem reseta)
+- Cliente existente que já tem cpf_confirmado = true NUNCA vê triagem
+- Não quebrar fluxo atual de clientes identificados
+- Reportar como a sessão é persistida antes de implementar
+- Listar todos os arquivos modificados

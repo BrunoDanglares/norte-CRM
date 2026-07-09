@@ -1,0 +1,55 @@
+Você está corrigindo um problema grave de performance no ChatBanana.
+
+PROBLEMA: Em server/services/whatsappWebJS.ts por volta da linha 928, o código faz storage.getConversations(workspaceId) para carregar TODAS as conversas na memória e depois usa .find() para localizar pelo telefone. Com milhares de conversas isso é ineficiente e pode causar timeout.
+
+TAREFA: Criar método dedicado getConversationByPhone e substituir o padrão de .find().
+
+PARTE 1 — Adicionar método getConversationByPhone em server/storage.ts:
+
+```typescript
+async getConversationByPhone(
+  workspaceId: string,
+  phone: string
+): Promise {
+  const result = await db
+    .select()
+    .from(conversations)
+    .where(
+      and(
+        eq(conversations.workspaceId, workspaceId),
+        eq(conversations.telefone, phone)
+      )
+    )
+    .limit(1);
+
+  return result[0];
+}
+```
+
+Nota: verifique o nome exato do campo de telefone na tabela conversations (pode ser `telefone`, `phone`, ou `phoneNumber`) e ajuste conforme necessário.
+
+PARTE 2 — Atualizar a interface IStorage (se existir) com o novo método:
+
+```typescript
+getConversationByPhone(workspaceId: string, phone: string): Promise;
+```
+
+PARTE 3 — Substituir o padrão problemático em whatsappWebJS.ts:
+
+Localize todas as ocorrências do padrão:
+```typescript
+const convs = await storage.getConversations(workspaceId);
+const conv = convs.find(c => c.telefone === phone);
+// ou variações: c.phone, c.phoneNumber, etc.
+```
+
+Substitua por:
+```typescript
+const conv = await storage.getConversationByPhone(workspaceId, phone);
+```
+
+PARTE 4 — Varredura completa:
+
+Faça grep por `.find(c =>` e `.find((c)` em todo o projeto buscando outros padrões similares onde listas completas são carregadas só para encontrar um item por campo. Relate o que encontrar sem corrigir automaticamente — quero revisar antes.
+
+VALIDAÇÃO: Após a alteração, o lookup de conversa por telefone deve executar uma única query SQL com WHERE telefone = $1 em vez de carregar toda a tabela. Confirme com um log temporário ou pelo query log do PostgreSQL.

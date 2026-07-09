@@ -1,0 +1,118 @@
+Dois problemas distintos nas imagens. Diagnóstico:
+Problema 1: assignTeamByAgent não está disparando — o painel mostra "Atribua uma equipe para ver as etapas" e o botão "Assumir" apareceu mesmo sem equipe atribuída. Causa mais provável: o nome da equipe no banco não bate exatamente com o mapa ("Suporte Técnico" vs "Suporte Tecnico", etc).
+Problema 2: A mensagem ✅ Bruno Danglares assumiu o atendimento apareceu no chat como bolha — não deveria. Mensagens tipo: 'system' precisam ser renderizadas como nota interna discreta, não como mensagem de chat, e jamais enviadas via WhatsApp.
+Dois prompts separados:
+
+Prompt 7A — Debug: por que assignTeamByAgent não dispara
+Preciso debugar por que a função assignTeamByAgent não está atribuindo
+equipe automaticamente quando o agente detecta a situação.
+
+PASSO 1 — Verifique os nomes exatos das equipes no banco:
+
+Execute no terminal do Replit:
+
+node -e "
+const { Pool } = require('pg');
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+pool.query('SELECT id, nome FROM teams WHERE workspace_id IS NOT NULL LIMIT 20')
+  .then(r => { console.log(JSON.stringify(r.rows, null, 2)); pool.end(); });
+"
+
+Me mostre o resultado — preciso ver os nomes exatos das equipes cadastradas.
+
+PASSO 2 — Adicione log temporário no assignTeamByAgent:
+
+No arquivo server/services/agents/escalationHandler.ts, localize a função
+assignTeamByAgent e adicione console.log em cada ponto crítico:
+
+export async function assignTeamByAgent(
+  conversationId: number,
+  workspaceId: string,
+  situation: string
+): Promise<void> {
+  console.log('[assignTeamByAgent] chamada:', { conversationId, workspaceId, situation });
+  
+  const teamName = SITUATION_TEAM_MAP[situation];
+  console.log('[assignTeamByAgent] teamName mapeado:', teamName);
+  if (!teamName) { console.log('[assignTeamByAgent] situação não mapeada, saindo'); return; }
+
+  try {
+    const team = await db
+      .select({ id: teams.id })
+      .from(teams)
+      .where(and(eq(teams.workspaceId, workspaceId), eq(teams.nome, teamName)))
+      .limit(1);
+
+    console.log('[assignTeamByAgent] team encontrado:', team);
+    if (!team.length) {
+      console.log('[assignTeamByAgent] EQUIPE NÃO ENCONTRADA no banco para:', { workspaceId, teamName });
+      return;
+    }
+    // ... resto da função
+  } catch (err) {
+    console.error('[assignTeamByAgent] ERRO:', err);
+  }
+}
+
+PASSO 3 — Verifique se a chamada fire-and-forget está sendo executada:
+
+Em financeiroAgent.ts, localize a linha que chama assignTeamByAgent
+e adicione um log imediatamente antes dela:
+
+console.log('[financeiroAgent] situação detectada, chamando assignTeamByAgent:', situacaoDetectada, conversationId, workspaceId);
+assignTeamByAgent(conversationId, workspaceId, situacaoDetectada).catch(console.error);
+
+Reinicie o servidor, faça um teste enviando uma mensagem de cliente
+pedindo boleto, e me envie os logs que aparecerem no console com o prefixo
+[assignTeamByAgent] e [financeiroAgent].
+
+Prompt 7B — Fix: mensagens de sistema não devem aparecer como bolha no chat
+Mensagens com direction: 'system' ou tipo: 'system' estão aparecendo
+como bolhas no chat — isso está errado. Precisa de dois fixes:
+
+FIX 1 — Frontend: renderizar como nota interna, não como bolha
+
+Localize o componente que renderiza as mensagens no chat
+(ex: MessageBubble.tsx, ChatMessages.tsx ou similar).
+
+Encontre onde é feito o .map() sobre as mensagens para renderizar cada uma.
+
+Adicione verificação antes de renderizar:
+
+// Mensagens de sistema: renderiza como nota discreta, não como bolha
+if (message.tipo === 'system' || message.direction === 'system') {
+  return (
+    <div key={message.id} style={{
+      textAlign: 'center',
+      margin: '8px 0',
+      fontSize: 11,
+      color: 'var(--color-text-tertiary)',
+      userSelect: 'none',
+    }}>
+      {message.texto}
+    </div>
+  );
+}
+
+Isso faz a mensagem aparecer como uma linha central discreta
+(ex: "─── Bruno Danglares assumiu o atendimento ───") em vez de bolha.
+
+FIX 2 — Backend: garantir que mensagens de sistema nunca sejam
+enviadas via WhatsApp
+
+Localize o ponto onde mensagens são enviadas pela Meta Cloud API
+(provavelmente message-processor.ts ou o serviço de envio de WhatsApp).
+
+Antes do envio, adicione verificação:
+
+if (message.direction === 'system' || message.tipo === 'system') {
+  return; // nunca enviar mensagens de sistema para o WhatsApp
+}
+
+Se o fluxo de envio já filtra por direction === 'out', isso pode já
+estar protegido — verifique e confirme.
+
+Confirme:
+1. Mensagens de sistema aparecem como nota central discreta, não como bolha
+2. Mensagens de sistema não são enviadas via WhatsApp
+3. Nenhum erro de TypeScript ou renderização

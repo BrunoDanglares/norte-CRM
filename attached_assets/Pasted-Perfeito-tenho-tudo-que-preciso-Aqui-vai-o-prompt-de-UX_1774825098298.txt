@@ -1,0 +1,67 @@
+Perfeito, tenho tudo que preciso. Aqui vai o prompt de UX:
+
+Prompt UX — Melhorias no modal do InstaProspect
+Abra o arquivo `client/src/pages/InstaProspect.tsx`.
+Faça as 4 alterações abaixo no modal de edição/criação de fluxo. 
+Não mexa em nenhuma outra parte do arquivo.
+
+─── ALTERAÇÃO 1 — Label "Primeira mensagem" ───
+
+Localize o label do campo "Primeira mensagem (antes da IA)".
+Substitua o texto do label por:
+  "Mensagem de boas-vindas"
+
+Localize o textarea desse campo e substitua o placeholder atual por:
+  "Ex: Oi {{username}}! Obrigado pelo contato 😊 Me conta, como posso te ajudar?"
+
+Adicione abaixo do textarea este texto de apoio (use uma tag <p> 
+com className="text-xs text-muted-foreground mt-1"):
+  "Enviada imediatamente ao contato. Depois a IA assume a conversa."
+
+─── ALTERAÇÃO 2 — Slider de delay mais comunicativo ───
+
+Localize o label do slider "Delay entre mensagens (segundos)".
+Substitua por:
+  "Pausa entre mensagens"
+
+Localize o texto de apoio abaixo do slider (deve conter algo como 
+"Simula digitação humana") e substitua por:
+  {form.delaySeconds === 0
+    ? "Sem pausa — respostas instantâneas."
+    : form.delaySeconds <= 3
+    ? "Pausa curta — parece mais humano."
+    : "Boa escolha — simula digitação natural."}
+
+─── ALTERAÇÃO 3 — Ocultar textarea da IA quando perfil pré-definido está selecionado ───
+
+Localize o bloco que renderiza os cards de "Perfil da IA" e o textarea 
+de "Instrução da IA" logo abaixo.
+
+Os cards de perfil devem conter pelo menos: "Consultor de vendas", 
+"Reativação de ex-cliente", "Campanha de indicacao", 
+"Pos-instalacao / Upsell" e "Personalizado".
+
+Certifique-se de que o valor "personalizado" (lowercase) é atribuído 
+ao form.aiPersona quando o card "Personalizado" é clicado.
+
+Agora localize o bloco que renderiza o label "Instrução da IA" e o 
+textarea de `aiSystemPrompt`. Envolva todo esse bloco numa condição:
+
+  {form.aiPersona === "personalizado" && (
+    <div>
+      {/* label + textarea existentes aqui, sem alteração */}
+    </div>
+  )}
+
+Quando um perfil pré-definido estiver selecionado, o textarea some.
+Quando "Personalizado" for selecionado, o textarea aparece normalmente.
+
+─── ALTERAÇÃO 4 — Label "Ação após qualificação" ───
+
+Localize o select de "Ação após qualificação".
+Substitua o label por:
+  "O que acontece quando o lead for qualificado?"
+
+Adicione abaixo do select este texto de apoio:
+  "A IA sinaliza automaticamente quando coletar todas as informações."
+Use uma tag <p> com className="text-xs text-muted-foreground mt-1".

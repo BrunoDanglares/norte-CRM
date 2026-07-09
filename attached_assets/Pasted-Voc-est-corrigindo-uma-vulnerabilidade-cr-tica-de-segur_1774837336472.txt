@@ -1,0 +1,69 @@
+Você está corrigindo uma vulnerabilidade crítica de segurança no ChatBanana.
+
+PROBLEMA: O endpoint POST /api/webhook/meta em server/routes/webhook-meta.ts aceita qualquer payload sem validar o header X-Hub-Signature-256. Isso permite que atacantes enviem payloads forjados e injetem mensagens falsas no sistema.
+
+TAREFA: Adicionar um middleware de validação de assinatura HMAC-SHA256 nesse arquivo.
+
+INSTRUÇÕES EXATAS:
+
+1. Abra server/routes/webhook-meta.ts
+
+2. No topo do arquivo, certifique-se que `import crypto from "crypto"` está presente. Se não estiver, adicione.
+
+3. Antes do router.post("/", ...), adicione esta função middleware:
+
+```typescript
+function verifyMetaSignature(req: Request, res: Response, next: NextFunction): void {
+  const signature = req.headers["x-hub-signature-256"] as string;
+
+  if (!signature || !signature.startsWith("sha256=")) {
+    res.sendStatus(403);
+    return;
+  }
+
+  const appSecret = process.env.WHATSAPP_APP_SECRET;
+  if (!appSecret) {
+    console.error("[Meta Webhook] WHATSAPP_APP_SECRET não configurado");
+    res.sendStatus(500);
+    return;
+  }
+
+  const expectedSig =
+    "sha256=" +
+    crypto
+      .createHmac("sha256", appSecret)
+      .update(JSON.stringify(req.body))
+      .digest("hex");
+
+  let sigBuffer: Buffer;
+  let expectedBuffer: Buffer;
+  try {
+    sigBuffer = Buffer.from(signature);
+    expectedBuffer = Buffer.from(expectedSig);
+  } catch {
+    res.sendStatus(403);
+    return;
+  }
+
+  if (
+    sigBuffer.length !== expectedBuffer.length ||
+    !crypto.timingSafeEqual(sigBuffer, expectedBuffer)
+  ) {
+    console.warn("[Meta Webhook] Assinatura inválida recebida");
+    res.sendStatus(403);
+    return;
+  }
+
+  next();
+}
+```
+
+4. Aplique o middleware na rota POST existente:
+   - ANTES: `router.post("/", async (req, res) => {`
+   - DEPOIS: `router.post("/", verifyMetaSignature, async (req, res) => {`
+
+5. Certifique-se de que a rota GET de verificação (/api/webhook/meta GET) NÃO recebe esse middleware — ela não precisa de assinatura.
+
+6. Verifique que a variável de ambiente WHATSAPP_APP_SECRET está definida no .env e no EasyPanel. O valor é o "App Secret" do seu app no Meta for Developers (não o token de acesso).
+
+VALIDAÇÃO: Após a alteração, o endpoint POST deve retornar 403 para qualquer request sem o header X-Hub-Signature-256 correto. Confirme que a rota GET de verificação continua funcionando.

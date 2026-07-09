@@ -1,0 +1,68 @@
+Adicione o nó "Cobrar via Stripe" ao motor de automações do FlowCRM.
+
+## PARTE 1: Backend — executar nó stripe_payment
+
+Parâmetros do nó:
+{
+  description: string,       // descrição do produto/serviço
+  amount: number,            // valor em centavos (ex: 19700 = R$197,00)
+  currency?: string,         // default: "brl"
+  save_link_to?: string      // variável onde salvar o link gerado (ex: "variables.link_pagamento")
+}
+
+Implementação:
+1. Busque as credenciais Stripe do tenant na tabela stripe_config ou nas env vars
+   (use process.env.STRIPE_SECRET_KEY como fallback)
+
+2. Crie um Payment Link via Stripe API:
+   POST https://api.stripe.com/v1/payment_links
+   Headers: Authorization: Bearer <stripe_secret_key>
+   Body (form-encoded):
+     line_items[0][price_data][currency]=brl
+     line_items[0][price_data][product_data][name]=<description>
+     line_items[0][price_data][unit_amount]=<amount>
+     line_items[0][quantity]=1
+     metadata[lead_id]=<context.leadId>
+     metadata[tenant_id]=<context.tenantId>
+
+3. Se sucesso:
+   - Salve o URL em context.variables[save_link_to] se informado
+   - Salve sempre em context.variables.last_payment_link
+   - Log: { success: true, payment_link: url, amount, currency }
+
+4. Se save_link_to configurado, o próximo nó "Enviar Mensagem" pode usar:
+   "Aqui está seu link de pagamento: {{variables.last_payment_link}}"
+   -- certifique-se que o nó Enviar Mensagem já faz interpolação de {{variables.*}}
+
+5. Erro: log { success: false, error } e continue
+
+## Interpolação de variáveis no nó Enviar Mensagem
+Se ainda não implementado, adicione ao handler do nó send_message:
+Antes de enviar, substitua no texto da mensagem:
+  {{variables.NOME}} → context.variables.NOME
+  {{lead.name}} → lead.name
+  {{lead.phone}} → lead.phone
+Use uma regex simples: message.replace(/\{\{([\w.]+)\}\}/g, (_, path) => resolvePath(context, path))
+
+## PARTE 2: Frontend — nó visual
+
+Adicione ao painel esquerdo:
+- Ícone: CreditCard (lucide) — cor verde (#10B981)
+- Label: "Cobrar via Stripe"
+- Tipo: "stripe_payment"
+
+Painel de configuração:
+- Campo: Descrição do produto
+  placeholder: "Consultoria inicial"
+- Campo: Valor (R$)
+  input number, placeholder "197,00"
+  converta para centavos ao salvar (197.00 → 19700)
+- Campo: Salvar link em variável
+  placeholder: "variables.link_pagamento"
+  subtítulo: "Use {{variables.link_pagamento}} no nó Enviar Mensagem"
+
+Saídas: 
+- "success" — link gerado com sucesso
+- "error" — falha na geração
+
+Mostre no canvas um resumo: "R$ <valor formatado> — <descrição>"

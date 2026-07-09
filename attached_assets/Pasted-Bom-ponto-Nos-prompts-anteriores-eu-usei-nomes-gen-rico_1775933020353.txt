@@ -1,0 +1,46 @@
+Bom ponto. Nos prompts anteriores eu usei nomes genéricos ("Instalado / Ativado", "Perdido") sem considerar os stages reais de cada pipeline. Aqui estão os 5 prompts completos e corrigidos com os stages reais das duas telas:Stages finais mapeados:
+
+Suporte (3 finais): "Resolvido" → ativado | "Visita Técnica" → ativado | "Escalado / NOC" → perdido
+Financeiro (3 finais): "Pago / Regularizado" → ativado | "Inadimplente" → perdido | "Cancelado por Débito" → perdido
+Comercial (2 finais): "Instalado / Ativado" → ativado | "Perdido" → perdido
+Prompt 1 — Schema (shared/schema.ts)Estou trabalhando no projeto ChatBanana (Node.js + Express + TypeScript, Drizzle ORM, PostgreSQL). O schema principal fica em `shared/schema.ts`.
+
+Preciso de duas alterações no schema:
+
+---
+
+### 1. Adicionar campos na tabela `leads`
+
+Localiza a definição da tabela `leads` em `shared/schema.ts` (por volta da linha 200, campo `stage: text("stage")`).
+
+Adiciona dois campos ao final da tabela, antes do fechamento do `pgTable`:
+
+```typescriptarchivedAt: timestamp("archived_at"),
+archivalReason: text("archival_reason"), // 'ativado' | 'perdido'
+
+---
+
+### 2. Criar nova tabela `conversation_situation_tags`
+
+Adiciona após a definição da tabela `protocols` em `shared/schema.ts`:
+
+```typescriptexport const conversationSituationTags = pgTable("conversation_situation_tags", {
+id: serial("id").primaryKey(),
+workspaceId: uuid("workspace_id").notNull(),
+conversationId: integer("conversation_id").notNull(),
+situationCode: text("situation_code").notNull(), // ex: 'F1', 'S3', 'C5', 'C11'
+tagSlug: text("tag_slug").notNull(),             // ex: '#promessa-pago'
+origin: text("origin").notNull().default("auto"), // 'auto' | 'manual'
+appliedBy: integer("applied_by"),                // userId se manual
+createdAt: timestamp("created_at").defaultNow(),
+});export const insertConversationSituationTagSchema = createInsertSchema(conversationSituationTags);
+export type ConversationSituationTag = typeof conversationSituationTags.$inferSelect;
+export type InsertConversationSituationTag = typeof conversationSituationTags.$inferInsert;
+
+---
+
+### 3. Rodar a migração
+
+```bashnpx drizzle-kit push
+
+Confirma que as duas alterações foram aplicadas sem erro.

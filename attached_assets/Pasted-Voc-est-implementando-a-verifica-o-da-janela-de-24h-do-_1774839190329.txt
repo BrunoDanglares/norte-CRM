@@ -1,0 +1,74 @@
+Você está implementando a verificação da janela de 24h do WhatsApp no ChatBanana.
+
+PROBLEMA: O sistema envia mensagens via Meta Cloud API sem verificar se a janela de 24h está aberta, confiando que a Meta retorne erro. Isso gera falhas silenciosas sem feedback ao operador.
+
+CONTEXTO: A Meta só permite mensagens livres para contatos que enviaram uma mensagem nas últimas 24h. Fora desse período, é obrigatório usar um template HSM aprovado.
+
+PARTE 1 — Adicionar campo na tabela conversations:
+
+Verifique em shared/schema.ts se a tabela conversations já possui um campo como lastCustomerMessageAt ou similar (timestamp da última mensagem recebida do cliente). 
+
+- Se já existir → pule a PARTE 1 e use o campo existente
+- Se NÃO existir → adicione:
+
+```typescript
+lastCustomerMessageAt: timestamp("last_customer_message_at"),
+```
+
+Se adicionar o campo, rode a migration com: `npx drizzle-kit push`
+
+PARTE 2 — Atualizar o campo quando mensagem do cliente chega:
+
+Em server/services/message-processor.ts (ou onde mensagens recebidas são processadas), ao processar uma mensagem RECEBIDA do cliente, atualize o campo:
+
+```typescript
+await db
+  .update(conversations)
+  .set({ lastCustomerMessageAt: new Date() })
+  .where(
+    and(
+      eq(conversations.id, conversationId),
+      eq(conversations.workspaceId, workspaceId)
+    )
+  );
+```
+
+PARTE 3 — Verificar janela antes de enviar em server/services/channel-router.ts:
+
+Antes de chamar o método de envio da Meta, adicione a verificação:
+
+```typescript
+import { differenceInHours } from "date-fns";
+
+// Dentro da função de envio, antes de chamar metaWhatsapp.sendMessage():
+const conv = await storage.getConversation(conversationId, workspaceId);
+
+if (
+  conv?.lastCustomerMessageAt &&
+  differenceInHours(new Date(), conv.lastCustomerMessageAt) > 24
+) {
+  throw new Error(
+    "WINDOW_CLOSED: Janela de 24h encerrada. Use um template HSM aprovado para contatar este cliente."
+  );
+}
+```
+
+PARTE 4 — Garantir que o erro WINDOW_CLOSED é tratado na UI:
+
+Na rota de envio de mensagem, capture o erro e retorne status 422 com mensagem clara:
+
+```typescript
+} catch (err: any) {
+  if (err?.message?.startsWith("WINDOW_CLOSED")) {
+    return res.status(422).json({
+      error: "window_closed",
+      message: "Janela de 24h encerrada. Use um template para retomar a conversa.",
+    });
+  }
+  throw err;
+}
+```
+
+Se date-fns não estiver instalado: `npm install date-fns`
+
+VALIDAÇÃO: Tente enviar mensagem para uma conversa com lastCustomerMessageAt há mais de 24h. O sistema deve retornar 422 com error: "window_closed" em vez de tentar enviar e falhar silenciosamente na Meta.

@@ -1,0 +1,217 @@
+PROMPT 3 — Backend: rotas do módulo Insta Prospect
+Crie o arquivo `server/routes/instaProspect.ts`:
+```ts
+import { Router } from 'express';
+import { db } from '../db';
+import { instaProspectFlows, instaProspectSessions } from '../../shared/schema';
+import { eq, and, desc, sql } from 'drizzle-orm';
+import { requireAuth } from '../middleware/auth';
+import { resolveWorkspaceId } from '../utils/workspace';
+
+const router = Router();
+
+// GET /api/insta-prospect/flows — listar fluxos do workspace
+router.get('/flows', requireAuth, async (req, res) => {
+  try {
+    const workspaceId = resolveWorkspaceId(req);
+    const flows = await db
+      .select()
+      .from(instaProspectFlows)
+      .where(eq(instaProspectFlows.workspaceId, workspaceId))
+      .orderBy(desc(instaProspectFlows.createdAt));
+    res.json(flows);
+  } catch (err) {
+    res.status(500).json({ error: 'Erro ao listar fluxos' });
+  }
+});
+
+// POST /api/insta-prospect/flows — criar fluxo
+router.post('/flows', requireAuth, async (req, res) => {
+  try {
+    const workspaceId = resolveWorkspaceId(req);
+    const {
+      nome, tipo, keyword, keywordMatchType, postId,
+      publicReply, firstMessage,
+      aiPersona, aiSystemPrompt, aiObjective,
+      finalAction, assignStrategy, autoTags,
+    } = req.body;
+
+    if (!nome || !tipo || !aiSystemPrompt) {
+      return res.status(400).json({ error: 'nome, tipo e aiSystemPrompt são obrigatórios' });
+    }
+
+    const [flow] = await db.insert(instaProspectFlows).values({
+      workspaceId, nome, tipo,
+      keyword, keywordMatchType, postId,
+      publicReply, firstMessage,
+      aiPersona, aiSystemPrompt, aiObjective,
+      finalAction, assignStrategy,
+      autoTags: autoTags || [],
+    }).returning();
+
+    res.json(flow);
+  } catch (err) {
+    res.status(500).json({ error: 'Erro ao criar fluxo' });
+  }
+});
+
+// PATCH /api/insta-prospect/flows/:id — editar fluxo
+router.patch('/flows/:id', requireAuth, async (req, res) => {
+  try {
+    const workspaceId = resolveWorkspaceId(req);
+    const [flow] = await db
+      .update(instaProspectFlows)
+      .set({ ...req.body, updatedAt: new Date() })
+      .where(and(
+        eq(instaProspectFlows.id, req.params.id),
+        eq(instaProspectFlows.workspaceId, workspaceId)
+      ))
+      .returning();
+    res.json(flow);
+  } catch (err) {
+    res.status(500).json({ error: 'Erro ao atualizar fluxo' });
+  }
+});
+
+// PATCH /api/insta-prospect/flows/:id/toggle — ativar/pausar
+router.patch('/flows/:id/toggle', requireAuth, async (req, res) => {
+  try {
+    const workspaceId = resolveWorkspaceId(req);
+    const [current] = await db
+      .select()
+      .from(instaProspectFlows)
+      .where(and(
+        eq(instaProspectFlows.id, req.params.id),
+        eq(instaProspectFlows.workspaceId, workspaceId)
+      ))
+      .limit(1);
+
+    if (!current) return res.status(404).json({ error: 'Fluxo não encontrado' });
+
+    const [updated] = await db
+      .update(instaProspectFlows)
+      .set({ ativo: !current.ativo, updatedAt: new Date() })
+      .where(eq(instaProspectFlows.id, req.params.id))
+      .returning();
+
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: 'Erro ao alternar fluxo' });
+  }
+});
+
+// DELETE /api/insta-prospect/flows/:id
+router.delete('/flows/:id', requireAuth, async (req, res) => {
+  try {
+    const workspaceId = resolveWorkspaceId(req);
+    await db.delete(instaProspectFlows).where(and(
+      eq(instaProspectFlows.id, req.params.id),
+      eq(instaProspectFlows.workspaceId, workspaceId)
+    ));
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Erro ao deletar fluxo' });
+  }
+});
+
+// GET /api/insta-prospect/sessions — sessões/conversas ativas
+router.get('/sessions', requireAuth, async (req, res) => {
+  try {
+    const workspaceId = resolveWorkspaceId(req);
+    const sessions = await db
+      .select()
+      .from(instaProspectSessions)
+      .where(eq(instaProspectSessions.workspaceId, workspaceId))
+      .orderBy(desc(instaProspectSessions.updatedAt))
+      .limit(50);
+    res.json(sessions);
+  } catch (err) {
+    res.status(500).json({ error: 'Erro ao listar sessões' });
+  }
+});
+
+// GET /api/insta-prospect/stats — métricas do módulo
+router.get('/stats', requireAuth, async (req, res) => {
+  try {
+    const workspaceId = resolveWorkspaceId(req);
+
+    const [totals] = await db
+      .select({
+        totalFlows: sql<number>`count(distinct ${instaProspectFlows.id})`,
+        activeFlows: sql<number>`count(distinct case when ${instaProspectFlows.ativo} = true then ${instaProspectFlows.id} end)`,
+        totalTriggers: sql<number>`coalesce(sum(${instaProspectFlows.totalTriggers}), 0)`,
+        totalLeads: sql<number>`coalesce(sum(${instaProspectFlows.totalLeads}), 0)`,
+        totalConverted: sql<number>`coalesce(sum(${instaProspectFlows.totalConverted}), 0)`,
+      })
+      .from(instaProspectFlows)
+      .where(eq(instaProspectFlows.workspaceId, workspaceId));
+
+    const [sessionStats] = await db
+      .select({
+        emAndamento: sql<number>`count(*) filter (where ${instaProspectSessions.status} = 'em_andamento')`,
+        qualificados: sql<number>`count(*) filter (where ${instaProspectSessions.status} = 'qualificado')`,
+        transferidos: sql<number>`count(*) filter (where ${instaProspectSessions.status} = 'transferido')`,
+      })
+      .from(instaProspectSessions)
+      .where(eq(instaProspectSessions.workspaceId, workspaceId));
+
+    res.json({ ...totals, ...sessionStats });
+  } catch (err) {
+    res.status(500).json({ error: 'Erro ao buscar stats' });
+  }
+});
+
+export default router;
+```
+
+Registre a rota em `server/index.ts` ou no roteador principal:
+```ts
+import instaProspectRouter from './routes/instaProspect';
+app.use('/api/insta-prospect', instaProspectRouter);
+```
+
+Também conecte o módulo ao webhook do Instagram. No arquivo `server/routes/instagram.ts`, dentro do handler POST, substitua as chamadas antigas por:
+```ts
+import {
+  handleInstaProspectDM,
+  handleInstaProspectComment,
+  handleInstaProspectStory,
+} from '../services/instaProspectService';
+
+// Dentro do loop de messaging (DMs):
+await handleInstaProspectDM({
+  workspaceId: conn.workspaceId,
+  connectionId: conn.id,
+  accessToken: conn.accessToken,
+  igAccountUserId: igUserId,
+  senderIgUserId: sender.id,
+  senderIgUsername: sender.username || '',
+  messageText: message.text || '',
+});
+
+// Dentro do loop de changes (comentários):
+await handleInstaProspectComment({
+  workspaceId: conn.workspaceId,
+  connectionId: conn.id,
+  accessToken: conn.accessToken,
+  igAccountUserId: igUserId,
+  commentId: value.id,
+  postId: value.media?.id || '',
+  fromIgUserId: value.from?.id || '',
+  fromIgUsername: value.from?.username || '',
+  commentText: value.text || '',
+});
+
+// Story mentions:
+if (change.field === 'mention') {
+  await handleInstaProspectStory({
+    workspaceId: conn.workspaceId,
+    accessToken: conn.accessToken,
+    igAccountUserId: igUserId,
+    fromIgUserId: change.value?.sender_id || '',
+    fromIgUsername: change.value?.from?.username || '',
+  });
+}
+```
+
+Reporte se as rotas foram registradas e se o servidor reiniciou sem erros.

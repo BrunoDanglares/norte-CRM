@@ -1,0 +1,346 @@
+Create the Meta Cloud API webhook receiver for ChatBanana.
+
+## Context
+- Meta sends ALL workspace messages to a SINGLE webhook URL: /api/webhook/meta
+- Must respond 200 immediately, process asynchronously
+- Resolves workspace by phone_number_id stored in whatsapp_official_connections
+- This route must be registered WITHOUT requireAuth middleware
+- Do NOT modify the existing Z-API webhook at /api/webhook/zapi
+- The existing message/conversation/contact creation patterns must be followed exactly as the rest of the codebase does it
+
+## File to create: server/routes/webhook-meta.ts
+```typescript
+import { Router, Request, Response } from 'express';
+import { db } from '../db';
+import { 
+  whatsapp_official_connections, 
+  whatsapp_webhook_events,
+  messages,
+  conversations,
+  contacts
+} from '../db/schema';
+import { eq, and } from 'drizzle-orm';
+import * as metaWhatsApp from '../services/meta-whatsapp';
+
+const router = Router();
+
+// ─── GET: Webhook Verification Challenge ───────────────────────────────────
+router.get('/', (req: Request, res: Response) => {
+  const mode = req.query['hub.mode'];
+  const token = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
+
+  if (mode === 'subscribe' && token === process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN) {
+    console.log('[Meta Webhook] ✅ Verification successful');
+    res.status(200).send(challenge);
+  } else {
+    console.warn('[Meta Webhook] ❌ Verification failed. Token received:', token);
+    res.sendStatus(403);
+  }
+});
+
+// ─── POST: Receive Events ──────────────────────────────────────────────────
+router.post('/', (req: Request, res: Response) => {
+  // Always respond 200 immediately — Meta retries if no response within 20s
+  res.sendStatus(200);
+  
+  // Process asynchronously
+  setImmediate(() => {
+    processMetaWebhookPayload(req.body).catch(err => {
+      console.error('[Meta Webhook] Processing error:', err);
+    });
+  });
+});
+
+// ─── Main processor ────────────────────────────────────────────────────────
+async function processMetaWebhookPayload(body: any) {
+  if (body?.object !== 'whatsapp_business_account') return;
+
+  for (const entry of body.entry || []) {
+    for (const change of entry.changes || []) {
+      if (change.field !== 'messages') continue;
+
+      const value = change.value;
+      const phoneNumberId = value?.metadata?.phone_number_id;
+      if (!phoneNumberId) continue;
+
+      // Resolve workspace by phone_number_id
+      const connection = await db.query.whatsapp_official_connections.findFirst({
+        where: and(
+          eq(whatsapp_official_connections.phone_number_id, phoneNumberId),
+          eq(whatsapp_official_connections.status, 'active')
+        )
+      });
+
+      if (!connection) {
+        console.warn('[Meta Webhook] No active workspace for phone_number_id:', phoneNumberId);
+        continue;
+      }
+
+      const workspaceId = connection.workspace_id;
+
+      // Save raw event for debugging (fire and forget)
+      db.insert(whatsapp_webhook_events).values({
+        workspace_id: workspaceId,
+        phone_number_id: phoneNumberId,
+        waba_id: entry.id,
+        event_type: value.messages?.length ? 'message' : value.statuses?.length ? 'status' : 'unknown',
+        message_id: value.messages?.[0]?.id || null,
+        from_number: value.messages?.[0]?.from || null,
+        raw_payload: body,
+        received_at: new Date()
+      }).catch(e => console.error('[Meta Webhook] Failed to log event:', e));
+
+      // Process incoming messages
+      for (const msg of value.messages || []) {
+        await processIncomingMessage({ workspaceId, connection, msg, contacts: value.contacts, phoneNumberId })
+          .catch(err => console.error('[Meta Webhook] processIncomingMessage error:', err));
+      }
+
+      // Process delivery/read status updates
+      for (const status of value.statuses || []) {
+        await processStatusUpdate({ workspaceId, status })
+          .catch(err => console.error('[Meta Webhook] processStatusUpdate error:', err));
+      }
+    }
+  }
+}
+
+// ─── Process incoming message ───────────────────────────────────────────────
+async function processIncomingMessage({ workspaceId, connection, msg, contacts: metaContacts, phoneNumberId }: {
+  workspaceId: string;
+  connection: any;
+  msg: any;
+  contacts: any[];
+  phoneNumberId: string;
+}) {
+  const wamid = msg.id;
+  
+  // Deduplication: skip if already processed
+  const existing = await db.query.messages.findFirst({
+    where: and(
+      eq(messages.workspace_id, workspaceId),
+      eq(messages.wamid, wamid)
+    )
+  });
+  if (existing) {
+    console.log('[Meta Webhook] Duplicate message skipped:', wamid);
+    return;
+  }
+
+  const fromPhone = msg.from;
+  const contactName = metaContacts?.find((c: any) => c.wa_id === fromPhone)?.profile?.name || fromPhone;
+
+  // Find or create contact
+  let contact = await db.query.contacts.findFirst({
+    where: and(
+      eq(contacts.workspace_id, workspaceId),
+      eq(contacts.phone, fromPhone)
+    )
+  });
+
+  if (!contact) {
+    const [newContact] = await db.insert(contacts).values({
+      workspace_id: workspaceId,
+      name: contactName,
+      phone: fromPhone,
+      channel: 'whatsapp_official',
+      created_at: new Date(),
+      updated_at: new Date()
+    }).returning();
+    contact = newContact;
+    console.log('[Meta Webhook] New contact created:', contactName, fromPhone);
+  }
+
+  // Find or create open conversation
+  let conversation = await db.query.conversations.findFirst({
+    where: and(
+      eq(conversations.workspace_id, workspaceId),
+      eq(conversations.contact_id, contact.id),
+      eq(conversations.status, 'open')
+    )
+  });
+
+  if (!conversation) {
+    const [newConv] = await db.insert(conversations).values({
+      workspace_id: workspaceId,
+      contact_id: contact.id,
+      channel: 'whatsapp_official',
+      status: 'open',
+      last_message_at: new Date(),
+      created_at: new Date(),
+      updated_at: new Date()
+    }).returning();
+    conversation = newConv;
+    console.log('[Meta Webhook] New conversation created for contact:', contact.id);
+  }
+
+  // Extract content by message type
+  let messageType = msg.type as string;
+  let content = '';
+  let mediaUrl: string | null = null;
+  let mediaType: string | null = null;
+
+  switch (msg.type) {
+    case 'text':
+      content = msg.text?.body || '';
+      break;
+
+    case 'image':
+      content = msg.image?.caption || '';
+      mediaType = 'image';
+      mediaUrl = await metaWhatsApp.getMediaUrl(msg.image.id, connection.access_token)
+        .catch(() => null);
+      break;
+
+    case 'audio':
+    case 'voice':
+      mediaType = 'audio';
+      messageType = 'audio';
+      mediaUrl = await metaWhatsApp.getMediaUrl(msg.audio?.id || msg.voice?.id, connection.access_token)
+        .catch(() => null);
+      break;
+
+    case 'document':
+      content = msg.document?.caption || msg.document?.filename || '';
+      mediaType = 'document';
+      mediaUrl = await metaWhatsApp.getMediaUrl(msg.document.id, connection.access_token)
+        .catch(() => null);
+      break;
+
+    case 'video':
+      content = msg.video?.caption || '';
+      mediaType = 'video';
+      mediaUrl = await metaWhatsApp.getMediaUrl(msg.video.id, connection.access_token)
+        .catch(() => null);
+      break;
+
+    case 'interactive':
+      if (msg.interactive?.type === 'button_reply') {
+        content = msg.interactive.button_reply.title;
+      } else if (msg.interactive?.type === 'list_reply') {
+        content = msg.interactive.list_reply.title;
+      }
+      break;
+
+    case 'button':
+      content = msg.button?.text || '';
+      break;
+
+    case 'location':
+      content = `📍 Localização: ${msg.location?.name || ''} (${msg.location?.latitude}, ${msg.location?.longitude})`;
+      break;
+
+    default:
+      content = `[${msg.type}]`;
+  }
+
+  // Save message to DB — follow the exact column names used in existing messages table
+  const [savedMessage] = await db.insert(messages).values({
+    workspace_id: workspaceId,
+    conversation_id: conversation.id,
+    wamid: wamid,
+    direction: 'inbound',
+    type: messageType,
+    content: content,
+    media_url: mediaUrl,
+    media_type: mediaType,
+    channel: 'whatsapp_official',
+    status: 'received',
+    sent_at: new Date(parseInt(msg.timestamp) * 1000),
+    created_at: new Date()
+  }).returning();
+
+  // Update conversation timestamp
+  await db.update(conversations)
+    .set({ last_message_at: new Date(), updated_at: new Date() })
+    .where(eq(conversations.id, conversation.id));
+
+  // Mark as read on WhatsApp (non-blocking)
+  metaWhatsApp.markMessageAsRead(phoneNumberId, connection.access_token, wamid)
+    .catch(e => console.warn('[Meta Webhook] markAsRead failed:', e.message));
+
+  console.log(`[Meta Webhook] ✅ Message saved: ${wamid} | type: ${messageType} | contact: ${contactName}`);
+
+  // ── Trigger automation engine ──────────────────────────────────────────
+  // Find the function that triggers automations on incoming message in the existing codebase
+  // (look for how the Z-API webhook triggers automations — use the same function)
+  // Pass: workspaceId, conversationId, contactId, messageContent, messageType, channel: 'whatsapp_official'
+  // If the trigger function doesn't accept a channel param yet, pass it and add it to the function signature
+  try {
+    // Import and call the existing automation trigger used by the Z-API webhook
+    // Example (adjust to match actual function name in codebase):
+    // await triggerAutomationsForMessage({ workspaceId, conversationId: conversation.id, contactId: contact.id, messageContent: content, messageType, channel: 'whatsapp_official' });
+    const { processIncomingMessage: triggerAutomations } = await import('../services/automation-engine');
+    if (typeof triggerAutomations === 'function') {
+      await triggerAutomations({
+        workspaceId,
+        conversationId: conversation.id,
+        contactId: contact.id,
+        messageId: savedMessage.id,
+        content,
+        type: messageType,
+        mediaUrl,
+        channel: 'whatsapp_official',
+        phoneNumberId,
+        accessToken: connection.access_token
+      });
+    }
+  } catch (automationErr: any) {
+    // Don't fail the webhook if automation trigger fails
+    console.error('[Meta Webhook] Automation trigger error:', automationErr.message);
+  }
+}
+
+// ─── Process status update ──────────────────────────────────────────────────
+async function processStatusUpdate({ workspaceId, status }: { workspaceId: string; status: any }) {
+  if (!status?.id) return;
+
+  const statusMap: Record<string, string> = {
+    sent: 'sent',
+    delivered: 'delivered',
+    read: 'read',
+    failed: 'failed'
+  };
+
+  const newStatus = statusMap[status.status] || status.status;
+
+  await db.update(messages)
+    .set({ status: newStatus, updated_at: new Date() })
+    .where(and(
+      eq(messages.workspace_id, workspaceId),
+      eq(messages.wamid, status.id)
+    ));
+
+  if (status.status === 'failed') {
+    console.warn('[Meta Webhook] Message delivery failed:', status.id, status.errors);
+  }
+}
+
+export default router;
+```
+
+## Register in server/index.ts — BEFORE requireAuth
+
+This is critical: the webhook must be a public route (no auth).
+Find where the Z-API webhook is registered (something like app.use('/api/webhook/zapi', ...))
+Add the Meta webhook RIGHT NEXT TO IT, before any global auth middleware:
+```typescript
+import metaWebhookRouter from './routes/webhook-meta';
+
+// Public webhooks — NO auth middleware
+app.use('/api/webhook/meta', metaWebhookRouter);
+```
+
+## Important notes for the agent:
+1. Check the actual column names in the messages table schema before inserting — use whatever columns already exist (the field might be called external_id instead of wamid, or message_id — match exactly what's in schema.ts)
+2. Same for conversations and contacts — match existing column names exactly
+3. For the automation trigger: look at how the existing Z-API webhook (server/routes/webhook-zapi.ts or similar) calls the automation engine, and use the SAME function call pattern
+4. If messages table doesn't have a 'wamid' column, use 'external_id' or add the column via a migration first
+5. Log on startup: console.log('[Meta Webhook] Endpoint ready: GET|POST /api/webhook/meta')
+
+## After implementing:
+1. Confirm the server starts without TypeScript errors
+2. Test the verification endpoint: curl "https://chatbanana.com.br/api/webhook/meta?hub.mode=subscribe&hub.verify_token=chatbanana_whk_2024_xK9mPqR7&hub.challenge=test123"
+   → Should return: test123
+3. Report any column name mismatches found in the schema

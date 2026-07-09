@@ -1,0 +1,105 @@
+Completar a detecção de situações que ficaram sem cobertura
+no D3. FinanceiroAgent: F2, F9, F10. SuporteAgent: S1, S6, S7.
+
+══ financeiroAgent.ts — detectSituation() ══
+
+Localize o método detectSituation() existente.
+Adicione os casos abaixo SEM remover os existentes
+(F1, F3, F4, F5, F6, F7, F8 já estão cobertos):
+
+  // F2 — Suspensão temporária
+  if (/viajar|pausar|suspender|não vou usar|pausa temporária/i
+      .test(texto)) {
+    return 'F2';
+  }
+
+  // F9 — Cancelamento com débito
+  // (só cai aqui se o fluxo for FINANCEIRO e cliente
+  //  mencionar cancelamento com débito pendente)
+  if (
+    /cancelar|cancelamento/i.test(texto) &&
+    dados.valor_divida &&
+    parseFloat(dados.valor_divida) > 0
+  ) {
+    return 'F9';
+  }
+
+  // F10 — Downgrade por custo
+  if (/tá caro|muito caro|mais barato|não consigo pagar
+       |plano mais em conta/i.test(texto)) {
+    return 'F10';
+  }
+
+Para F9 e F10, que têm escalate_always: true, adicione
+no handle() do FinanceiroAgent, após detectar a situação:
+
+  if (['F9', 'F10'].includes(situationCode)) {
+    // Coletar contexto antes de escalar
+    const resumo = `Cliente com débito de R$ ${dados.valor_divida}` +
+      (situationCode === 'F10'
+        ? ' menciona que o plano está caro.'
+        : ' deseja cancelar com pendência financeira.');
+
+    return {
+      message: '',
+      redirectTo: situationCode === 'F10' ? 'VENDAS' : 'HUMANO',
+      guardFeedback: resumo,
+    };
+  }
+
+══ suporteAgent.ts — detectSituation() ══
+
+Adicione os casos abaixo SEM remover S2, S3, S4, S5, S8:
+
+  // S1 — Triagem completa (ponto de entrada do suporte)
+  // Detectado quando não há sub-problema definido ainda
+  if (!dados.problema_suporte && !dados.onu_status) {
+    return 'S1';
+  }
+
+  // S6 — Lentidão em horário específico
+  if (
+    /noite|tarde|manhã|fim de semana|horário de pico|
+     só de tarde|à noite fica|só piora/i.test(texto) &&
+    /lento|devagar|trava|lentidão/i.test(texto)
+  ) {
+    return 'S6';
+  }
+
+  // S7 — Lentidão em site específico
+  if (
+    /youtube|instagram|netflix|tiktok|facebook|
+     esse site|só o|apenas o/i.test(texto) &&
+    /lento|não abre|travando|carregando/i.test(texto)
+  ) {
+    return 'S7';
+  }
+
+  // S9 — Troca de equipamento (escalate_always)
+  if (/queimou|com defeito|parou de funcionar|
+       equipamento|trocar o aparelho|roteador quebrou/i
+      .test(texto)) {
+    return 'S9';
+  }
+
+  // S10 — Troca de senha WiFi (escalate_always)
+  if (/senha do wifi|mudar a senha|trocar senha|
+       esquecer senha|esqueci a senha|nome da rede/i
+      .test(texto)) {
+    return 'S10';
+  }
+
+Para S9 e S10, no handle() do SuporteAgent após detectar:
+
+  if (['S3', 'S9', 'S10'].includes(situationCode)) {
+    const motivos: Record<string, string> = {
+      S3: 'ONU offline — falha de infraestrutura, exige técnico de campo',
+      S9: 'Equipamento com defeito físico, exige troca presencial',
+      S10: 'Alteração de senha WiFi requer acesso ao sistema do provedor',
+    };
+    return {
+      message: '',
+      redirectTo: 'HUMANO',
+      guardFeedback: motivos[situationCode],
+    };
+  }

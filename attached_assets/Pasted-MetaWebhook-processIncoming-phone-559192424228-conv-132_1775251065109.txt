@@ -1,0 +1,20 @@
+MetaWebhook] processIncoming: phone=559192424228, conv=132, automacaoId=8771ba08-e6e0-4b06-b386-3dc7a79f1ce3, msgType=text
+[MessageProcessor] Automation check: phone=559192424228, conexaoAutomacaoId=8771ba08-e6e0-4b06-b386-3dc7a79f1ce3, content_len=15, mediaType=text
+[N8N AI] Failed to auto-load history for conv=132: storage is not defined
+[N8N_TRIGGER] Webhook https://n8n-n8n.xhtsxx.easypanel.host/webhook/chatbanana-isp-v4 → HTTP 200
+[MetaWebhook] processIncoming: phone=559192424228, conv=132, automacaoId=8771ba08-e6e0-4b06-b386-3dc7a79f1ce3, msgType=text
+[MessageProcessor] Automation check: phone=559192424228, conexaoAutomacaoId=8771ba08-e6e0-4b06-b386-3dc7a79f1ce3, content_len=5, mediaType=text
+[N8N AI] Failed to auto-load history for conv=132: storage is not defined
+[N8N_TRIGGER] Webhook https://n8n-n8n.xhtsxx.easypanel.host/webhook/chatbanana-isp-v4 → HTTP 200
+[MetaWebhook] processIncoming: phone=559192424228, conv=132, automacaoId=8771ba08-e6e0-4b06-b386-3dc7a79f1ce3, msgType=audio
+[MessageProcessor] Automation check: phone=559192424228, conexaoAutomacaoId=8771ba08-e6e0-4b06-b386-3dc7a79f1ce3, content_len=7, mediaType=audio
+[N8N AI] Failed to auto-load history for conv=132: storage is not defined
+[N8N_TRIGGER] Webhook https://n8n-n8n.xhtsxx.easypanel.host/webhook/chatbanana-isp-v4 → HTTP 200
+[MetaWebhook] processIncoming: phone=559192424228, conv=132, automacaoId=8771ba08-e6e0-4b06-b386-3dc7a79f1ce3, msgType=audio
+[MessageProcessor] Automation check: phone=559192424228, conexaoAutomacaoId=8771ba08-e6e0-4b06-b386-3dc7a79f1ce3, content_len=7, mediaType=audio
+[N8N AI] Failed to auto-load history for conv=132: storage is not defined
+[N8N_TRIGGER] Webhook https://n8n-n8n.xhtsxx.easypanel.host/webhook/chatbanana-isp-v4 → HTTP 200
+[MetaWebhook] processIncoming: phone=559192424228, conv=132, automacaoId=8771ba08-e6e0-4b06-b386-3dc7a79f1ce3, msgType=text
+[MessageProcessor] Automation check: phone=559192424228, conexaoAutomacaoId=8771ba08-e6e0-4b06-b386-3dc7a79f1ce3, content_len=32, mediaType=text
+[N8N AI] Failed to auto-load history for conv=132: storage is not defined
+[N8N_TRIGGER] Webhook https://n8n-n8n.xhtsxx.easypanel.host/webhook/chatbanana-isp-v4 → HTTP 200

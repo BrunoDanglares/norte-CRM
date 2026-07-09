@@ -1,0 +1,178 @@
+Abra client/src/pages/isp-metrics.tsx.
+
+A página já tem uma seção de simulação ou o backend tem
+GET /api/isp/simulate/situations e POST /api/isp/simulate.
+Vamos integrar o painel de simulação na própria página de métricas.
+
+PASSO 1 — Adicione estado para o painel de simulação no componente:
+
+const [simOpen, setSimOpen] = useState(false);
+const [simSituations, setSimSituations] = useState<any[]>([]);
+const [simSelected, setSimSelected] = useState('');
+const [simMessage, setSimMessage] = useState('');
+const [simResult, setSimResult] = useState<any>(null);
+const [simLoading, setSimLoading] = useState(false);
+
+// Busca situações disponíveis ao abrir o painel
+useEffect(() => {
+  if (!simOpen) return;
+  apiFetch('/api/isp/simulate/situations')
+    .then(r => r.json())
+    .then(d => setSimSituations(d.situations ?? d ?? []));
+}, [simOpen]);
+
+const handleSimulate = async () => {
+  if (!simSelected || !simMessage.trim()) return;
+  setSimLoading(true);
+  setSimResult(null);
+  try {
+    const res = await apiFetch('/api/isp/simulate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        situation: simSelected,
+        message: simMessage,
+      }),
+    });
+    const data = await res.json();
+    setSimResult(data);
+  } finally {
+    setSimLoading(false);
+  }
+};
+
+PASSO 2 — Adicione o botão de abrir simulação no topo da página,
+ao lado do seletor de período:
+
+<button
+  onClick={() => setSimOpen(v => !v)}
+  style={{
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+    padding: '6px 14px',
+    borderRadius: 8,
+    border: '1px solid var(--color-border-tertiary)',
+    background: simOpen ? 'var(--color-background-info)' : 'transparent',
+    color: simOpen ? 'var(--color-text-info)' : 'var(--color-text-secondary)',
+    fontSize: 13,
+    fontWeight: 500,
+    cursor: 'pointer',
+  }}
+>
+  ⚡ Simulador
+</button>
+
+PASSO 3 — Adicione o painel de simulação logo abaixo do topo
+(antes dos cards KPI), renderizado condicionalmente:
+
+{simOpen && (
+  <div style={{
+    border: '1px solid var(--color-border-tertiary)',
+    borderRadius: 12,
+    padding: 20,
+    marginBottom: 24,
+    background: 'var(--color-background-secondary)',
+  }}>
+    <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 12 }}>
+      Simular resposta do agente ISP
+    </div>
+
+    <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
+      {/* Dropdown de situação */}
+      <select
+        value={simSelected}
+        onChange={e => setSimSelected(e.target.value)}
+        style={{
+          flex: 1,
+          padding: '8px 10px',
+          borderRadius: 8,
+          border: '1px solid var(--color-border-tertiary)',
+          background: 'var(--color-background-primary)',
+          color: 'var(--color-text-primary)',
+          fontSize: 13,
+        }}
+      >
+        <option value="">Selecione uma situação...</option>
+        {simSituations.map((s: any) => (
+          <option key={s.code ?? s} value={s.code ?? s}>
+            {s.code ?? s} — {s.label ?? s.description ?? ''}
+          </option>
+        ))}
+      </select>
+    </div>
+
+    {/* Campo de mensagem */}
+    <textarea
+      value={simMessage}
+      onChange={e => setSimMessage(e.target.value)}
+      placeholder="Digite a mensagem do cliente para simular..."
+      rows={3}
+      style={{
+        width: '100%',
+        padding: '8px 10px',
+        borderRadius: 8,
+        border: '1px solid var(--color-border-tertiary)',
+        background: 'var(--color-background-primary)',
+        color: 'var(--color-text-primary)',
+        fontSize: 13,
+        resize: 'vertical',
+        boxSizing: 'border-box',
+        marginBottom: 10,
+      }}
+    />
+
+    <button
+      onClick={handleSimulate}
+      disabled={simLoading || !simSelected || !simMessage.trim()}
+      style={{
+        padding: '8px 20px',
+        borderRadius: 8,
+        border: 'none',
+        background: 'var(--color-background-info)',
+        color: 'var(--color-text-info)',
+        fontSize: 13,
+        fontWeight: 500,
+        cursor: simLoading ? 'wait' : 'pointer',
+        opacity: (!simSelected || !simMessage.trim()) ? 0.5 : 1,
+      }}
+    >
+      {simLoading ? 'Simulando...' : 'Simular resposta'}
+    </button>
+
+    {/* Resultado */}
+    {simResult && (
+      <div style={{
+        marginTop: 16,
+        padding: 14,
+        borderRadius: 8,
+        background: 'var(--color-background-primary)',
+        border: '1px solid var(--color-border-tertiary)',
+      }}>
+        <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-tertiary)', marginBottom: 8 }}>
+          RESPOSTA DO AGENTE
+        </div>
+        <div style={{ fontSize: 13, color: 'var(--color-text-primary)', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
+          {simResult.response ?? simResult.message ?? JSON.stringify(simResult, null, 2)}
+        </div>
+        {simResult.situation && (
+          <div style={{ marginTop: 8, fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+            Situação detectada: <strong>{simResult.situation}</strong>
+            {simResult.escalou && ' · ⚠️ Escalaria para humano'}
+          </div>
+        )}
+      </div>
+    )}
+  </div>
+)}
+
+PASSO 4 — Verifique se apiFetch está importado no componente.
+Se não estiver, importe do utilitário já existente no projeto
+(ex: import { apiFetch } from '../lib/api' ou similar).
+
+Confirme:
+1. Botão "⚡ Simulador" aparece no topo da página
+2. Painel abre/fecha ao clicar
+3. Dropdown carrega situações do endpoint /simulate/situations
+4. POST /simulate retorna resposta e exibe no painel
+5. Sem erros de TypeScript

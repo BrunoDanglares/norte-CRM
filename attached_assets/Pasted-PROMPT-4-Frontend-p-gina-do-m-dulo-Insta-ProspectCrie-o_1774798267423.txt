@@ -1,0 +1,244 @@
+PROMPT 4 — Frontend: página do módulo Insta ProspectCrie o arquivo `client/src/pages/InstaProspect.tsx`.
+
+Este módulo é SEPARADO do canvas de automações — é uma página própria com interface simples e guiada.
+```tsximport { useState, useEffect } from 'react';
+import { apiFetch } from '../lib/apiFetch';const TIPOS = [
+{ value: 'comment_to_dm', label: 'Comentário → DM', icon: '💬', desc: 'Alguém comenta no post e recebe DM automática com IA' },
+{ value: 'dm_received', label: 'DM recebida', icon: '📩', desc: 'Qualquer DM recebida entra no fluxo de prospecção com IA' },
+{ value: 'story_mention', label: 'Menção nos Stories', icon: '⭐', desc: 'Alguém marca seu perfil nos Stories e recebe DM com IA' },
+];const PERSONAS = [
+{ value: 'vendedor', label: 'Consultor de vendas', prompt: 'Você é um consultor de vendas simpático e objetivo de um provedor de internet fibra óptica. Seu objetivo é qualificar o lead coletando: nome, endereço completo e plano de interesse. Quando tiver todas as informações, escreva LEAD_QUALIFICADO: [resumo]. Seja natural, use linguagem simples, máximo 2 frases por mensagem.' },
+{ value: 'reativacao', label: 'Reativação de ex-cliente', prompt: 'Você é um atendente caloroso de um provedor de internet. O cliente já foi nosso assinante. Seu objetivo é reacender o interesse mostrando novidades e condições especiais para retorno. Quando o cliente demonstrar interesse real, escreva LEAD_QUALIFICADO: [resumo]. Máximo 2 frases por mensagem.' },
+{ value: 'indicacao', label: 'Campanha de indicação', prompt: 'Você atende clientes que indicaram amigos para nossos planos de internet. Agradeça a indicação, explique o benefício (1 mês grátis ao confirmar assinatura do indicado) e pergunte se o indicado já foi contatado. Seja animado e breve. Máximo 2 frases por mensagem.' },
+{ value: 'pos_instalacao', label: 'Pós-instalação / Upsell', prompt: 'Você faz acompanhamento pós-instalação de internet fibra. Pergunte se tudo correu bem, colete uma avaliação rápida. Se positiva, ofereça upgrade de plano com condição especial. Se negativa, sinalize urgência de suporte escrevendo SUPORTE_URGENTE: [problema]. Máximo 2 frases.' },
+{ value: 'personalizado', label: 'Personalizado', prompt: '' },
+];const OBJETIVOS = [
+{ value: 'coletar_endereco', label: 'Coletar endereço para verificar cobertura' },
+{ value: 'qualificar_lead', label: 'Qualificar interesse e necessidade' },
+{ value: 'agendar_visita', label: 'Agendar visita técnica ou demonstração' },
+{ value: 'reativar_cliente', label: 'Reativar cliente cancelado' },
+{ value: 'coletar_avaliacao', label: 'Coletar avaliação pós-instalação' },
+];export default function InstaProspect() {
+const [flows, setFlows] = useState<any[]>([]);
+const [stats, setStats] = useState<any>({});
+const [showModal, setShowModal] = useState(false);
+const [editingFlow, setEditingFlow] = useState<any>(null);
+const [loading, setLoading] = useState(true);
+const [form, setForm] = useState({
+nome: '', tipo: 'comment_to_dm',
+keyword: '', keywordMatchType: 'contains',
+publicReply: '', firstMessage: '',
+aiPersona: 'vendedor', aiSystemPrompt: '', aiObjective: 'qualificar_lead',
+finalAction: 'atribuir_agente', autoTags: [] as string[],
+tagInput: '',
+});useEffect(() => { loadData(); }, []);async function loadData() {
+setLoading(true);
+const [f, s] = await Promise.all([
+apiFetch('/api/insta-prospect/flows').then(r => r.json()),
+apiFetch('/api/insta-prospect/stats').then(r => r.json()),
+]);
+setFlows(f || []);
+setStats(s || {});
+setLoading(false);
+}function openNew() {
+setEditingFlow(null);
+setForm({
+nome: '', tipo: 'comment_to_dm',
+keyword: '', keywordMatchType: 'contains',
+publicReply: '', firstMessage: '',
+aiPersona: 'vendedor',
+aiSystemPrompt: PERSONAS[0].prompt,
+aiObjective: 'qualificar_lead',
+finalAction: 'atribuir_agente', autoTags: [],
+tagInput: '',
+});
+setShowModal(true);
+}function openEdit(flow: any) {
+setEditingFlow(flow);
+setForm({ ...flow, tagInput: '', autoTags: flow.autoTags || [] });
+setShowModal(true);
+}async function saveFlow() {
+const payload = { ...form };
+delete (payload as any).tagInput;if (editingFlow) {
+  await apiFetch(`/api/insta-prospect/flows/${editingFlow.id}`, { method: 'PATCH', body: JSON.stringify(payload) });
+} else {
+  await apiFetch('/api/insta-prospect/flows', { method: 'POST', body: JSON.stringify(payload) });
+}
+setShowModal(false);
+loadData();
+}async function toggleFlow(id: string) {
+await apiFetch(/api/insta-prospect/flows/${id}/toggle, { method: 'PATCH' });
+loadData();
+}async function deleteFlow(id: string) {
+if (!confirm('Excluir este fluxo?')) return;
+await apiFetch(/api/insta-prospect/flows/${id}, { method: 'DELETE' });
+loadData();
+}function handlePersonaChange(persona: string) {
+const p = PERSONAS.find(x => x.value === persona);
+setForm(f => ({ ...f, aiPersona: persona, aiSystemPrompt: p?.prompt || f.aiSystemPrompt }));
+}function addTag() {
+if (!form.tagInput.trim()) return;
+setForm(f => ({ ...f, autoTags: [...f.autoTags, f.tagInput.trim()], tagInput: '' }));
+}function removeTag(tag: string) {
+setForm(f => ({ ...f, autoTags: f.autoTags.filter(t => t !== tag) }));
+}const igGradient = 'linear-gradient(135deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888)';return (
+<div style={{ padding: '1.5rem', maxWidth: 900, margin: '0 auto' }}>  {/* Header */}
+  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+      <div style={{ width: 36, height: 36, borderRadius: 10, background: igGradient, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>📸</div>
+      <div>
+        <h1 style={{ fontSize: 18, fontWeight: 500, color: 'var(--color-text-primary)', margin: 0 }}>Insta Prospect</h1>
+        <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', margin: 0 }}>Prospecção automática com IA no Instagram</p>
+      </div>
+    </div>
+    <button onClick={openNew} style={{ padding: '8px 16px', borderRadius: 8, background: '#E1306C', border: 'none', color: 'white', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
+      + Novo fluxo
+    </button>
+  </div>  {/* Stats */}
+  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: '1.5rem' }}>
+    {[
+      { label: 'Fluxos ativos', value: stats.activeFlows || 0 },
+      { label: 'Conversas iniciadas', value: stats.totalTriggers || 0 },
+      { label: 'Leads gerados', value: stats.totalLeads || 0 },
+      { label: 'Em andamento', value: stats.emAndamento || 0 },
+    ].map(s => (
+      <div key={s.label} style={{ background: 'var(--color-background-secondary)', borderRadius: 8, padding: '12px 14px' }}>
+        <p style={{ fontSize: 11, color: 'var(--color-text-secondary)', margin: '0 0 4px' }}>{s.label}</p>
+        <p style={{ fontSize: 22, fontWeight: 500, color: 'var(--color-text-primary)', margin: 0 }}>{s.value}</p>
+      </div>
+    ))}
+  </div>  {/* Lista de fluxos */}
+  {loading ? (
+    <p style={{ color: 'var(--color-text-secondary)', fontSize: 13 }}>Carregando...</p>
+  ) : flows.length === 0 ? (
+    <div style={{ textAlign: 'center', padding: '3rem', background: 'var(--color-background-secondary)', borderRadius: 12 }}>
+      <p style={{ fontSize: 32, marginBottom: 8 }}>📸</p>
+      <p style={{ fontSize: 14, color: 'var(--color-text-secondary)' }}>Nenhum fluxo criado ainda</p>
+      <button onClick={openNew} style={{ marginTop: 12, padding: '8px 20px', borderRadius: 8, background: '#E1306C', border: 'none', color: 'white', fontSize: 13, cursor: 'pointer' }}>
+        Criar primeiro fluxo
+      </button>
+    </div>
+  ) : (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {flows.map(flow => {
+        const tipo = TIPOS.find(t => t.value === flow.tipo);
+        return (
+          <div key={flow.id} style={{ background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 12, padding: '1rem 1.25rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ fontSize: 20 }}>{tipo?.icon}</span>
+                <div>
+                  <p style={{ fontSize: 14, fontWeight: 500, color: 'var(--color-text-primary)', margin: 0 }}>{flow.nome}</p>
+                  <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', margin: 0 }}>{tipo?.label} · IA: {PERSONAS.find(p => p.value === flow.aiPersona)?.label}</p>
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, background: flow.ativo ? 'var(--color-background-success)' : 'var(--color-background-secondary)', color: flow.ativo ? 'var(--color-text-success)' : 'var(--color-text-secondary)' }}>
+                  {flow.ativo ? 'Ativo' : 'Pausado'}
+                </span>
+                <button onClick={() => toggleFlow(flow.id)} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, border: '0.5px solid var(--color-border-secondary)', background: 'transparent', color: 'var(--color-text-secondary)', cursor: 'pointer' }}>
+                  {flow.ativo ? 'Pausar' : 'Ativar'}
+                </button>
+                <button onClick={() => openEdit(flow)} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, border: '0.5px solid var(--color-border-secondary)', background: 'transparent', color: 'var(--color-text-secondary)', cursor: 'pointer' }}>
+                  Editar
+                </button>
+                <button onClick={() => deleteFlow(flow.id)} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, border: '0.5px solid var(--color-border-tertiary)', background: 'transparent', color: 'var(--color-text-danger)', cursor: 'pointer' }}>
+                  Excluir
+                </button>
+              </div>
+            </div>
+            <div style={{ marginTop: 10, display: 'flex', gap: 16, fontSize: 12, color: 'var(--color-text-secondary)' }}>
+              <span>💬 <strong>{flow.totalTriggers || 0}</strong> acionamentos</span>
+              <span>👤 <strong>{flow.totalLeads || 0}</strong> leads gerados</span>
+              {flow.keyword && <span>🔑 Palavra-chave: <strong>{flow.keyword}</strong></span>}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  )}  {/* Modal de criação/edição */}
+  {showModal && (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+      <div style={{ background: 'var(--color-background-primary)', borderRadius: 16, padding: '1.5rem', width: '100%', maxWidth: 560, maxHeight: '90vh', overflowY: 'auto' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+          <h2 style={{ fontSize: 16, fontWeight: 500, margin: 0 }}>{editingFlow ? 'Editar fluxo' : 'Novo fluxo de prospecção'}</h2>
+          <button onClick={() => setShowModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, color: 'var(--color-text-secondary)' }}>✕</button>
+        </div>        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>          <div>
+            <label style={{ fontSize: 12, color: 'var(--color-text-secondary)', display: 'block', marginBottom: 4 }}>Nome do fluxo</label>
+            <input value={form.nome} onChange={e => setForm(f => ({ ...f, nome: e.target.value }))} placeholder="Ex: Promoção Fibra 400MB — Comente QUERO" style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '0.5px solid var(--color-border-secondary)', background: 'var(--color-background-secondary)', color: 'var(--color-text-primary)', fontSize: 13, fontFamily: 'var(--font-sans)' }} />
+          </div>          <div>
+            <label style={{ fontSize: 12, color: 'var(--color-text-secondary)', display: 'block', marginBottom: 6 }}>Tipo de gatilho</label>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+              {TIPOS.map(t => (
+                <div key={t.value} onClick={() => setForm(f => ({ ...f, tipo: t.value }))} style={{ padding: '10px 8px', borderRadius: 8, border: `1.5px solid ${form.tipo === t.value ? '#E1306C' : 'var(--color-border-tertiary)'}`, cursor: 'pointer', textAlign: 'center', background: form.tipo === t.value ? '#E1306C10' : 'var(--color-background-secondary)' }}>
+                  <div style={{ fontSize: 18, marginBottom: 4 }}>{t.icon}</div>
+                  <div style={{ fontSize: 11, fontWeight: 500, color: form.tipo === t.value ? '#E1306C' : 'var(--color-text-primary)' }}>{t.label}</div>
+                </div>
+              ))}
+            </div>
+          </div>          {form.tipo === 'comment_to_dm' && (
+            <>
+              <div>
+                <label style={{ fontSize: 12, color: 'var(--color-text-secondary)', display: 'block', marginBottom: 4 }}>Palavra-chave no comentário</label>
+                <input value={form.keyword} onChange={e => setForm(f => ({ ...f, keyword: e.target.value }))} placeholder="Ex: QUERO, FIBRA, PLANO — deixe vazio para qualquer comentário" style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '0.5px solid var(--color-border-secondary)', background: 'var(--color-background-secondary)', color: 'var(--color-text-primary)', fontSize: 13, fontFamily: 'var(--font-sans)' }} />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: 'var(--color-text-secondary)', display: 'block', marginBottom: 4 }}>Resposta pública no comentário</label>
+                <input value={form.publicReply} onChange={e => setForm(f => ({ ...f, publicReply: e.target.value }))} placeholder="Ex: Oi {{username}}! Te mandei uma DM 📩" style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '0.5px solid var(--color-border-secondary)', background: 'var(--color-background-secondary)', color: 'var(--color-text-primary)', fontSize: 13, fontFamily: 'var(--font-sans)' }} />
+              </div>
+            </>
+          )}          <div>
+            <label style={{ fontSize: 12, color: 'var(--color-text-secondary)', display: 'block', marginBottom: 4 }}>Primeira mensagem (antes da IA)</label>
+            <textarea value={form.firstMessage} onChange={e => setForm(f => ({ ...f, firstMessage: e.target.value }))} placeholder="Ex: Oi {{username}}! Obrigado pelo contato 😊 Deixa eu te ajudar..." rows={2} style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '0.5px solid var(--color-border-secondary)', background: 'var(--color-background-secondary)', color: 'var(--color-text-primary)', fontSize: 13, resize: 'vertical', fontFamily: 'var(--font-sans)' }} />
+          </div>          <div>
+            <label style={{ fontSize: 12, color: 'var(--color-text-secondary)', display: 'block', marginBottom: 6 }}>Perfil da IA</label>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+              {PERSONAS.map(p => (
+                <div key={p.value} onClick={() => handlePersonaChange(p.value)} style={{ padding: '8px 10px', borderRadius: 8, border: `1.5px solid ${form.aiPersona === p.value ? '#E1306C' : 'var(--color-border-tertiary)'}`, cursor: 'pointer', background: form.aiPersona === p.value ? '#E1306C10' : 'var(--color-background-secondary)' }}>
+                  <span style={{ fontSize: 12, fontWeight: 500, color: form.aiPersona === p.value ? '#E1306C' : 'var(--color-text-primary)' }}>{p.label}</span>
+                </div>
+              ))}
+            </div>
+          </div>          <div>
+            <label style={{ fontSize: 12, color: 'var(--color-text-secondary)', display: 'block', marginBottom: 4 }}>
+              Instrução da IA {form.aiPersona !== 'personalizado' && <span style={{ color: 'var(--color-text-tertiary)' }}>(pré-preenchido, pode editar)</span>}
+            </label>
+            <textarea value={form.aiSystemPrompt} onChange={e => setForm(f => ({ ...f, aiSystemPrompt: e.target.value }))} rows={4} placeholder="Descreva como a IA deve se comportar, o que deve coletar e quando sinalizar LEAD_QUALIFICADO:" style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '0.5px solid var(--color-border-secondary)', background: 'var(--color-background-secondary)', color: 'var(--color-text-primary)', fontSize: 13, resize: 'vertical', fontFamily: 'var(--font-sans)', lineHeight: 1.5 }} />
+            <p style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginTop: 4 }}>Dica: escreva LEAD_QUALIFICADO: [resumo] para sinalizar ao sistema que o lead foi qualificado.</p>
+          </div>          <div>
+            <label style={{ fontSize: 12, color: 'var(--color-text-secondary)', display: 'block', marginBottom: 4 }}>Ação após qualificação</label>
+            <select value={form.finalAction} onChange={e => setForm(f => ({ ...f, finalAction: e.target.value }))} style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '0.5px solid var(--color-border-secondary)', background: 'var(--color-background-secondary)', color: 'var(--color-text-primary)', fontSize: 13 }}>
+              <option value="atribuir_agente">Transferir para atendente humano</option>
+              <option value="criar_deal">Criar card no Pipeline</option>
+              <option value="apenas_salvar">Apenas salvar lead no CRM</option>
+            </select>
+          </div>          <div>
+            <label style={{ fontSize: 12, color: 'var(--color-text-secondary)', display: 'block', marginBottom: 4 }}>Tags automáticas no lead</label>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
+              {form.autoTags.map(tag => (
+                <span key={tag} onClick={() => removeTag(tag)} style={{ fontSize: 11, padding: '3px 8px', borderRadius: 20, background: '#E1306C15', color: '#E1306C', border: '0.5px solid #E1306C40', cursor: 'pointer' }}>
+                  {tag} ✕
+                </span>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input value={form.tagInput} onChange={e => setForm(f => ({ ...f, tagInput: e.target.value }))} onKeyDown={e => e.key === 'Enter' && addTag()} placeholder="Adicionar tag e pressionar Enter" style={{ flex: 1, padding: '7px 10px', borderRadius: 8, border: '0.5px solid var(--color-border-secondary)', background: 'var(--color-background-secondary)', color: 'var(--color-text-primary)', fontSize: 13, fontFamily: 'var(--font-sans)' }} />
+              <button onClick={addTag} style={{ padding: '7px 12px', borderRadius: 8, border: '0.5px solid var(--color-border-secondary)', background: 'transparent', color: 'var(--color-text-secondary)', cursor: 'pointer', fontSize: 13 }}>+ Add</button>
+            </div>
+          </div>          <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+            <button onClick={() => setShowModal(false)} style={{ flex: 1, padding: '9px', borderRadius: 8, border: '0.5px solid var(--color-border-secondary)', background: 'transparent', color: 'var(--color-text-secondary)', fontSize: 13, cursor: 'pointer' }}>
+              Cancelar
+            </button>
+            <button onClick={saveFlow} style={{ flex: 2, padding: '9px', borderRadius: 8, border: 'none', background: '#E1306C', color: 'white', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
+              {editingFlow ? 'Salvar alterações' : 'Criar fluxo'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )}
+</div>
+);
+}
+
+Reporte se o componente compilou sem erros TypeScript.

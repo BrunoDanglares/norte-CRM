@@ -1,0 +1,70 @@
+Prompt 2 — Timeout universal
+No backend ChatBanana (Node/Express/TypeScript), precisa de um wrapper de timeout universal para proteger contra chamadas externas que fiquem penduradas (ERP SGP, IXC Soft, OpenAI).
+
+**1. Cria o arquivo `server/utils/withTimeout.ts`:**
+
+```typescript
+/**
+ * Envolve qualquer promise com um timeout.
+ * Lança erro descritivo se a promise demorar mais que `ms` milissegundos.
+ */
+export async function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  label = 'operation'
+): Promise<T> {
+  let timer: NodeJS.Timeout;
+
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`[Timeout] ${label} excedeu ${ms}ms`)),
+      ms
+    );
+  });
+
+  try {
+    const result = await Promise.race([promise, timeout]);
+    clearTimeout(timer!);
+    return result;
+  } catch (err) {
+    clearTimeout(timer!);
+    throw err;
+  }
+}
+```
+
+**2. Aplica em `ispErpService.ts`** (ou como se chama o serviço que chama SGP e IXC):
+
+Localiza todas as chamadas `fetch` ou `axios` para o SGP e IXC Soft e envolve com timeout de 6 segundos cada:
+
+```typescript
+import { withTimeout } from '../utils/withTimeout';
+
+// Antes:
+// const data = await fetch(url, options).then(r => r.json());
+
+// Depois:
+const data = await withTimeout(
+  fetch(url, options).then(r => r.json()),
+  6000,
+  'SGP consultarCliente' // descrição da chamada específica
+);
+```
+
+Faz o mesmo para todas as chamadas ao IXC Soft, usando label descritivo diferente para cada uma (ex: `'IXC consultarCliente'`, `'SGP consultarTitulos'`).
+
+**3. Aplica em `ispAiService.ts`** na chamada ao OpenAI — timeout de 25 segundos (GPT pode ser mais lento):
+
+```typescript
+const response = await withTimeout(
+  gptSemaphore.run(() => openai.chat.completions.create({ ...params })),
+  25000,
+  'OpenAI gerarResposta'
+);
+```
+
+Note que o `withTimeout` envolve o `gptSemaphore.run` inteiro — o timeout inclui o tempo de espera na fila do semáforo mais o tempo de execução da chamada GPT.
+
+**4. No catch de cada serviço**, quando o erro vier de timeout, relança normalmente — o orchestrator `ispAgentEngine.ts` já deve ter um try/catch global que captura e retorna mensagem de fallback ao usuário.
+
+Mostra os trechos alterados em `ispErpService.ts` e `ispAiService.ts` após aplicar.

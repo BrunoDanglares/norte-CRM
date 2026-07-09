@@ -1,0 +1,106 @@
+PROMPT 3 — Tela de Login Real
+Substitua o login simulado pela tela de login real no FlowCRM.
+
+## Contexto
+A tela de login já existe visualmente. O submit hoje usa setTimeout
+para redirecionar sem validar nada. Substitua pela autenticação real.
+
+## Implementação
+
+No componente da página de login (client/src/pages/login.tsx ou similar):
+```typescript
+import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { useAuth } from '../contexts/AuthContext'
+
+export default function LoginPage() {
+  const { login } = useAuth()
+  const navigate = useNavigate()
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setError('')
+    setLoading(true)
+
+    try {
+      await login(email, password)
+      navigate('/dashboard')
+    } catch (err: any) {
+      setError(err.message || 'Email ou senha incorretos')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    // Mantenha o layout visual atual — apenas substitua o onSubmit
+    // e adicione exibição de erro e estado de loading no botão
+    <form onSubmit={handleSubmit}>
+      {/* campos existentes de email e senha */}
+      
+      {error && (
+        <p className="text-red-400 text-sm mt-2">{error}</p>
+      )}
+
+      <button
+        type="submit"
+        disabled={loading}
+        className="... opacity-70 disabled:cursor-not-allowed"
+      >
+        {loading ? 'Entrando...' : 'Entrar'}
+      </button>
+    </form>
+  )
+}
+```
+
+## Seed de usuário admin para teste
+
+Se a tabela users ainda não tiver nenhum usuário com senha hasheada real,
+adicione um script de seed server/seed-admin.ts:
+```typescript
+import { scrypt, randomBytes } from 'crypto'
+import { promisify } from 'util'
+
+const scryptAsync = promisify(scrypt)
+
+async function seedAdmin() {
+  const password = 'admin123'
+  const salt = randomBytes(16).toString('hex')
+  const hash = await scryptAsync(password, salt, 64) as Buffer
+  const stored = `${hash.toString('hex')}:${salt}`
+
+  await db.query(`
+    INSERT INTO users (name, email, password, role, tenant_id, active)
+    VALUES ('Admin', 'admin@flowcrm.com', $1, 'admin', 1, true)
+    ON CONFLICT (email) DO UPDATE SET password = $1
+  `, [stored])
+
+  console.log('Admin criado: admin@flowcrm.com / admin123')
+}
+
+seedAdmin()
+```
+
+Execute com: npx tsx server/seed-admin.ts
+
+## Logout
+
+No componente do header ou menu do usuário (onde já existe o botão de sair):
+```typescript
+const { logout } = useAuth()
+// no onClick do botão:
+logout()
+navigate('/login')
+```
+
+Confirme após implementar:
+1. Login com credenciais erradas mostra mensagem de erro
+2. Login com credenciais corretas redireciona para /dashboard
+3. Recarregar a página mantém a sessão (localStorage)
+4. Logout limpa token e redireciona para /login
+5. Acessar qualquer rota sem token redireciona para /login

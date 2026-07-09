@@ -1,0 +1,155 @@
+Você está fazendo uma rodada de limpeza e padronização de código no ChatBanana.
+
+Stack: Node.js + Express + TypeScript (backend), React 18 + Vite + TypeScript (frontend), PostgreSQL + Drizzle ORM.
+
+REGRA GERAL: Esta sessão é SOMENTE de limpeza e padronização. Você NÃO deve:
+- Alterar lógica de negócio
+- Modificar schemas de banco de dados
+- Mudar contratos de API (endpoints, payloads, status codes)
+- Refatorar arquitetura de módulos
+Se encontrar algo que exige essas mudanças, LISTE no relatório final sem corrigir.
+
+---
+
+BLOCO 1 — REMOÇÃO DE CONSOLE.LOG DE DEBUG
+
+1.1 Faça um grep por console.log em todo o projeto (exceto node_modules, dist, .git).
+
+1.2 Para cada ocorrência, classifique:
+  - REMOVER: logs de debug óbvios como "aqui", "teste", "funcionou", valores de variáveis sem contexto, logs comentados
+  - REMOVER: logs que imprimam tokens, senhas, payloads de webhook completos, dados de usuários
+  - MANTER como console.error: erros reais com mensagem descritiva
+  - CONVERTER para console.warn: avisos de comportamento inesperado que não são erro
+  - MANTER: logs de inicialização de serviço (ex: "Servidor rodando na porta 5000", "Cron de billing iniciado")
+
+1.3 Aplique as classificações. Ao final, informe quantos logs foram removidos, quantos mantidos e quantos convertidos.
+
+---
+
+BLOCO 2 — TIPAGEM TYPESCRIPT
+
+2.1 Faça um grep por ": any" e "as any" em server/ e client/src/.
+
+2.2 Para cada ocorrência:
+  - Se for um cast temporário com comentário justificando → MANTER e adicionar // eslint-disable-next-line se não tiver
+  - Se for resultado de JSON.parse sem tipo → substituir por JSON.parse(...) as NomeDeTipo (crie a interface se for simples e óbvia)
+  - Se for parâmetro de catch que é tipado como any → correto em TypeScript, MANTER
+  - Se for preguiça de tipar um objeto simples → criar interface ou type adequado
+
+2.3 NÃO crie tipos complexos para estruturas que você não conhece completamente. Prefira unknown com asserção explícita a inventar tipos errados.
+
+2.4 Ao final, informe quantas ocorrências de any foram eliminadas e quais foram mantidas com justificativa.
+
+---
+
+BLOCO 3 — PADRONIZAÇÃO DE IMPORTS
+
+3.1 Verifique se há imports não utilizados em qualquer arquivo .ts ou .tsx. Remova-os.
+
+3.2 Verifique se há imports duplicados (mesmo módulo importado duas vezes no mesmo arquivo). Consolide.
+
+3.3 Em arquivos TypeScript do backend, verifique se há mistura de import estilo CommonJS (require()) com ESModule (import). Padronize para import ESModule onde o tsconfig permitir.
+
+3.4 No frontend, verifique se há paths absolutos hardcoded (ex: "../../components/ui/button") que poderiam usar o alias "@/components/ui/button". Corrija os casos encontrados.
+
+---
+
+BLOCO 4 — TRATAMENTO DE ERROS
+
+4.1 Localize todos os blocos catch {} vazios (sem nenhum código dentro). Adicione no mínimo:
+  console.error("[NomeDoArquivo] Erro inesperado:", err);
+
+4.2 Localize rotas Express que não têm try/catch. Para cada uma:
+  - Se a rota faz operações assíncronas (await) sem try/catch → adicione try/catch com return res.status(500).json({ error: "Erro interno" })
+  - Se a rota é síncrona e simples → não precisa de try/catch
+
+4.3 Verifique se há retornos de erro sem status HTTP adequado. O padrão esperado é:
+  - 400: dados inválidos/faltando
+  - 401: não autenticado
+  - 403: sem permissão
+  - 404: recurso não encontrado
+  - 422: regra de negócio violada (ex: janela 24h fechada)
+  - 500: erro interno inesperado
+  Corrija casos onde o status está claramente errado (ex: retornar 500 para dado faltando).
+
+---
+
+BLOCO 5 — DEAD CODE
+
+5.1 Localize funções exportadas que não são importadas em nenhum lugar do projeto. Liste-as no relatório final — NÃO remova automaticamente, quero revisar.
+
+5.2 Localize variáveis declaradas mas nunca usadas. Remova-as (o TypeScript já alerta para isso — corrija os warnings).
+
+5.3 Localize arquivos .ts/.tsx que não são importados por nenhum outro arquivo e não são entry points (index.ts, main.ts, server.ts, vite.config.ts, etc.). Liste no relatório — NÃO delete automaticamente.
+
+5.4 Faça grep por "whatsappWebJS", "z-api", "zapi", "ZAPI", "whatsapp-web.js" em todo o projeto. Liste todos os arquivos encontrados — esses são resquícios da integração antiga que pode estar obsoleta após a migração para Meta Cloud API.
+
+---
+
+BLOCO 6 — PADRONIZAÇÃO DE ESTILO
+
+6.1 Verifique se há arquivos com mistura de aspas simples e duplas no mesmo arquivo. Padronize para o estilo já dominante no arquivo (não mude o projeto todo, apenas normalize por arquivo).
+
+6.2 Verifique se há funções com mais de 80 linhas em server/routes/. Se encontrar, NÃO refatore — apenas liste no relatório como candidatas a extração futura.
+
+6.3 No frontend, verifique se há componentes React com mais de 300 linhas. Liste no relatório sem refatorar.
+
+6.4 Verifique se há comentários em português e inglês misturados no mesmo arquivo. NÃO traduza — apenas liste os arquivos onde isso ocorre para padronização futura.
+
+---
+
+BLOCO 7 — VARIÁVEIS DE AMBIENTE
+
+7.1 Faça grep por strings hardcoded que pareçam ser configurações de ambiente:
+  - URLs de produção/staging hardcoded
+  - Portas hardcoded fora de server.ts/index.ts
+  - Nomes de banco hardcoded
+  - Qualquer string no padrão "https://api." hardcoded no código (não em .env)
+
+7.2 Para cada caso encontrado, verifique se já existe uma variável de ambiente equivalente no projeto. Se sim, substitua a string hardcoded pela variável. Se não, LISTE no relatório sem criar a variável.
+
+7.3 Verifique se process.env.ALGUMA_VAR é acessado sem fallback em lugares críticos. O padrão seguro é:
+  const valor = process.env.ALGUMA_VAR;
+  if (!valor) throw new Error("ALGUMA_VAR não configurada");
+  Corrija os casos onde variáveis obrigatórias são acessadas com ! (non-null assertion) sem validação prévia.
+
+---
+
+BLOCO 8 — MIGRATIONS DRIZZLE
+
+8.1 Verifique se existe um diretório migrations/ na raiz do projeto.
+
+8.2 Se NÃO existir: execute o comando abaixo para gerar as migrations a partir do schema atual:
+  npx drizzle-kit generate
+  Isso cria o histórico de migrations sem alterar o banco. Confirme que o comando rodou sem erros.
+
+8.3 Se já existir: verifique se há migrations pendentes não aplicadas. Liste no relatório.
+
+8.4 NÃO execute npx drizzle-kit push nem npx drizzle-kit migrate nesta sessão.
+
+---
+
+RELATÓRIO FINAL
+
+Ao concluir todos os blocos, gere um relatório estruturado com:
+
+RESUMO EXECUTIVO:
+- Total de arquivos modificados
+- Total de linhas removidas / adicionadas
+- Blocos concluídos com sucesso
+- Blocos com itens pendentes de revisão manual
+
+ITENS PARA REVISÃO MANUAL (não corrigidos automaticamente):
+- Funções exportadas sem uso (Bloco 5.1)
+- Arquivos possivelmente órfãos (Bloco 5.3)
+- Resquícios de Z-API/whatsappWebJS encontrados (Bloco 5.4)
+- Funções grandes candidatas a extração (Bloco 6.2)
+- Componentes grandes no frontend (Bloco 6.3)
+- Variáveis de ambiente hardcoded sem equivalente no .env (Bloco 7.2)
+- Migrations pendentes (Bloco 8.3)
+
+MÉTRICAS:
+- console.log removidos / mantidos / convertidos
+- Ocorrências de any eliminadas / mantidas
+- Imports removidos
+- catch vazios corrigidos

@@ -1,0 +1,94 @@
+Validar os 4 agentes completos com situações cobertas.
+Nenhuma alteração de código — apenas testes e correções
+pontuais se necessário.
+
+══ ROTEIRO DE TESTE ══
+
+Execute cada cenário com o bot da ConexãoNet e registre
+o comportamento observado.
+
+FINANCEIRO — 5 cenários:
+
+F2 (Suspensão temporária):
+  Msg: "vou viajar por 2 meses, posso pausar o plano?"
+  Esperado: situationCode = F2, IA explica regras de
+  suspensão, aguarda confirmação antes de registrar.
+
+F4 (Segunda via / PIX):
+  Msg: "manda o PIX pra pagar"
+  Esperado: situationCode = F4, IA gera chave PIX
+  via ERP, resposta sem lista numerada.
+
+F7 (Negociação de dívida — escalate):
+  Msg: "não consigo pagar tudo, tem desconto?"
+  Esperado: situationCode = F7, redirectTo = HUMANO,
+  handoff summary com valor da dívida incluído.
+
+F9 (Cancelamento com débito — escalate):
+  Msg: "quero cancelar" + tem débito em aberto
+  Esperado: situationCode = F9, redirectTo = HUMANO.
+
+F10 (Downgrade por custo — escalate):
+  Msg: "tá muito caro, quero um plano mais barato"
+  Esperado: situationCode = F10, redirectTo = VENDAS.
+
+SUPORTE — 4 cenários:
+
+S1 (Triagem — primeira mensagem de suporte):
+  Msg: "minha internet não funciona"
+  Esperado: situationCode = S1, IA verifica status
+  financeiro antes de qualquer diagnóstico técnico.
+
+S6 (Lentidão horário específico):
+  Msg: "à noite fica muito lento"
+  Esperado: situationCode = S6, IA coleta horários
+  e consulta utilização de banda na região.
+
+S9 (Troca de equipamento — escalate):
+  Msg: "meu roteador queimou"
+  Esperado: situationCode = S9, redirectTo = HUMANO,
+  handoff com equipamento cadastrado.
+
+S10 (Senha WiFi — escalate):
+  Msg: "quero mudar a senha do WiFi"
+  Esperado: situationCode = S10, redirectTo = HUMANO.
+
+COMERCIAL — 3 cenários:
+
+C2 (Agendamento):
+  Msg: "quando vem o técnico instalar?"
+  Esperado: situationCode = C2, IA apresenta opções
+  de agenda ou informa que vai verificar com a equipe.
+
+C7 (Titularidade — escalate):
+  Msg: "quero passar o contrato pra minha esposa"
+  Esperado: situationCode = C7, redirectTo = HUMANO,
+  handoff com motivo de alteração contratual.
+
+C9 (Mudança de endereço):
+  Msg: "vou mudar de casa semana que vem"
+  Esperado: situationCode = C9, IA solicita novo
+  endereço, verifica cobertura após coletar.
+
+CANCELAMENTO — 2 cenários:
+
+C6 (Retenção — escalate):
+  Msg: "quero cancelar"
+  Esperado: CancelamentoAgent ativado (não inline),
+  IA coleta motivo, redirectTo = HUMANO com contexto.
+
+Multi-intent (cancelar + sem internet + sem dinheiro):
+  Msg: "quero cancelar porque tô sem internet e
+       não tenho como pagar"
+  Esperado: intent dominante = CANCELAMENTO (P2),
+  SUPORTE e FINANCEIRO como contexto secundário,
+  CancelamentoAgent responde com contexto enriquecido.
+
+══ O QUE VERIFICAR NOS LOGS ══
+
+Para cada cenário acima, confirme nos logs do servidor:
+- situationCode correto detectado
+- context_template da situação injetado na chamada OpenAI
+- Resposta sem listas numeradas
+- Handoff summary presente quando redirectTo = HUMANO
+- isp_automation_logs registrado quando Guard bloqueia

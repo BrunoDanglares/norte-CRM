@@ -1,0 +1,1187 @@
+Bom ponto. Nos prompts anteriores eu usei nomes genéricos ("Instalado / Ativado", "Perdido") sem considerar os stages reais de cada pipeline. Aqui estão os 5 prompts completos e corrigidos com os stages reais das duas telas:
+Stages finais mapeados:
+
+Suporte (3 finais): "Resolvido" → ativado | "Visita Técnica" → ativado | "Escalado / NOC" → perdido
+Financeiro (3 finais): "Pago / Regularizado" → ativado | "Inadimplente" → perdido | "Cancelado por Débito" → perdido
+Comercial (2 finais): "Instalado / Ativado" → ativado | "Perdido" → perdido
+
+
+Prompt 1 — Schema (shared/schema.ts)
+Estou trabalhando no projeto ChatBanana (Node.js + Express + TypeScript, Drizzle ORM, PostgreSQL). O schema principal fica em `shared/schema.ts`.
+
+Preciso de duas alterações no schema:
+
+---
+
+### 1. Adicionar campos na tabela `leads`
+
+Localiza a definição da tabela `leads` em `shared/schema.ts` (por volta da linha 200, campo `stage: text("stage")`).
+
+Adiciona dois campos ao final da tabela, antes do fechamento do `pgTable`:
+
+```typescript
+archivedAt: timestamp("archived_at"),
+archivalReason: text("archival_reason"), // 'ativado' | 'perdido'
+```
+
+---
+
+### 2. Criar nova tabela `conversation_situation_tags`
+
+Adiciona após a definição da tabela `protocols` em `shared/schema.ts`:
+
+```typescript
+export const conversationSituationTags = pgTable("conversation_situation_tags", {
+  id: serial("id").primaryKey(),
+  workspaceId: uuid("workspace_id").notNull(),
+  conversationId: integer("conversation_id").notNull(),
+  situationCode: text("situation_code").notNull(), // ex: 'F1', 'S3', 'C5', 'C11'
+  tagSlug: text("tag_slug").notNull(),             // ex: '#promessa-pago'
+  origin: text("origin").notNull().default("auto"), // 'auto' | 'manual'
+  appliedBy: integer("applied_by"),                // userId se manual
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertConversationSituationTagSchema = createInsertSchema(conversationSituationTags);
+export type ConversationSituationTag = typeof conversationSituationTags.$inferSelect;
+export type InsertConversationSituationTag = typeof conversationSituationTags.$inferInsert;
+```
+
+---
+
+### 3. Rodar a migração
+
+```bash
+npx drizzle-kit push
+```
+
+Confirma que as duas alterações foram aplicadas sem erro.
+
+Prompt 2 — Serviços (server/services/)
+Estou trabalhando no projeto ChatBanana. Preciso criar dois arquivos de serviço novos em `server/services/`.
+
+---
+
+### Arquivo 1: `server/services/situationTagService.ts`
+
+Cria esse arquivo completo:
+
+```typescript
+import { db } from "../db";
+import { conversationSituationTags } from "../../shared/schema";
+import { eq, and } from "drizzle-orm";
+import type { ConversationSituationTag } from "../../shared/schema";
+
+export const SITUATION_TAG_MAP: Record<string, string> = {
+  // Financeiro — pipeline: Fatura Pendente → Negociação/Acordo → Promessa de Pagamento
+  //              → Aguardando Pagamento → Pago/Regularizado | Inadimplente | Cancelado por Débito
+  F1:  "#promessa-pago",
+  F2:  "#suspensao-levantada",
+  F3:  "#conta-reativada",
+  F4:  "#2via-enviada",
+  F5:  "#debitos-consultados",
+  F6:  "#linha-verificada",
+  F7:  "#negociacao-feita",
+  F8:  "#contestacao-aberta",
+  F9:  "#cancel-com-debito",
+  F10: "#downgrade-feito",
+  // Suporte Técnico — pipeline: Novo Chamado → Diagnóstico Remoto → Ação Remota
+  //                  → Aguardando Cliente → Resolvido | Visita Técnica | Escalado/NOC
+  S1:  "#sem-acesso-triado",
+  S2:  "#onu-online",
+  S3:  "#onu-restaurada",
+  S4:  "#lentidao-resolvida",
+  S5:  "#instabilidade-resolvida",
+  S6:  "#horario-ajustado",
+  S7:  "#site-verificado",
+  S8:  "#os-aberta",
+  S9:  "#equipamento-trocado",
+  S10: "#senha-wifi-alterada",
+  S11: "#wifi-restaurado",
+  S12: "#roteador-movido",
+  S13: "#plano-consultado",
+  // Comercial — pipeline: Novo Lead → Contato Feito → Viabilidade Técnica
+  //             → Proposta Enviada → Agendamento Instalação → Instalado/Ativado | Perdido
+  C1:  "#upgrade-feito",
+  C2:  "#agendamento-feito",
+  C3:  "#cobertura-verificada",
+  C4:  "#fidelidade-aplicada",
+  C5:  "#contrato-fechado",
+  C6:  "#cancelamento-feito",
+  C7:  "#titularidade-alterada",
+  C8:  "#planos-consultados",
+  C9:  "#endereco-alterado",
+  C10: "#indicacao-registrada",
+  C11: "#dados-coletados",
+};
+
+export async function applyAutoTag(
+  workspaceId: string,
+  conversationId: number,
+  situationCode: string
+): Promise<void> {
+  const tagSlug = SITUATION_TAG_MAP[situationCode];
+  if (!tagSlug) return;
+
+  const existing = await db
+    .select()
+    .from(conversationSituationTags)
+    .where(
+      and(
+        eq(conversationSituationTags.conversationId, conversationId),
+        eq(conversationSituationTags.situationCode, situationCode)
+      )
+    )
+    .limit(1);
+
+  if (existing.length > 0) return;
+
+  await db.insert(conversationSituationTags).values({
+    workspaceId,
+    conversationId,
+    situationCode,
+    tagSlug,
+    origin: "auto",
+  });
+}
+
+export async function applyManualTag(
+  workspaceId: string,
+  conversationId: number,
+  situationCode: string,
+  appliedBy: number
+): Promise<void> {
+  const tagSlug = SITUATION_TAG_MAP[situationCode];
+  if (!tagSlug) throw new Error(`Código de situação inválido: ${situationCode}`);
+
+  const existing = await db
+    .select()
+    .from(conversationSituationTags)
+    .where(
+      and(
+        eq(conversationSituationTags.conversationId, conversationId),
+        eq(conversationSituationTags.situationCode, situationCode)
+      )
+    )
+    .limit(1);
+
+  if (existing.length > 0) return;
+
+  await db.insert(conversationSituationTags).values({
+    workspaceId,
+    conversationId,
+    situationCode,
+    tagSlug,
+    origin: "manual",
+    appliedBy,
+  });
+}
+
+export async function removeTag(
+  conversationId: number,
+  tagId: number
+): Promise<void> {
+  await db
+    .delete(conversationSituationTags)
+    .where(
+      and(
+        eq(conversationSituationTags.id, tagId),
+        eq(conversationSituationTags.conversationId, conversationId)
+      )
+    );
+}
+
+export async function getTagsByConversation(
+  conversationId: number
+): Promise<ConversationSituationTag[]> {
+  return db
+    .select()
+    .from(conversationSituationTags)
+    .where(eq(conversationSituationTags.conversationId, conversationId));
+}
+```
+
+---
+
+### Arquivo 2: `server/services/kanbanArchivalService.ts`
+
+Cria esse arquivo completo:
+
+```typescript
+import { db } from "../db";
+import { leads } from "../../shared/schema";
+import { eq, and, isNull, inArray } from "drizzle-orm";
+
+/**
+ * Stages finais por pipeline — exatamente como estão cadastrados no banco.
+ *
+ * COMERCIAL:
+ *   "Instalado / Ativado" → ativado
+ *   "Perdido"             → perdido
+ *
+ * SUPORTE TÉCNICO (3 etapas finais):
+ *   "Resolvido"           → ativado
+ *   "Visita Técnica"      → ativado
+ *   "Escalado / NOC"      → perdido
+ *
+ * FINANCEIRO (3 etapas finais):
+ *   "Pago / Regularizado" → ativado
+ *   "Inadimplente"        → perdido
+ *   "Cancelado por Débito"→ perdido
+ */
+const FINAL_STAGE_MAP: Record<string, "ativado" | "perdido"> = {
+  // Comercial
+  "Instalado / Ativado":  "ativado",
+  "Perdido":              "perdido",
+  // Suporte Técnico
+  "Resolvido":            "ativado",
+  "Visita Técnica":       "ativado",
+  "Escalado / NOC":       "perdido",
+  // Financeiro
+  "Pago / Regularizado":  "ativado",
+  "Inadimplente":         "perdido",
+  "Cancelado por Débito": "perdido",
+};
+
+const FINAL_STAGE_NAMES = Object.keys(FINAL_STAGE_MAP);
+
+/**
+ * Arquiva um lead imediatamente ao ser movido para etapa final.
+ * Chamado pelo frontend/rota quando o lead é arrastado para a coluna final.
+ */
+export async function archiveLead(
+  leadId: number,
+  reason: "ativado" | "perdido"
+): Promise<void> {
+  await db
+    .update(leads)
+    .set({
+      archivedAt: new Date(),
+      archivalReason: reason,
+    })
+    .where(eq(leads.id, leadId));
+}
+
+/**
+ * Detecta automaticamente o motivo pelo nome do stage.
+ * Útil quando o arquivamento vem de uma movimentação de stage sem reason explícito.
+ */
+export function resolveArchivalReason(stageName: string): "ativado" | "perdido" {
+  return FINAL_STAGE_MAP[stageName] ?? "perdido";
+}
+
+/**
+ * Job de limpeza de fim de expediente.
+ * Arquiva todos os leads nas etapas finais que ainda não foram arquivados.
+ * Deve ser chamado às 18h (seg-sex) e 12h (sáb).
+ */
+export async function archiveEndOfShift(): Promise<{ archived: number }> {
+  const leadsToArchive = await db
+    .select({ id: leads.id, stage: leads.stage })
+    .from(leads)
+    .where(
+      and(
+        isNull(leads.archivedAt),
+        inArray(leads.stage, FINAL_STAGE_NAMES)
+      )
+    );
+
+  if (leadsToArchive.length === 0) return { archived: 0 };
+
+  for (const lead of leadsToArchive) {
+    const reason = resolveArchivalReason(lead.stage ?? "");
+    await db
+      .update(leads)
+      .set({ archivedAt: new Date(), archivalReason: reason })
+      .where(eq(leads.id, lead.id));
+  }
+
+  console.log(`[KanbanArchival] ${leadsToArchive.length} leads arquivados (fim de expediente)`);
+  return { archived: leadsToArchive.length };
+}
+```
+
+---
+
+### Registrar o job no servidor
+
+Abre `server/index.ts`.
+
+Adiciona no topo:
+
+```typescript
+import { archiveEndOfShift } from "./services/kanbanArchivalService";
+```
+
+Após `app.listen`, adiciona:
+
+```typescript
+// Job de arquivamento de fim de expediente
+// Seg-Sex às 18h | Sáb às 12h — checa a cada minuto
+setInterval(async () => {
+  const now = new Date();
+  const hora = now.getHours();
+  const minuto = now.getMinutes();
+  const dia = now.getDay(); // 0=Dom, 6=Sáb
+
+  const fimUtil = dia >= 1 && dia <= 5 && hora === 18 && minuto === 0;
+  const fimSab  = dia === 6 && hora === 12 && minuto === 0;
+
+  if (fimUtil || fimSab) {
+    await archiveEndOfShift();
+  }
+}, 60 * 1000);
+```
+
+Prompt 3 — Rotas backend (server/routes/)
+Estou trabalhando no projeto ChatBanana. Preciso criar e modificar rotas em `server/routes/`.
+
+---
+
+### 1. Criar `server/routes/history.ts`
+
+Cria esse arquivo completo:
+
+```typescript
+import { Router } from "express";
+import { db } from "../db";
+import {
+  conversations,
+  protocols,
+  conversationSituationTags,
+  leads,
+} from "../../shared/schema";
+import { eq, desc, and, sql, isNull } from "drizzle-orm";
+import { requireAuth } from "../middleware/auth";
+import { resolveWorkspaceId } from "../utils/workspace";
+
+const router = Router();
+
+// GET /api/history
+router.get("/", requireAuth, async (req, res) => {
+  try {
+    const workspaceId = resolveWorkspaceId(req);
+    const { limit = "50", offset = "0" } = req.query;
+
+    const rows = await db
+      .select({
+        conversationId:    conversations.id,
+        contactName:       conversations.contactName,
+        contactPhone:      conversations.contactPhone,
+        pipeline:          conversations.pipeline,
+        status:            conversations.status,
+        resolvedAt:        conversations.updatedAt,
+        agentName:         conversations.assignedAgent,
+        protocolId:        protocols.id,
+        protocolNumber:    protocols.protocolNumber,
+        leadStage:         leads.stage,
+        leadArchivedAt:    leads.archivedAt,
+        leadArchivalReason: leads.archivalReason,
+      })
+      .from(conversations)
+      .leftJoin(protocols, eq(protocols.conversationId, conversations.id))
+      .leftJoin(leads, eq(leads.conversationId, conversations.id))
+      .where(
+        and(
+          eq(conversations.workspaceId, workspaceId),
+          eq(conversations.status, "resolved")
+        )
+      )
+      .orderBy(desc(conversations.updatedAt))
+      .limit(parseInt(limit as string))
+      .offset(parseInt(offset as string));
+
+    const conversationIds = rows.map((r) => r.conversationId);
+    const tagsMap: Record<number, any[]> = {};
+
+    if (conversationIds.length > 0) {
+      const allTags = await db
+        .select()
+        .from(conversationSituationTags)
+        .where(
+          sql`${conversationSituationTags.conversationId} = ANY(${sql.raw(
+            `ARRAY[${conversationIds.join(",")}]`
+          )})`
+        );
+
+      for (const tag of allTags) {
+        if (!tagsMap[tag.conversationId]) tagsMap[tag.conversationId] = [];
+        tagsMap[tag.conversationId].push(tag);
+      }
+    }
+
+    const result = rows.map((row) => ({
+      ...row,
+      tags: tagsMap[row.conversationId] || [],
+    }));
+
+    res.json({ data: result, total: result.length });
+  } catch (error) {
+    console.error("[History] Erro:", error);
+    res.status(500).json({ error: "Erro interno" });
+  }
+});
+
+// GET /api/history/metrics
+router.get("/metrics", requireAuth, async (req, res) => {
+  try {
+    const workspaceId = resolveWorkspaceId(req);
+
+    const [totalResolved] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(conversations)
+      .where(
+        and(
+          eq(conversations.workspaceId, workspaceId),
+          eq(conversations.status, "resolved")
+        )
+      );
+
+    const topTags = await db
+      .select({
+        tagSlug: conversationSituationTags.tagSlug,
+        count:   sql<number>`count(*)`,
+      })
+      .from(conversationSituationTags)
+      .where(eq(conversationSituationTags.workspaceId, workspaceId))
+      .groupBy(conversationSituationTags.tagSlug)
+      .orderBy(desc(sql`count(*)`))
+      .limit(10);
+
+    const [ativados] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(leads)
+      .where(
+        and(
+          eq(leads.workspaceId, workspaceId),
+          eq(leads.archivalReason, "ativado")
+        )
+      );
+
+    const [perdidos] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(leads)
+      .where(
+        and(
+          eq(leads.workspaceId, workspaceId),
+          eq(leads.archivalReason, "perdido")
+        )
+      );
+
+    // Breakdown por pipeline
+    const byPipeline = await db
+      .select({
+        pipeline: leads.pipeline,
+        reason:   leads.archivalReason,
+        count:    sql<number>`count(*)`,
+      })
+      .from(leads)
+      .where(
+        and(
+          eq(leads.workspaceId, workspaceId),
+          sql`${leads.archivedAt} IS NOT NULL`
+        )
+      )
+      .groupBy(leads.pipeline, leads.archivalReason);
+
+    res.json({
+      totalResolved: Number(totalResolved?.count || 0),
+      ativados:      Number(ativados?.count || 0),
+      perdidos:      Number(perdidos?.count || 0),
+      topTags,
+      byPipeline,
+    });
+  } catch (error) {
+    console.error("[History] Métricas erro:", error);
+    res.status(500).json({ error: "Erro interno" });
+  }
+});
+
+// POST /api/history/conversations/:id/tags — tag manual
+router.post("/conversations/:id/tags", requireAuth, async (req, res) => {
+  try {
+    const workspaceId   = resolveWorkspaceId(req);
+    const conversationId = parseInt(req.params.id);
+    const { situationCode } = req.body;
+    const userId = (req as any).user?.id;
+
+    const { applyManualTag } = await import("../services/situationTagService");
+    await applyManualTag(workspaceId, conversationId, situationCode, userId);
+
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// DELETE /api/history/conversations/:id/tags/:tagId
+router.delete("/conversations/:id/tags/:tagId", requireAuth, async (req, res) => {
+  try {
+    const conversationId = parseInt(req.params.id);
+    const tagId          = parseInt(req.params.tagId);
+
+    const { removeTag } = await import("../services/situationTagService");
+    await removeTag(conversationId, tagId);
+
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: "Erro interno" });
+  }
+});
+
+// PATCH /api/history/leads/:id/archive — arquivamento imediato ao mover card
+router.patch("/leads/:id/archive", requireAuth, async (req, res) => {
+  try {
+    const leadId = parseInt(req.params.id);
+    const { reason } = req.body as { reason: "ativado" | "perdido" };
+
+    const { archiveLead } = await import("../services/kanbanArchivalService");
+    await archiveLead(leadId, reason);
+
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: "Erro interno" });
+  }
+});
+
+export default router;
+```
+
+---
+
+### 2. Registrar em `server/index.ts`
+
+```typescript
+import historyRouter from "./routes/history";
+app.use("/api/history", historyRouter);
+```
+
+---
+
+### 3. Filtrar arquivados nas rotas do kanban
+
+Abre `server/routes/pipeline.ts` (ou o arquivo onde leads do kanban são buscados).
+
+Em TODAS as queries que retornam leads para exibição no kanban, adiciona o filtro:
+
+```typescript
+isNull(leads.archivedAt)
+```
+
+Exemplo:
+
+```typescript
+.where(
+  and(
+    eq(leads.workspaceId, workspaceId),
+    isNull(leads.archivedAt)  // ← arquivados não aparecem no kanban
+  )
+)
+```
+
+---
+
+### 4. Disparar arquivamento imediato ao mover card para etapa final
+
+Localiza no frontend ou backend onde o lead tem o `stage` atualizado (drag-and-drop do kanban).
+
+No momento em que `stage` muda para um dos valores finais abaixo, a rota `PATCH /api/history/leads/:id/archive` deve ser chamada automaticamente com o `reason` correto:
+
+```typescript
+const FINAL_STAGE_MAP: Record<string, "ativado" | "perdido"> = {
+  // Comercial
+  "Instalado / Ativado":  "ativado",
+  "Perdido":              "perdido",
+  // Suporte Técnico
+  "Resolvido":            "ativado",
+  "Visita Técnica":       "ativado",
+  "Escalado / NOC":       "perdido",
+  // Financeiro
+  "Pago / Regularizado":  "ativado",
+  "Inadimplente":         "perdido",
+  "Cancelado por Débito": "perdido",
+};
+
+// Após atualizar o stage do lead:
+if (FINAL_STAGE_MAP[novoStage]) {
+  await fetch(`/api/history/leads/${leadId}/archive`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reason: FINAL_STAGE_MAP[novoStage] }),
+  });
+}
+```
+
+Prompt 4 — Guard Layer (hook de tag automática)
+Estou trabalhando no projeto ChatBanana. Preciso adicionar o hook de aplicação automática de tag de situação no Guard Layer do ISP Agent.
+
+---
+
+### Contexto
+
+- `server/services/escalationHandler.ts` — contém `buildHandoffSummary()`
+- O motor do ISP Agent detecta situações: F1–F10 (Financeiro), S1–S13 (Suporte Técnico), C1–C11 (Comercial)
+- Cada código de situação já tem um pipeline associado pelo prefixo (F=Financeiro, S=Suporte, C=Comercial)
+
+---
+
+### 1. No arquivo onde a conversa é marcada como resolvida
+
+Localiza onde o status muda para `"resolved"` ou onde `redirectTo: 'RESOLVED'` é processado (`guardLayer.ts` ou `priorityResolver.ts`).
+
+Adiciona no topo:
+
+```typescript
+import { applyAutoTag } from "./situationTagService";
+```
+
+Logo após atualizar o status:
+
+```typescript
+// Hook: tag automática ao resolver — fire-and-forget
+if (situation && conversationId && workspaceId) {
+  applyAutoTag(workspaceId, conversationId, situation).catch((err) =>
+    console.error("[SituationTag] Falha ao aplicar tag automática:", err)
+  );
+}
+```
+
+`situation` é o código detectado pelo agente (ex: `"F4"`, `"S3"`, `"C11"`).
+
+---
+
+### 2. Em `server/services/escalationHandler.ts`
+
+Localiza `buildHandoffSummary()`. Adiciona antes do return:
+
+```typescript
+// Hook: tag automática ao escalar para humano
+if (situation && conversationId && workspaceId) {
+  const { applyAutoTag } = require("./situationTagService");
+  applyAutoTag(workspaceId, conversationId, situation).catch(console.error);
+}
+```
+
+---
+
+### Regra obrigatória
+
+Tag sempre **fire-and-forget** com `.catch()`. Nunca bloqueia o fluxo do agente.
+
+Prompt 5 — Frontend (nova página + ajustes)
+Estou trabalhando no projeto ChatBanana (React 18 + Vite + TypeScript). Preciso criar a página Central de Atendimentos e ajustar o kanban.
+
+---
+
+### 1. Criar `client/src/pages/isp/History.tsx`
+
+```typescript
+import { useState, useEffect } from "react";
+import { apiFetch } from "../../lib/api";
+import "./history.css";
+
+// Mapeamento situação → tag slug (espelho do backend)
+const SITUATION_TAG_MAP: Record<string, string> = {
+  F1:"#promessa-pago", F2:"#suspensao-levantada", F3:"#conta-reativada",
+  F4:"#2via-enviada", F5:"#debitos-consultados", F6:"#linha-verificada",
+  F7:"#negociacao-feita", F8:"#contestacao-aberta", F9:"#cancel-com-debito",
+  F10:"#downgrade-feito",
+  S1:"#sem-acesso-triado", S2:"#onu-online", S3:"#onu-restaurada",
+  S4:"#lentidao-resolvida", S5:"#instabilidade-resolvida", S6:"#horario-ajustado",
+  S7:"#site-verificado", S8:"#os-aberta", S9:"#equipamento-trocado",
+  S10:"#senha-wifi-alterada", S11:"#wifi-restaurado", S12:"#roteador-movido",
+  S13:"#plano-consultado",
+  C1:"#upgrade-feito", C2:"#agendamento-feito", C3:"#cobertura-verificada",
+  C4:"#fidelidade-aplicada", C5:"#contrato-fechado", C6:"#cancelamento-feito",
+  C7:"#titularidade-alterada", C8:"#planos-consultados", C9:"#endereco-alterado",
+  C10:"#indicacao-registrada", C11:"#dados-coletados",
+};
+
+// Stages finais por pipeline — espelho do kanbanArchivalService
+const FINAL_STAGE_MAP: Record<string, "ativado" | "perdido"> = {
+  "Instalado / Ativado":  "ativado",
+  "Perdido":              "perdido",
+  "Resolvido":            "ativado",
+  "Visita Técnica":       "ativado",
+  "Escalado / NOC":       "perdido",
+  "Pago / Regularizado":  "ativado",
+  "Inadimplente":         "perdido",
+  "Cancelado por Débito": "perdido",
+};
+
+type ActiveTab = "historico" | "protocolos" | "relatorio" | "tags";
+
+export default function HistoryPage() {
+  const [activeTab, setActiveTab]     = useState<ActiveTab>("historico");
+  const [historyData, setHistoryData] = useState<any[]>([]);
+  const [metrics, setMetrics]         = useState<any>(null);
+  const [protocols, setProtocols]     = useState<any[]>([]);
+  const [loading, setLoading]         = useState(false);
+
+  useEffect(() => { fetchData(); }, [activeTab]);
+
+  async function fetchData() {
+    setLoading(true);
+    try {
+      if (activeTab === "historico") {
+        const res  = await apiFetch("/api/history");
+        const json = await res.json();
+        setHistoryData(json.data || []);
+      }
+      if (activeTab === "relatorio") {
+        const res  = await apiFetch("/api/history/metrics");
+        const json = await res.json();
+        setMetrics(json);
+      }
+      if (activeTab === "protocolos") {
+        const res  = await apiFetch("/api/protocols");
+        const json = await res.json();
+        setProtocols(json.protocols || json || []);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function openConversation(conversationId: number) {
+    if (!conversationId) return;
+    window.location.href = `/chat?conversationId=${conversationId}`;
+  }
+
+  function getPipelineBadgeClass(pipeline: string) {
+    if (!pipeline) return "badge-gray";
+    const p = pipeline.toLowerCase();
+    if (p.includes("financ")) return "badge-financial";
+    if (p.includes("suport")) return "badge-support";
+    if (p.includes("comerc")) return "badge-commercial";
+    return "badge-gray";
+  }
+
+  function getTagColor(tagSlug: string) {
+    if (!tagSlug) return "";
+    if (tagSlug.includes("cancel") || tagSlug.includes("inadim") || tagSlug.includes("escalado"))
+      return "tag-red";
+    if (tagSlug.includes("contrato") || tagSlug.includes("reativ") || tagSlug.includes("pago") ||
+        tagSlug.includes("levantada") || tagSlug.includes("regulariz") || tagSlug.includes("dados-coletados"))
+      return "tag-green";
+    if (tagSlug.includes("os-aberta") || tagSlug.includes("downgrade") || tagSlug.includes("contestacao") ||
+        tagSlug.includes("visita"))
+      return "tag-yellow";
+    if (tagSlug.includes("onu") || tagSlug.includes("wifi") || tagSlug.includes("lentidao") ||
+        tagSlug.includes("instab") || tagSlug.includes("roteador"))
+      return "tag-blue";
+    return "tag-purple";
+  }
+
+  // Label legível do stage final
+  function getStageLabel(row: any): string {
+    if (row.leadStage) return row.leadStage;
+    if (row.leadArchivalReason === "ativado") return "Ativado";
+    if (row.leadArchivalReason === "perdido") return "Perdido";
+    return "—";
+  }
+
+  const TABS = [
+    { key: "historico",  label: "Histórico & Controle" },
+    { key: "protocolos", label: "Protocolos" },
+    { key: "relatorio",  label: "Relatório Kanban" },
+    { key: "tags",       label: "Situações & Tags" },
+  ];
+
+  return (
+    <div className="history-page">
+      <div className="history-header">
+        <h1>Central de Atendimentos</h1>
+        <p>Conversas resolvidas, protocolos e situações ISP em um só lugar</p>
+      </div>
+
+      <div className="history-tabs">
+        {TABS.map((tab) => (
+          <button
+            key={tab.key}
+            className={`history-tab ${activeTab === tab.key ? "active" : ""}`}
+            onClick={() => setActiveTab(tab.key as ActiveTab)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Histórico */}
+      {activeTab === "historico" && (
+        <div className="history-content">
+          {loading ? <div className="loading-state">Carregando...</div> : (
+            <div className="history-table-wrap">
+              <table className="history-table">
+                <thead>
+                  <tr>
+                    <th>Protocolo</th><th>Contato</th><th>Setor</th>
+                    <th>Etapa final</th><th>Resultado</th><th>Tags</th>
+                    <th>Agente</th><th>Data</th><th>Ação</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {historyData.map((row) => (
+                    <tr key={row.conversationId}>
+                      <td><span className="proto-number">{row.protocolNumber || "—"}</span></td>
+                      <td>
+                        <div className="contact-name">{row.contactName || "—"}</div>
+                        <div className="contact-phone">{row.contactPhone}</div>
+                      </td>
+                      <td>
+                        <span className={`pipeline-badge ${getPipelineBadgeClass(row.pipeline)}`}>
+                          {row.pipeline || "—"}
+                        </span>
+                      </td>
+                      <td className="cell-stage">{getStageLabel(row)}</td>
+                      <td>
+                        {row.leadArchivalReason === "ativado" && (
+                          <span className="result-badge result-ativado">✓ Ativado</span>
+                        )}
+                        {row.leadArchivalReason === "perdido" && (
+                          <span className="result-badge result-perdido">✗ Perdido</span>
+                        )}
+                        {!row.leadArchivalReason && <span className="no-tag">—</span>}
+                      </td>
+                      <td>
+                        <div className="tags-cell">
+                          {(row.tags || []).map((tag: any) => (
+                            <span key={tag.id} className={`situation-tag ${getTagColor(tag.tagSlug)}`}>
+                              {tag.tagSlug}
+                            </span>
+                          ))}
+                          {(!row.tags || row.tags.length === 0) && (
+                            <span className="no-tag">sem tag</span>
+                          )}
+                        </div>
+                      </td>
+                      <td>{row.agentName || "—"}</td>
+                      <td>{row.resolvedAt ? new Date(row.resolvedAt).toLocaleDateString("pt-BR") : "—"}</td>
+                      <td>
+                        <button
+                          className="btn-open-conv"
+                          onClick={() => openConversation(row.conversationId)}
+                          disabled={!row.conversationId}
+                        >
+                          ↗ Conversa
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {historyData.length === 0 && (
+                    <tr><td colSpan={9} className="empty-state">Nenhuma conversa resolvida.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Protocolos */}
+      {activeTab === "protocolos" && (
+        <div className="history-content">
+          {loading ? <div className="loading-state">Carregando...</div> : (
+            <div className="history-table-wrap">
+              <table className="history-table">
+                <thead>
+                  <tr>
+                    <th>Número</th><th>Contato</th><th>Título</th><th>Categoria</th>
+                    <th>Status</th><th>Prioridade</th><th>SLA</th><th>Ação</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {protocols.map((proto) => (
+                    <tr key={proto.id}>
+                      <td><span className="proto-number">{proto.protocolNumber}</span></td>
+                      <td>{proto.contactName || "—"}</td>
+                      <td>{proto.title}</td>
+                      <td>{proto.category || "Geral"}</td>
+                      <td>
+                        <span className={`status-badge status-${proto.status}`}>
+                          {proto.status}
+                        </span>
+                      </td>
+                      <td>{proto.priority}</td>
+                      <td>
+                        <div className={`sla-indicator ${proto.slaViolated ? "sla-violated" : "sla-ok"}`} />
+                      </td>
+                      <td>
+                        <button
+                          className="btn-open-conv"
+                          onClick={() => openConversation(proto.conversationId)}
+                          disabled={!proto.conversationId}
+                          title={!proto.conversationId ? "Sem conversa vinculada" : "Abrir conversa"}
+                        >
+                          ↗ Conversa
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Relatório */}
+      {activeTab === "relatorio" && (
+        <div className="history-content">
+          {loading || !metrics ? <div className="loading-state">Carregando métricas...</div> : (
+            <>
+              <div className="metrics-grid">
+                <div className="metric-card">
+                  <div className="metric-label">Total resolvido</div>
+                  <div className="metric-value">{metrics.totalResolved}</div>
+                </div>
+                <div className="metric-card metric-green">
+                  <div className="metric-label">Ativados</div>
+                  <div className="metric-value">{metrics.ativados}</div>
+                </div>
+                <div className="metric-card metric-red">
+                  <div className="metric-label">Perdidos / Escalados</div>
+                  <div className="metric-value">{metrics.perdidos}</div>
+                </div>
+                <div className="metric-card">
+                  <div className="metric-label">Taxa retenção</div>
+                  <div className="metric-value">
+                    {metrics.ativados + metrics.perdidos > 0
+                      ? Math.round((metrics.ativados / (metrics.ativados + metrics.perdidos)) * 100)
+                      : 0}%
+                  </div>
+                </div>
+              </div>
+
+              {/* Breakdown por pipeline */}
+              {metrics.byPipeline && metrics.byPipeline.length > 0 && (
+                <div className="report-section">
+                  <h3>Por setor</h3>
+                  <div className="pipeline-breakdown">
+                    {["Comercial", "Suporte Técnico", "Financeiro"].map((pipe) => {
+                      const rows = metrics.byPipeline.filter((r: any) =>
+                        r.pipeline?.toLowerCase().includes(pipe.split(" ")[0].toLowerCase())
+                      );
+                      const atv = rows.find((r: any) => r.reason === "ativado")?.count || 0;
+                      const per = rows.find((r: any) => r.reason === "perdido")?.count || 0;
+                      const total = Number(atv) + Number(per);
+                      return (
+                        <div key={pipe} className="pipeline-row">
+                          <span className={`pipeline-badge ${getPipelineBadgeClass(pipe)}`}>{pipe}</span>
+                          <span className="pipeline-stat stat-green">✓ {atv}</span>
+                          <span className="pipeline-stat stat-red">✗ {per}</span>
+                          <span className="pipeline-stat">Total: {total}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              <div className="report-section">
+                <h3>Top situações atendidas</h3>
+                {(metrics.topTags || []).map((t: any) => (
+                  <div key={t.tagSlug} className="bar-row">
+                    <span className="bar-label">{t.tagSlug}</span>
+                    <div className="bar-track">
+                      <div
+                        className="bar-fill"
+                        style={{
+                          width: `${Math.min(100, Math.round(
+                            (t.count / (metrics.topTags[0]?.count || 1)) * 100
+                          ))}%`,
+                        }}
+                      />
+                    </div>
+                    <span className="bar-value">{t.count}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Situações & Tags */}
+      {activeTab === "tags" && (
+        <div className="history-content">
+          <div className="tags-reference-grid">
+            <div className="tag-group">
+              <div className="tag-group-title financial">
+                💰 Financeiro
+                <span className="pipeline-stages-hint">
+                  Etapas finais: Pago/Regularizado · Inadimplente · Cancelado por Débito
+                </span>
+              </div>
+              {Object.entries(SITUATION_TAG_MAP).filter(([k]) => k.startsWith("F")).map(([code, slug]) => (
+                <div key={code} className="tag-reference-row">
+                  <span className="situation-code">{code}</span>
+                  <span className="situation-slug tag-green">{slug}</span>
+                </div>
+              ))}
+            </div>
+            <div className="tag-group">
+              <div className="tag-group-title support">
+                🔧 Suporte Técnico
+                <span className="pipeline-stages-hint">
+                  Etapas finais: Resolvido · Visita Técnica · Escalado/NOC
+                </span>
+              </div>
+              {Object.entries(SITUATION_TAG_MAP).filter(([k]) => k.startsWith("S")).map(([code, slug]) => (
+                <div key={code} className="tag-reference-row">
+                  <span className="situation-code">{code}</span>
+                  <span className="situation-slug tag-blue">{slug}</span>
+                </div>
+              ))}
+            </div>
+            <div className="tag-group">
+              <div className="tag-group-title commercial">
+                🛒 Comercial
+                <span className="pipeline-stages-hint">
+                  Etapas finais: Instalado/Ativado · Perdido
+                </span>
+              </div>
+              {Object.entries(SITUATION_TAG_MAP).filter(([k]) => k.startsWith("C")).map(([code, slug]) => (
+                <div key={code} className="tag-reference-row">
+                  <span className="situation-code">{code}</span>
+                  <span className="situation-slug tag-purple">{slug}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+```
+
+---
+
+### 2. Criar `client/src/pages/isp/history.css`
+
+```css
+.history-page { padding: 24px; }
+.history-header h1 { font-size: 20px; font-weight: 600; color: var(--text-primary); }
+.history-header p { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
+.history-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border-color); margin: 20px 0 0; }
+.history-tab { padding: 10px 20px; font-size: 13px; background: none; border: none; border-bottom: 2px solid transparent; color: var(--text-muted); cursor: pointer; transition: color 0.15s; }
+.history-tab.active { color: var(--text-primary); border-bottom-color: var(--accent-blue); }
+.history-tab:hover:not(.active) { color: var(--text-primary); }
+.history-content { padding-top: 20px; }
+.history-table-wrap { overflow-x: auto; }
+.history-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.history-table th { text-align: left; font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; padding: 8px 12px; border-bottom: 1px solid var(--border-color); font-weight: 500; }
+.history-table td { padding: 12px; border-bottom: 1px solid var(--border-subtle); vertical-align: middle; }
+.history-table tr:hover td { background: var(--bg-hover); }
+.proto-number { color: var(--accent-blue); font-size: 12px; font-weight: 500; }
+.contact-name { font-size: 13px; color: var(--text-primary); }
+.contact-phone { font-size: 11px; color: var(--text-muted); }
+.cell-stage { font-size: 12px; color: var(--text-secondary); }
+.pipeline-badge { display: inline-block; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 500; }
+.badge-financial { background: #1a2e1a; color: #4ade80; }
+.badge-support { background: #1a2030; color: #60a5fa; }
+.badge-commercial { background: #2a1a30; color: #c084fc; }
+.badge-gray { background: var(--bg-secondary); color: var(--text-muted); }
+.result-badge { display: inline-block; padding: 3px 8px; border-radius: 20px; font-size: 11px; font-weight: 500; }
+.result-ativado { background: #0f3530; color: #4ade80; }
+.result-perdido { background: #2a1010; color: #f87171; }
+.tags-cell { display: flex; flex-wrap: wrap; gap: 4px; }
+.situation-tag { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 500; }
+.tag-green { background: #0f3530; color: #4ade80; }
+.tag-blue { background: #1a2030; color: #60a5fa; }
+.tag-purple { background: #2a1a30; color: #c084fc; }
+.tag-yellow { background: #2a2010; color: #fbbf24; }
+.tag-red { background: #2a1010; color: #f87171; }
+.no-tag { font-size: 11px; color: var(--text-muted); font-style: italic; }
+.btn-open-conv { background: transparent; border: 1px solid var(--accent-blue); border-radius: 6px; padding: 5px 10px; color: var(--accent-blue); font-size: 11px; cursor: pointer; transition: all 0.15s; white-space: nowrap; }
+.btn-open-conv:hover { background: var(--accent-blue); color: white; }
+.btn-open-conv:disabled { opacity: 0.3; cursor: not-allowed; border-color: var(--border-color); color: var(--text-muted); }
+.status-badge { display: inline-block; padding: 3px 8px; border-radius: 20px; font-size: 11px; font-weight: 500; }
+.status-resolved, .status-Resolvido { background: #0f3530; color: #4ade80; }
+.status-open, .status-Aberto { background: #1a2030; color: #60a5fa; }
+.status-in_progress { background: #2a2010; color: #fbbf24; }
+.sla-indicator { width: 60px; height: 5px; border-radius: 3px; }
+.sla-ok { background: #22c55e; }
+.sla-violated { background: #ef4444; }
+.metrics-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px; }
+.metric-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 10px; padding: 16px; }
+.metric-label { font-size: 11px; color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.05em; }
+.metric-value { font-size: 28px; font-weight: 600; color: var(--text-primary); }
+.metric-green .metric-value { color: #4ade80; }
+.metric-red .metric-value { color: #f87171; }
+.report-section { margin-bottom: 28px; }
+.report-section h3 { font-size: 14px; color: var(--text-primary); margin-bottom: 14px; font-weight: 500; }
+.pipeline-breakdown { display: flex; flex-direction: column; gap: 10px; margin-bottom: 8px; }
+.pipeline-row { display: flex; align-items: center; gap: 16px; padding: 10px 14px; background: var(--bg-secondary); border-radius: 8px; }
+.pipeline-stat { font-size: 13px; color: var(--text-secondary); }
+.stat-green { color: #4ade80; font-weight: 500; }
+.stat-red { color: #f87171; font-weight: 500; }
+.bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.bar-label { font-size: 12px; color: var(--text-secondary); width: 180px; flex-shrink: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bar-track { flex: 1; background: var(--bg-secondary); border-radius: 4px; height: 8px; overflow: hidden; }
+.bar-fill { background: var(--accent-blue); height: 100%; border-radius: 4px; transition: width 0.4s ease; }
+.bar-value { font-size: 12px; color: var(--text-muted); width: 30px; text-align: right; flex-shrink: 0; }
+.tags-reference-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.tag-group { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 10px; padding: 16px; }
+.tag-group-title { font-size: 13px; font-weight: 600; margin-bottom: 4px; display: flex; flex-direction: column; gap: 4px; }
+.tag-group-title.financial { color: #4ade80; }
+.tag-group-title.support { color: #60a5fa; }
+.tag-group-title.commercial { color: #c084fc; }
+.pipeline-stages-hint { font-size: 10px; color: var(--text-muted); font-weight: 400; margin-bottom: 8px; }
+.tag-reference-row { display: flex; align-items: center; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border-subtle); }
+.tag-reference-row:last-child { border-bottom: none; }
+.situation-code { font-size: 11px; color: var(--text-muted); font-family: monospace; font-weight: 600; }
+.situation-slug { font-size: 11px; }
+.empty-state, .loading-state { text-align: center; padding: 40px; color: var(--text-muted); font-size: 13px; }
+```
+
+---
+
+### 3. Registrar rota no React Router
+
+```typescript
+import HistoryPage from "./pages/isp/History";
+<Route path="/isp/history" element={<HistoryPage />} />
+```
+
+---
+
+### 4. Adicionar no menu lateral (seção ISP CENTER, após Métricas ISP)
+
+```tsx
+<SidebarItem
+  icon={<HistoryIcon />}
+  label="Histórico"
+  path="/isp/history"
+/>
+```
+
+---
+
+### 5. Disparar arquivamento no drag-and-drop do kanban
+
+Localiza o handler de movimentação de card no kanban (onde o `stage` do lead é atualizado via drag).
+
+Adiciona após a chamada de update do stage:
+
+```typescript
+const FINAL_STAGE_MAP: Record<string, "ativado" | "perdido"> = {
+  "Instalado / Ativado":  "ativado",
+  "Perdido":              "perdido",
+  "Resolvido":            "ativado",
+  "Visita Técnica":       "ativado",
+  "Escalado / NOC":       "perdido",
+  "Pago / Regularizado":  "ativado",
+  "Inadimplente":         "perdido",
+  "Cancelado por Débito": "perdido",
+};
+
+if (FINAL_STAGE_MAP[novoStage]) {
+  apiFetch(`/api/history/leads/${leadId}/archive`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reason: FINAL_STAGE_MAP[novoStage] }),
+  }).catch(console.error); // fire-and-forget
+}
+```

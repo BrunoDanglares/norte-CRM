@@ -1,0 +1,152 @@
+Você é um engenheiro sênior especialista em Node.js, n8n e arquitetura SaaS multi-tenant.
+
+CONTEXTO:
+Existe um node no n8n responsável por registrar conversa e atualizar sessão após atendimento do agente comercial.
+
+O payload atual já está FUNCIONANDO em produção com a estrutura:
+
+{
+workspace_id,
+conversation_id,
+telefone,
+user_message,
+assistant_message,
+intent,
+session_updates
+}
+
+IMPORTANTE:
+
+* NÃO pode haver breaking changes
+* NÃO pode remover campos existentes
+* NÃO pode alterar nomes atuais
+* NÃO pode mudar comportamento atual
+* Apenas EXTENDER com melhorias
+
+---
+
+OBJETIVO:
+
+Padronizar o fluxo comercial com os demais (suporte e financeiro) e preparar para escala SaaS.
+
+---
+
+IMPLEMENTAÇÕES OBRIGATÓRIAS:
+
+1. INTENT DINÂMICO (CRÍTICO)
+
+Substituir:
+
+intent: "COMERCIAL"
+
+Por:
+
+intent: $("Code: Contexto + SDR").item.json.intent ?? "COMERCIAL"
+
+---
+
+2. PROTEÇÃO DA RESPOSTA DA IA
+
+Garantir que assistant_message:
+
+* Nunca seja null, undefined ou vazio
+* Sempre seja string
+
+Se inválido → usar fallback:
+
+"Erro ao gerar resposta comercial"
+
+---
+
+3. REGISTRAR TIPO DE INPUT
+
+Adicionar:
+
+tipo_input: $("Code: Contexto + SDR").item.json.tipo_input ?? "texto"
+
+---
+
+4. REGISTRAR MUDANÇA DE INTENÇÃO
+
+Adicionar:
+
+mudou_intencao: $("Code: Contexto + SDR").item.json.mudou_intencao ?? false
+
+---
+
+5. PADRONIZAÇÃO DE IDENTIFICAÇÃO
+
+Garantir dentro de session_updates:
+
+identificado: true
+
+---
+
+6. METADADOS (ESSENCIAL)
+
+Adicionar:
+
+meta: {
+origem: "n8n",
+agente: "comercial",
+timestamp: new Date().toISOString()
+}
+
+---
+
+7. PRESERVAR session_updates
+
+Manter:
+
+* fluxo_atual: "comercial"
+* cliente_nome
+
+Sem remover nada
+
+---
+
+8. CÓDIGO DEFENSIVO
+
+Garantir:
+
+* null safety
+* fallback seguro
+* nenhuma exceção em runtime
+
+---
+
+9. ESTRUTURA FINAL (REFERÊNCIA)
+
+{
+workspace_id,
+conversation_id,
+telefone,
+user_message,
+assistant_message,
+intent,
+tipo_input,
+mudou_intencao,
+session_updates,
+meta
+}
+
+---
+
+IMPORTANTE:
+
+Se houver dúvida:
+
+* NÃO simplificar
+* NÃO refatorar estrutura
+* NÃO remover campos existentes
+
+Apenas EXTENDER com segurança.
+
+---
+
+RESULTADO ESPERADO:
+
+* consistência entre setores
+* logs confiáveis
+* base para métricas
+* sistema pronto para múltiplos provedores

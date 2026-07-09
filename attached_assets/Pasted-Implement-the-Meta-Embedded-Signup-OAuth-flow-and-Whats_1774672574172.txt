@@ -1,0 +1,116 @@
+Implement the Meta Embedded Signup OAuth flow and WhatsApp Official connection management backend for ChatBanana.
+
+## Context
+- Meta App ID: 2651158151951093
+- The Embedded Signup flow opens a Meta popup in the frontend → user authorizes → Meta returns a short-lived code → backend exchanges for long-lived token → saves to whatsapp_official_connections
+- All routes protected with requireAuth middleware except the webhook (handled in Prompt 3)
+- Environment variables needed (add to .env and document):
+  META_APP_ID=2651158151951093
+  META_APP_SECRET=<from Meta App Dashboard → Settings → Basic>
+  META_SYSTEM_USER_TOKEN=<token generated for chatbanana-user System User>
+  WHATSAPP_WEBHOOK_VERIFY_TOKEN=<random string you choose, e.g. "chatbanana_webhook_2024">
+
+## File to create: server/services/meta-whatsapp.ts
+
+### MetaWhatsApp service class or module with these functions:
+
+#### exchangeCodeForToken(code: string): Promise<string>
+- POST to https://graph.facebook.com/v19.0/oauth/access_token
+- Params: client_id=META_APP_ID, client_secret=META_APP_SECRET, code=code
+- Returns short-lived user access token
+
+#### getLongLivedToken(shortToken: string): Promise<{ token: string, expiresIn: number }>
+- GET https://graph.facebook.com/v19.0/oauth/access_token?grant_type=fb_exchange_token&client_id=...&client_secret=...&fb_exchange_token={shortToken}
+- Returns long-lived token (60 days) and expiry
+
+#### getWABADetails(wabaId: string, token: string): Promise<{ id, name, currency, timezone }>
+- GET https://graph.facebook.com/v19.0/{wabaId}?fields=id,name,currency,timezone_id&access_token={token}
+
+#### getPhoneNumbers(wabaId: string, token: string): Promise<Array<{ id, display_phone_number, verified_name, quality_rating, platform_type, throughput }>>
+- GET https://graph.facebook.com/v19.0/{wabaId}/phone_numbers?fields=id,display_phone_number,verified_name,quality_rating,platform_type,throughput&access_token={token}
+
+#### subscribeWebhook(wabaId: string, token: string): Promise<boolean>
+- POST https://graph.facebook.com/v19.0/{wabaId}/subscribed_apps?access_token={token}
+- Subscribes the ChatBanana app to receive webhooks for this WABA
+- Returns true if successful
+
+#### sendTextMessage(params: { phoneNumberId: string, accessToken: string, to: string, text: string, replyToMessageId?: string }): Promise<{ messageId: string }>
+- POST https://graph.facebook.com/v19.0/{phoneNumberId}/messages
+- Headers: Authorization: Bearer {accessToken}, Content-Type: application/json
+- Body: { messaging_product: "whatsapp", recipient_type: "individual", to: formatPhone(to), type: "text", text: { preview_url: false, body: text } }
+- If replyToMessageId: add context: { message_id: replyToMessageId }
+- Returns { messageId: wamid }
+
+#### sendTemplateMessage(params: { phoneNumberId: string, accessToken: string, to: string, templateName: string, language: string, components: any[] }): Promise<{ messageId: string }>
+- POST https://graph.facebook.com/v19.0/{phoneNumberId}/messages
+- Body: { messaging_product: "whatsapp", to: formatPhone(to), type: "template", template: { name, language: { code: language }, components } }
+
+#### sendMediaMessage(params: { phoneNumberId: string, accessToken: string, to: string, type: 'image'|'document'|'audio'|'video', mediaUrl: string, caption?: string, filename?: string }): Promise<{ messageId: string }>
+- POST https://graph.facebook.com/v19.0/{phoneNumberId}/messages
+- Body: { messaging_product: "whatsapp", to: formatPhone(to), type, [type]: { link: mediaUrl, caption, filename } }
+
+#### markMessageAsRead(phoneNumberId: string, accessToken: string, messageId: string): Promise<void>
+- POST https://graph.facebook.com/v19.0/{phoneNumberId}/messages
+- Body: { messaging_product: "whatsapp", status: "read", message_id: messageId }
+
+#### Helper: formatPhone(phone: string): string
+- Strips all non-digits
+- If starts with 0, remove leading 0
+- If doesn't start with country code (55 for Brazil), prepend 55
+- Returns string like "5591999999999"
+
+#### Helper: handleMetaError(response: Response): never
+- Reads error from Meta's { error: { message, type, code, fbtrace_id } }
+- Throws new Error with formatted message including fbtrace_id for debugging
+
+## File to create: server/routes/whatsapp-official.ts
+
+### Routes
+
+#### POST /api/whatsapp-official/connect
+Handles Embedded Signup completion.
+Body: { code: string, waba_id: string, phone_number_id: string }
+
+Steps:
+1. resolveWorkspaceId(req)
+2. exchangeCodeForToken(code) → shortToken
+3. getLongLivedToken(shortToken) → { token, expiresIn }
+4. getWABADetails(waba_id, token) → wabaInfo
+5. getPhoneNumbers(waba_id, token) → phones — find the one matching phone_number_id
+6. subscribeWebhook(waba_id, token)
+7. Upsert into whatsapp_official_connections: { workspace_id, waba_id, phone_number_id, display_phone_number, business_name: wabaInfo.name, access_token: token, token_expires_at, status: 'active', webhook_verified: true }
+8. Return connection details (without access_token)
+
+#### GET /api/whatsapp-official/connection
+Returns current workspace's connection status.
+- Query whatsapp_official_connections where workspace_id = workspaceId
+- Return connection without access_token, or { connected: false } if none
+
+#### DELETE /api/whatsapp-official/connection
+Disconnect (set status = 'disconnected', clear access_token from DB).
+
+#### POST /api/whatsapp-official/test
+Test connection by calling getPhoneNumbers with stored credentials.
+- Load connection from DB
+- Call Meta API to verify token still works
+- Return { success: true, phoneNumber, qualityRating } or error
+
+#### GET /api/whatsapp-official/templates
+List templates for workspace from local DB.
+Optionally sync from Meta: GET https://graph.facebook.com/v19.0/{waba_id}/message_templates?access_token={token}
+Query param: ?sync=true to force refresh from Meta.
+
+#### POST /api/whatsapp-official/templates/sync
+Force sync all templates from Meta API into whatsapp_message_templates table.
+- Fetch from Meta, upsert all into local DB
+- Return count of synced templates
+
+## Register routes
+In server/index.ts:
+import whatsappOfficialRouter from './routes/whatsapp-official';
+app.use('/api/whatsapp-official', requireAuth, whatsappOfficialRouter);
+
+## Error handling
+- Meta API errors: return 502 with { error: 'Meta API error', detail: err.message }
+- Missing env vars: throw startup error with clear message about which var is missing
+- Token expired: return 401 with { error: 'token_expired', message: 'Reconecte o WhatsApp' }

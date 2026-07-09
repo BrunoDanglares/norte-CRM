@@ -1,0 +1,68 @@
+Reescrever client/src/components/inbox/ResolveDialog.tsx com as seguintes adições:
+
+1. DADOS ADICIONAIS (buscar ao abrir o modal):
+   - Tempo de atendimento: calcular diferença entre conv.createdAt e agora, 
+     formatar como "1h 23min" ou "45min"
+   - Número do protocolo: buscar GET /api/protocols/by-conversation/:conversationId
+     mostrar como "#260411-0029" ou "Será gerado" se não existir
+   - Situation tags: já existem no modal (manter)
+   - Prioridade atual: ler de conv.prioridade (Alta/Media/Baixa)
+
+2. NOVOS CAMPOS NO MODAL:
+
+   a) Prioridade (editável):
+   <div>
+     <label>Prioridade</label>
+     <div className="flex gap-2">
+       {['Alta', 'Media', 'Baixa'].map(p => (
+         <button onClick={() => setPrioridade(p)}
+           className={prioridade === p ? 'ring-2 ring-primary' : ''}>
+           {p}
+         </button>
+       ))}
+     </div>
+   </div>
+
+   b) Observação do atendente (textarea livre):
+   <textarea 
+     placeholder="Observações sobre o atendimento (opcional)..."
+     value={observacao}
+     onChange={e => setObservacao(e.target.value)}
+     rows={3}
+   />
+
+   c) Checkboxes de envio (com defaults vindos das configs CSAT):
+   const [enviarEncerramento, setEnviarEncerramento] = useState(true);
+   const [enviarCsat, setEnviarCsat] = useState(csatConfig.enabled);
+   
+   <label><input type="checkbox" checked={enviarEncerramento} 
+     onChange={e => setEnviarEncerramento(e.target.checked)} />
+     Enviar mensagem de encerramento do protocolo
+   </label>
+   <label><input type="checkbox" checked={enviarCsat}
+     onChange={e => setEnviarCsat(e.target.checked)} />
+     Enviar pesquisa de satisfação (CSAT)
+   </label>
+
+3. CHAMADA AO RESOLVER — incluir os novos campos no body:
+   PATCH /api/conversations/:id/status com:
+   {
+     status: "resolved",
+     prioridade,           // novo
+     observacao,           // novo
+     enviarEncerramento,   // novo
+     enviarCsat,           // novo
+     pipelineEtapa         // já existia
+   }
+
+4. LAYOUT FINAL DO MODAL (ordem dos elementos):
+   - Header: "✅ Resolver Conversa" + nome do atendente
+   - Row info: Protocolo | Tempo de atendimento
+   - Divider
+   - Etapa do Pipeline (já existe)
+   - Prioridade (novo)
+   - Situation Tags (já existe, read-only)
+   - Observação (novo textarea)
+   - Divider
+   - Checkboxes: Encerramento + CSAT
+   - Footer: [Cancelar] [✓ Resolver]

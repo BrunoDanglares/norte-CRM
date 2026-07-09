@@ -1,0 +1,376 @@
+4 prompts, em ordem
+E1 — Schema Drizzle → duas tabelas novas + migração
+E2 — ispMetricsService.ts → serviço fire-and-forget + instrumentação nos arquivos existentes (engine, circuitBreaker, phoneLock, withTimeout)
+E3 — Rotas API → /api/isp/metrics com 3 endpoints
+E4 — Dashboard frontend → página /isp/metrics + painel de simulação em /isp/prompts
+
+Prompt E1 — Schema Drizzle
+No backend ChatBanana (Node/Express/TypeScript/PostgreSQL/Drizzle ORM), precisa criar duas tabelas para o sistema de observabilidade do agente ISP.
+
+Adiciona ao schema Drizzle existente (mesmo arquivo onde estão as outras tabelas ISP):
+
+```typescript
+// Métricas por sessão de conversa ISP
+export const ispSessionMetrics = pgTable('isp_session_metrics', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  workspaceId: uuid('workspace_id').notNull(),
+  conversationId: uuid('conversation_id').notNull(),
+  phone: text('phone').notNull(),
+
+  // Agente e situação
+  agentUsed: text('agent_used'),        // 'financeiro' | 'comercial' | 'suporte'
+  situationDetected: text('situation_detected'), // ex: 'F1', 'S3', 'C2'
+
+  // Contadores
+  totalTurns: integer('total_turns').default(0),
+  erpCalls: integer('erp_calls').default(0),
+  erpTimeouts: integer('erp_timeouts').default(0),
+  gptCalls: integer('gpt_calls').default(0),
+  gptTimeouts: integer('gpt_timeouts').default(0),
+  erpUnavailable: boolean('erp_unavailable').default(false),
+
+  // Resolução
+  resolutionType: text('resolution_type'), // 'resolved' | 'escalated' | 'max_turns' | 'timeout' | 'abandoned'
+  totalLatencyMs: integer('total_latency_ms'),
+
+  startedAt: timestamp('started_at').defaultNow().notNull(),
+  resolvedAt: timestamp('resolved_at'),
+});
+
+// Eventos de infraestrutura (circuit breaker, timeouts, phone lock)
+export const ispSystemEvents = pgTable('isp_system_events', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  workspaceId: uuid('workspace_id'),
+
+  eventType: text('event_type').notNull(),
+  // Valores: 'CIRCUIT_BREAKER_OPEN' | 'CIRCUIT_BREAKER_CLOSE' |
+  //          'TIMEOUT_ERP' | 'TIMEOUT_GPT' |
+  //          'PHONE_LOCK_DISCARD' | 'MAX_TURNS_REACHED' |
+  //          'ERP_DEGRADED_MODE'
+
+  label: text('label'),       // ex: 'erp_getOpenInvoices', 'OpenAI gerarResposta'
+  metadata: jsonb('metadata'), // dados extras livres
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+```
+
+Após adicionar ao schema, roda a migração Drizzle (`npm run db:push` ou o comando equivalente já em uso no projeto). Confirma que as duas tabelas foram criadas no banco sem erros.
+
+Prompt E2 — ispMetricsService + instrumentação
+No backend ChatBanana (Node/Express/TypeScript), precisa criar o serviço de métricas ISP e instrumentar os arquivos existentes para emitir eventos. O serviço deve ser sempre fire-and-forget — nunca bloqueia nem propaga erro para o agente.
+
+**1. Cria `server/services/ispMetricsService.ts`:**
+
+```typescript
+import { db } from '../db';
+import { ispSessionMetrics, ispSystemEvents } from '../db/schema';
+import { eq } from 'drizzle-orm';
+
+// Fire-and-forget: chama sem await, nunca lança
+function safe(fn: () => Promise<void>) {
+  fn().catch(err => console.error('[Metrics] erro silencioso:', err));
+}
+
+export const ispMetrics = {
+
+  // Chamado no início de cada sessão (primeiro turn)
+  sessionStart(params: {
+    workspaceId: string;
+    conversationId: string;
+    phone: string;
+  }) {
+    safe(async () => {
+      await db.insert(ispSessionMetrics).values({
+        ...params,
+        startedAt: new Date(),
+      }).onConflictDoNothing(); // idempotente — ignora se já existe
+    });
+  },
+
+  // Atualiza campos da sessão (pode chamar múltiplas vezes)
+  sessionUpdate(conversationId: string, patch: Partial<typeof ispSessionMetrics.$inferInsert>) {
+    safe(async () => {
+      await db.update(ispSessionMetrics)
+        .set(patch)
+        .where(eq(ispSessionMetrics.conversationId, conversationId));
+    });
+  },
+
+  // Chamado quando a sessão termina (resolução, escalação, max turns)
+  sessionEnd(conversationId: string, resolutionType: string, latencyMs?: number) {
+    safe(async () => {
+      await db.update(ispSessionMetrics)
+        .set({
+          resolutionType,
+          resolvedAt: new Date(),
+          ...(latencyMs ? { totalLatencyMs: latencyMs } : {}),
+        })
+        .where(eq(ispSessionMetrics.conversationId, conversationId));
+    });
+  },
+
+  // Evento de infraestrutura — circuit breaker, timeout, phone lock, etc.
+  systemEvent(params: {
+    workspaceId?: string;
+    eventType: string;
+    label?: string;
+    metadata?: Record<string, unknown>;
+  }) {
+    safe(async () => {
+      await db.insert(ispSystemEvents).values({
+        ...params,
+        createdAt: new Date(),
+      });
+    });
+  },
+};
+```
+
+**2. Instrumenta `server/utils/circuitBreaker.ts`:**
+
+Quando o circuito abrir, emite evento:
+```typescript
+import { ispMetrics } from '../services/ispMetricsService';
+
+// Onde loga o circuit breaker aberto, adiciona:
+ispMetrics.systemEvent({
+  eventType: 'CIRCUIT_BREAKER_OPEN',
+  label: key,
+  metadata: { failures: state.failures },
+});
+
+// Onde o circuito fecha (sucesso após meio-aberto), adiciona:
+ispMetrics.systemEvent({
+  eventType: 'CIRCUIT_BREAKER_CLOSE',
+  label: key,
+});
+```
+
+**3. Instrumenta `server/utils/withTimeout.ts`:**
+
+Quando o timeout estourar, emite evento:
+```typescript
+import { ispMetrics } from '../services/ispMetricsService';
+
+// No setTimeout, antes do reject:
+ispMetrics.systemEvent({
+  eventType: label.startsWith('OpenAI') ? 'TIMEOUT_GPT' : 'TIMEOUT_ERP',
+  label,
+  metadata: { ms },
+});
+```
+
+**4. Instrumenta `server/utils/phoneLock.ts`:**
+
+Quando descartar por lock ativo:
+```typescript
+import { ispMetrics } from '../services/ispMetricsService';
+
+// Onde loga phone lock descarte, adiciona:
+ispMetrics.systemEvent({
+  workspaceId: workspaceId, // se a chave inclui workspaceId, extrai daqui
+  eventType: 'PHONE_LOCK_DISCARD',
+  label: phone,
+});
+```
+
+**5. Instrumenta `ispAgentEngine.ts`:**
+
+```typescript
+import { ispMetrics } from './ispMetricsService';
+
+// No início de _runISPAgentInner (após stale session check):
+ispMetrics.sessionStart({
+  workspaceId: conversation.workspaceId,
+  conversationId: conversation.id,
+  phone: conversation.phone, // adapta para o campo real
+});
+
+// Quando detectar agente e situação:
+ispMetrics.sessionUpdate(conversation.id, {
+  agentUsed: agentName,        // 'financeiro' | 'comercial' | 'suporte'
+  situationDetected: situation, // ex: 'F1'
+});
+
+// No guard de max turns (já existe):
+ispMetrics.systemEvent({
+  workspaceId: conversation.workspaceId,
+  eventType: 'MAX_TURNS_REACHED',
+  metadata: { turns, conversationId: conversation.id },
+});
+ispMetrics.sessionEnd(conversation.id, 'max_turns');
+
+// Quando ERP indisponível:
+ispMetrics.systemEvent({
+  workspaceId: conversation.workspaceId,
+  eventType: 'ERP_DEGRADED_MODE',
+  metadata: { conversationId: conversation.id },
+});
+ispMetrics.sessionUpdate(conversation.id, { erpUnavailable: true });
+
+// Quando sessão resolve normalmente:
+ispMetrics.sessionEnd(conversation.id, 'resolved', latencyMs);
+
+// Quando escala para humano:
+ispMetrics.sessionEnd(conversation.id, 'escalated');
+```
+
+Adapta os nomes de campo para os que existem no código real. Mostra os trechos alterados em cada arquivo após aplicar.
+
+Prompt E3 — Rotas API
+No backend ChatBanana (Node/Express/TypeScript/Drizzle), precisa de 3 endpoints para o dashboard de métricas ISP. Cria o arquivo `server/routes/isp-metrics.ts`:
+
+```typescript
+import { Router } from 'express';
+import { db } from '../db';
+import { ispSessionMetrics, ispSystemEvents } from '../db/schema';
+import { eq, gte, desc, sql, and } from 'drizzle-orm';
+import { requireAuth } from '../middleware/auth'; // adapta para o middleware real
+
+const router = Router();
+
+// GET /api/isp/metrics/summary?workspaceId=xxx&since=2024-01-01
+// Cards do dashboard: totais, taxas, latências
+router.get('/summary', requireAuth, async (req, res) => {
+  try {
+    const { workspaceId, since } = req.query as Record<string, string>;
+    const sinceDate = since ? new Date(since) : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+    const [sessions] = await db
+      .select({
+        total:       sql<number>`count(*)`,
+        resolved:    sql<number>`count(*) filter (where resolution_type = 'resolved')`,
+        escalated:   sql<number>`count(*) filter (where resolution_type = 'escalated')`,
+        maxTurns:    sql<number>`count(*) filter (where resolution_type = 'max_turns')`,
+        avgTurns:    sql<number>`round(avg(total_turns), 1)`,
+        avgLatencyMs:sql<number>`round(avg(total_latency_ms), 0)`,
+        p95LatencyMs:sql<number>`percentile_disc(0.95) within group (order by total_latency_ms)`,
+        erpDegraded: sql<number>`count(*) filter (where erp_unavailable = true)`,
+      })
+      .from(ispSessionMetrics)
+      .where(and(
+        eq(ispSessionMetrics.workspaceId, workspaceId),
+        gte(ispSessionMetrics.startedAt, sinceDate)
+      ));
+
+    const [events] = await db
+      .select({
+        circuitBreakerOpens: sql<number>`count(*) filter (where event_type = 'CIRCUIT_BREAKER_OPEN')`,
+        timeoutsErp:         sql<number>`count(*) filter (where event_type = 'TIMEOUT_ERP')`,
+        timeoutsGpt:         sql<number>`count(*) filter (where event_type = 'TIMEOUT_GPT')`,
+        phoneLockDiscards:   sql<number>`count(*) filter (where event_type = 'PHONE_LOCK_DISCARD')`,
+      })
+      .from(ispSystemEvents)
+      .where(and(
+        eq(ispSystemEvents.workspaceId, workspaceId),
+        gte(ispSystemEvents.createdAt, sinceDate)
+      ));
+
+    res.json({ sessions, events });
+  } catch (err) {
+    console.error('[ISP Metrics] summary error:', err);
+    res.status(500).json({ error: 'Erro ao buscar métricas' });
+  }
+});
+
+// GET /api/isp/metrics/events?workspaceId=xxx&limit=50
+// Log de eventos do sistema (circuit breaker, timeouts, etc.)
+router.get('/events', requireAuth, async (req, res) => {
+  try {
+    const { workspaceId, limit = '50' } = req.query as Record<string, string>;
+
+    const events = await db
+      .select()
+      .from(ispSystemEvents)
+      .where(eq(ispSystemEvents.workspaceId, workspaceId))
+      .orderBy(desc(ispSystemEvents.createdAt))
+      .limit(Number(limit));
+
+    res.json({ events });
+  } catch (err) {
+    console.error('[ISP Metrics] events error:', err);
+    res.status(500).json({ error: 'Erro ao buscar eventos' });
+  }
+});
+
+// GET /api/isp/metrics/sessions?workspaceId=xxx&limit=100
+// Lista de sessões recentes com detalhes
+router.get('/sessions', requireAuth, async (req, res) => {
+  try {
+    const { workspaceId, limit = '100' } = req.query as Record<string, string>;
+
+    const sessions = await db
+      .select()
+      .from(ispSessionMetrics)
+      .where(eq(ispSessionMetrics.workspaceId, workspaceId))
+      .orderBy(desc(ispSessionMetrics.startedAt))
+      .limit(Number(limit));
+
+    res.json({ sessions });
+  } catch (err) {
+    console.error('[ISP Metrics] sessions error:', err);
+    res.status(500).json({ error: 'Erro ao buscar sessões' });
+  }
+});
+
+export default router;
+```
+
+Registra o router no servidor principal (onde os outros routers ISP já estão registrados):
+```typescript
+import ispMetricsRouter from './routes/isp-metrics';
+app.use('/api/isp/metrics', ispMetricsRouter);
+```
+
+Testa os 3 endpoints no Postman ou curl e confirma que retornam 200 (mesmo que com dados zerados ainda).
+
+Prompt E4 — Dashboard frontend
+No frontend ChatBanana (React 18/Vite/TypeScript), precisa criar a página de métricas ISP em `/isp/metrics` e um painel de simulação dentro de `/isp/prompts`.
+
+**1. Cria `client/src/pages/isp/ISPMetrics.tsx`:**
+
+Página com 4 seções:
+
+**Cards de resumo (topo):**
+- Sessões hoje (total)
+- Taxa de resolução (resolved / total em %)
+- Taxa de escalação (escalated + max_turns / total em %)
+- ERP uptime (100% - % de sessões com erpUnavailable)
+- Latência GPT média (avgLatencyMs em ms) e p95
+
+**Gráfico de sessões por hora** (últimas 24h) — usa os dados de `sessions` agrupados por hora no frontend com `Array.reduce`. Usa o componente de gráfico já existente no projeto ou uma tabela simples se não houver biblioteca de gráficos.
+
+**Tabela de sessões recentes** — colunas: phone (últimos 4 dígitos mascarados), agente, situação, turns, resolução, latência, horário.
+
+**Log de eventos do sistema** — lista reversa cronológica com badge colorido por tipo:
+- CIRCUIT_BREAKER_OPEN → vermelho
+- TIMEOUT_ERP / TIMEOUT_GPT → amarelo
+- PHONE_LOCK_DISCARD → cinza
+- MAX_TURNS_REACHED → laranja
+- ERP_DEGRADED_MODE → vermelho
+
+Cada seção busca dados com `useEffect` + `fetch('/api/isp/metrics/summary?workspaceId=...')` etc. Usa o `apiFetch` já existente no projeto para incluir o Bearer token automaticamente.
+
+**2. Adiciona rota no router:**
+
+Onde as outras rotas ISP estão definidas (ex: `/isp/prompts`, `/isp/agents`):
+```typescript
+<Route path="/isp/metrics" element={<ISPMetrics />} />
+```
+
+**3. Adiciona link no menu ISP:**
+
+No componente de sidebar/nav ISP, adiciona item "Métricas" apontando para `/isp/metrics`.
+
+**4. Painel de simulação em `/isp/prompts`:**
+
+Dentro da página `ISPPrompts.tsx` existente, adiciona uma seção "Testar situação" no final da página:
+
+- Select de situação (F1–F10, S1–S13, C1–C10)
+- Textarea para mensagem de teste
+- Botão "Simular"
+- Chama `POST /api/isp/agent/simulate` (endpoint já deve existir com `isSimulation: true`, se não existir cria um stub que retorna mock) 
+- Exibe a resposta do agente formatada abaixo
+
+Mostra os arquivos criados/alterados após aplicar.

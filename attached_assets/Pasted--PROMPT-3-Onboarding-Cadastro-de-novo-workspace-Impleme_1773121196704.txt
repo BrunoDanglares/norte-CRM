@@ -1,0 +1,185 @@
+
+PROMPT 3 — Onboarding: Cadastro de novo workspace
+Implemente o fluxo de cadastro e onboarding de novo workspace no FlowCRM.
+O banco já tem a tabela workspaces com coluna id UUID.
+
+---
+
+## PARTE 1: Rota de registro (pública)
+
+Crie POST /api/auth/register sem requireAuth:
+```typescript
+import { randomBytes, scrypt } from 'crypto'
+import { promisify } from 'util'
+import { v4 as uuidv4 } from 'uuid'
+import jwt from 'jsonwebtoken'
+
+const scryptAsync = promisify(scrypt)
+
+router.post('/api/auth/register', async (req, res) => {
+  const { workspace_name, name, email, password } = req.body
+
+  if (!workspace_name || !name || !email || !password)
+    return res.status(400).json({ error: 'Todos os campos são obrigatórios' })
+
+  if (password.length < 8)
+    return res.status(400).json({ error: 'Senha deve ter no mínimo 8 caracteres' })
+
+  const existing = await db.query(
+    'SELECT id FROM users WHERE email = $1', [email.toLowerCase().trim()]
+  )
+  if (existing.rows[0])
+    return res.status(409).json({ error: 'Email já cadastrado' })
+
+  // Criar workspace com UUID
+  const workspaceId = uuidv4()
+  await db.query(
+    `INSERT INTO workspaces (id, name, plan, created_at)
+     VALUES ($1, $2, 'starter', NOW())`,
+    [workspaceId, workspace_name]
+  )
+
+  // Hash da senha
+  const salt = randomBytes(16).toString('hex')
+  const hash = await scryptAsync(password, salt, 64) as Buffer
+  const stored = `${hash.toString('hex')}:${salt}`
+
+  // Criar usuário admin
+  const user = await db.query(
+    `INSERT INTO users (name, email, password, role, workspace_id, active, created_at)
+     VALUES ($1, $2, $3, 'admin', $4, true, NOW())
+     RETURNING id, name, email, role`,
+    [name, email.toLowerCase().trim(), stored, workspaceId]
+  )
+
+  // Criar pipeline_stages padrão
+  const stages = ['Novo Lead', 'Contato Feito', 'Proposta Enviada', 'Negociação', 'Fechado']
+  for (let i = 0; i < stages.length; i++) {
+    await db.query(
+      `INSERT INTO pipeline_stages (name, order_index, workspace_id)
+       VALUES ($1, $2, $3)`,
+      [stages[i], i, workspaceId]
+    )
+  }
+
+  // Gerar JWT
+  const token = jwt.sign(
+    { id: user.rows[0].id, tenantId: workspaceId, workspaceId, email, role: 'admin' },
+    process.env.JWT_SECRET!,
+    { expiresIn: '7d' }
+  )
+
+  return res.status(201).json({
+    token,
+    user: user.rows[0],
+    workspace: { id: workspaceId, name: workspace_name }
+  })
+})
+```
+
+## PARTE 2: Tela de cadastro — client/src/pages/register.tsx
+
+Crie a página de registro mantendo o mesmo estilo visual da tela de login:
+```typescript
+import { useState } from 'react'
+import { useNavigate, Link } from 'react-router-dom'
+import { useAuth } from '../contexts/AuthContext'
+
+export default function RegisterPage() {
+  const navigate = useNavigate()
+  const [form, setForm] = useState({
+    workspace_name: '', name: '', email: '', password: '', confirm_password: ''
+  })
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setError('')
+
+    if (form.password !== form.confirm_password) {
+      setError('As senhas não coincidem')
+      return
+    }
+
+    setLoading(true)
+    try {
+      const res = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form)
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+
+      localStorage.setItem('flowcrm_token', data.token)
+      localStorage.setItem('flowcrm_user', JSON.stringify(data.user))
+      navigate('/dashboard')
+    } catch (err: any) {
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    // Mesmo layout dark da tela de login
+    // Campos na ordem:
+    // 1. Nome da empresa (workspace_name) — placeholder "Escritório Advocacia Silva"
+    // 2. Seu nome (name) — placeholder "João Silva"
+    // 3. Email profissional (email)
+    // 4. Senha — mínimo 8 caracteres
+    // 5. Confirmar senha
+    // Botão "Criar workspace" com estado loading
+    // Mensagem de erro inline em vermelho
+    // Link no rodapé: "Já tem conta? Fazer login" → /login
+  )
+}
+```
+
+## PARTE 3: Adicionar rota /register no App.tsx
+```typescript
+<Routes>
+  <Route path="/login" element={<LoginPage />} />
+  <Route path="/register" element={<RegisterPage />} />  {/* nova */}
+  <Route path="/*" element={
+    <ProtectedRoute>
+      <MainLayout />
+    </ProtectedRoute>
+  } />
+</Routes>
+```
+
+Na tela de login existente, adicione o link:
+```typescript
+<Link to="/register" className="text-purple-400 hover:text-purple-300 text-sm">
+  Não tem conta? Criar workspace grátis
+</Link>
+```
+
+## PARTE 4: Rota super admin (simples)
+```typescript
+router.get('/api/admin/workspaces', requireAuth, async (req: AuthRequest, res) => {
+  if (req.user!.role !== 'superadmin')
+    return res.status(403).json({ error: 'Acesso negado' })
+
+  const result = await db.query(`
+    SELECT 
+      w.id, w.name, w.plan, w.created_at,
+      COUNT(DISTINCT u.id)::int AS users_count,
+      COUNT(DISTINCT l.id)::int AS leads_count
+    FROM workspaces w
+    LEFT JOIN users u ON u.workspace_id = w.id
+    LEFT JOIN leads l ON l.workspace_id = w.id
+    GROUP BY w.id
+    ORDER BY w.created_at DESC
+  `)
+  res.json(result.rows)
+})
+```
+
+## Confirme após implementar:
+1. POST /api/auth/register cria workspace UUID + admin + 5 stages padrão
+2. Registro redireciona para /dashboard com sessão ativa
+3. Rota /register existe no frontend com link na tela de login
+4. Dados do novo workspace estão completamente isolados do workspace padrão

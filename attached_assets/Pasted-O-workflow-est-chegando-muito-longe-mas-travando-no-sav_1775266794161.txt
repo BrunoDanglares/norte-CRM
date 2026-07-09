@@ -1,0 +1,96 @@
+O workflow está chegando muito longe mas travando no save de memória. Vamos fazer o save de memória não-crítico — se falhar, o workflow continua normalmente. Manda dois prompts:
+Prompt A — Fix do banco:
+No arquivo server/services/n8nMemoryService.ts, simplifique
+completamente os métodos para usar apenas INSERT simples sem
+UPDATE complexo. O problema está no updateSession.
+
+Substitua updateSession por uma versão que faz UPSERT simples:
+
+  async updateSession(conversationId: string, updates: any) {
+    try {
+      const fields = {
+        fluxo_atual:      updates.fluxoAtual,
+        cliente_nome:     updates.clienteNome,
+        cliente_id_erp:   updates.clienteIdErp,
+        identificado:     updates.identificado,
+        ultimo_intent:    updates.ultimoIntent,
+        cliente_contrato: updates.clienteContrato,
+      };
+
+      for (const [key, value] of Object.entries(fields)) {
+        if (value === undefined || value === null) continue;
+        await db.execute(
+          sql`UPDATE isp_session_state
+              SET ${sql.raw(key)} = ${value}, updated_at = now()
+              WHERE conversation_id = ${conversationId}`
+        );
+      }
+
+      if (updates.dadosColetados) {
+        await db.execute(
+          sql`UPDATE isp_session_state
+              SET dados_coletados = dados_coletados || ${JSON.stringify(updates.dadosColetados)}::jsonb,
+                  updated_at = now()
+              WHERE conversation_id = ${conversationId}`
+        );
+      }
+    } catch (err: any) {
+      console.error('[Memory] updateSession error:', err.message);
+    }
+  }
+
+Envolva TAMBÉM o saveTurn em try/catch para não quebrar o fluxo:
+
+  async saveTurn(params: any) {
+    try {
+      await db.execute(
+        sql`INSERT INTO conversation_turns
+            (workspace_id, conversation_id, telefone, role, content, intent)
+            VALUES (${params.workspaceId}::uuid, ${params.conversationId},
+                    ${params.telefone}, ${params.role}, ${params.content},
+                    ${params.intent ?? null})`
+      );
+    } catch (err: any) {
+      console.error('[Memory] saveTurn error:', err.message);
+    }
+  }
+
+Salve e aguarde redeploy.
+Prompt B — Torna os nós de save não-críticos no N8N:
+No arquivo server/services/n8nManagerService.ts, adicione um método
+tornarSaveNaoCritico que adiciona continueOnFail: true em todos os
+nós POST que chamam /memory/save no workflow:
+
+  async tornarSaveNaoCritico(workflowId: string): Promise<any> {
+    const workflow = await n8nFetch(`/workflows/${workflowId}`);
+
+    const updatedNodes = workflow.nodes.map((node: any) => {
+      const url = node.parameters?.url ?? '';
+      if (url.includes('/memory/save') || url.includes('/memory/turn')) {
+        return { ...node, continueOnFail: true, alwaysOutputData: true };
+      }
+      return node;
+    });
+
+    await this.atualizarWorkflow(workflowId, {
+      name: workflow.name, nodes: updatedNodes,
+      connections: workflow.connections,
+      settings: { executionOrder: workflow.settings?.executionOrder ?? 'v1' },
+    });
+
+    return { ok: true };
+  }
+
+E adicione a rota:
+
+router.post('/manager/save-nao-critico', async (req: Request, res: Response) => {
+  try {
+    const id = req.body?.workflow_id ?? '7bFZJqc6KCcx0zsZ';
+    const result = await n8nManagerService.tornarSaveNaoCritico(id);
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+Salve e aguarde redeploy.

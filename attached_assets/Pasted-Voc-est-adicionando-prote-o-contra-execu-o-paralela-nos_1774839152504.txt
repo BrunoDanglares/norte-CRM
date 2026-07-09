@@ -1,0 +1,67 @@
+Você está adicionando proteção contra execução paralela nos cron jobs do módulo ISP do ChatBanana.
+
+PROBLEMA: Os crons de billing (08:00) e aniversário (09:00) em server/services/isp-schedulers.ts não têm lock. Se o processo reiniciar durante execução ou houver múltiplas instâncias (deploy EasyPanel), o mesmo cron pode rodar em paralelo, enviando mensagens duplicadas para clientes.
+
+TAREFA: Implementar advisory lock via PostgreSQL para garantir execução exclusiva.
+
+PARTE 1 — Criar utilitário de lock em server/utils/pg-lock.ts (arquivo novo):
+
+```typescript
+import { db } from "../db";
+import { sql } from "drizzle-orm";
+
+export async function withPgLock(
+  lockName: string,
+  fn: () => Promise
+): Promise {
+  const lockKey = await db.execute(
+    sql`SELECT hashtext(${lockName})::bigint AS key`
+  );
+  const key = (lockKey.rows[0] as { key: bigint }).key;
+
+  const acquired = await db.execute(
+    sql`SELECT pg_try_advisory_lock(${key}) AS acquired`
+  );
+
+  if (!(acquired.rows[0] as { acquired: boolean }).acquired) {
+    console.log(`[PgLock] Lock "${lockName}" já em uso, pulando execução`);
+    return;
+  }
+
+  try {
+    await fn();
+  } finally {
+    await db.execute(sql`SELECT pg_advisory_unlock(${key})`);
+  }
+}
+```
+
+PARTE 2 — Aplicar o lock nos crons em server/services/isp-schedulers.ts:
+
+1. Adicione o import no topo do arquivo:
+   `import { withPgLock } from "../utils/pg-lock";`
+
+2. Envolva o corpo de CADA cron com withPgLock. O padrão é:
+
+```typescript
+// ANTES:
+cron.schedule("0 8 * * *", async () => {
+  // lógica do billing
+});
+
+// DEPOIS:
+cron.schedule("0 8 * * *", async () => {
+  await withPgLock("isp-billing-cron", async () => {
+    // lógica do billing (sem alterações)
+  });
+});
+```
+
+3. Use nomes de lock únicos e descritivos para cada cron:
+   - Cron de billing → "isp-billing-cron"
+   - Cron de aniversário → "isp-birthday-cron"
+   - Se houver outros crons ISP → "isp-{nome}-cron"
+
+4. Não altere a lógica interna de nenhum cron, apenas envolva com withPgLock.
+
+VALIDAÇÃO: Após as alterações, simule reinicialização durante execução e confirme que o segundo processo loga "Lock já em uso, pulando execução" sem duplicar mensagens.

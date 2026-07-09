@@ -1,0 +1,558 @@
+Falta só o Prompt 4 — Channel Router + Página de Configuração frontend. Vou mandar em duas partes para facilitar.
+
+PROMPT 4A — Channel Router (Backend)
+Create the channel router service for ChatBanana at server/services/channel-router.ts
+
+This service is the single entry point for ALL outbound WhatsApp messages. It checks if the workspace has an active Meta Cloud API connection and routes through it, otherwise falls back to Z-API.
+
+## File to create: server/services/channel-router.ts
+```typescript
+import { db } from '../db';
+import { whatsapp_official_connections } from '../db/schema';
+import { eq, and } from 'drizzle-orm';
+import * as metaWhatsApp from './meta-whatsapp';
+
+export interface SendMessageParams {
+  workspaceId: string;
+  to: string;
+  type: 'text' | 'image' | 'audio' | 'document' | 'video' | 'template';
+  content?: string;
+  mediaUrl?: string;
+  mediaCaption?: string;
+  filename?: string;
+  templateName?: string;
+  templateLanguage?: string;
+  templateComponents?: any[];
+  replyToMessageId?: string;
+  conversationId?: number;
+}
+
+export interface SendMessageResult {
+  success: boolean;
+  messageId?: string;
+  channel: 'meta' | 'zapi';
+  error?: string;
+}
+
+export async function sendMessage(params: SendMessageParams): Promise<SendMessageResult> {
+  const metaConnection = await db.query.whatsapp_official_connections.findFirst({
+    where: and(
+      eq(whatsapp_official_connections.workspace_id, params.workspaceId),
+      eq(whatsapp_official_connections.status, 'active')
+    )
+  });
+
+  if (metaConnection) {
+    return sendViaMeta(params, metaConnection);
+  }
+
+  return sendViaZAPI(params, params.workspaceId);
+}
+
+async function sendViaMeta(params: SendMessageParams, connection: any): Promise<SendMessageResult> {
+  try {
+    const base = {
+      phoneNumberId: connection.phone_number_id,
+      accessToken: connection.access_token,
+      to: params.to
+    };
+
+    let messageId: string;
+
+    switch (params.type) {
+      case 'text':
+        const textResult = await metaWhatsApp.sendTextMessage({
+          ...base,
+          text: params.content || '',
+          replyToMessageId: params.replyToMessageId
+        });
+        messageId = textResult.messageId;
+        break;
+
+      case 'image':
+      case 'audio':
+      case 'document':
+      case 'video':
+        const mediaResult = await metaWhatsApp.sendMediaMessage({
+          ...base,
+          type: params.type,
+          mediaUrl: params.mediaUrl!,
+          caption: params.mediaCaption,
+          filename: params.filename
+        });
+        messageId = mediaResult.messageId;
+        break;
+
+      case 'template':
+        const tplResult = await metaWhatsApp.sendTemplateMessage({
+          ...base,
+          templateName: params.templateName!,
+          language: params.templateLanguage || 'pt_BR',
+          components: params.templateComponents || []
+        });
+        messageId = tplResult.messageId;
+        break;
+
+      default:
+        throw new Error(`Unsupported message type: ${params.type}`);
+    }
+
+    // Update last_used_at non-blocking
+    db.update(whatsapp_official_connections)
+      .set({ last_used_at: new Date() })
+      .where(eq(whatsapp_official_connections.id, connection.id))
+      .catch(() => {});
+
+    console.log(`[ChannelRouter] ✅ Sent via Meta | to: ${params.to} | type: ${params.type}`);
+    return { success: true, messageId, channel: 'meta' };
+
+  } catch (err: any) {
+    console.error('[ChannelRouter] Meta send failed:', err.message);
+    return { success: false, error: err.message, channel: 'meta' };
+  }
+}
+
+async function sendViaZAPI(params: SendMessageParams, workspaceId: string): Promise<SendMessageResult> {
+  try {
+    // Find the existing Z-API send function used elsewhere in the codebase
+    // Look in server/routes.ts or server/services/ for functions like:
+    // sendZAPIMessage, sendWhatsAppMessage, sendMessage, zapiSend, etc.
+    // Call that same function here with the params
+    // This preserves 100% backward compatibility
+
+    console.log(`[ChannelRouter] Sending via Z-API | to: ${params.to} | workspace: ${workspaceId}`);
+
+    // Agent: find and call the existing Z-API send utility here
+    // Return { success: true, messageId: result.id, channel: 'zapi' }
+
+    return { success: true, channel: 'zapi' };
+  } catch (err: any) {
+    console.error('[ChannelRouter] Z-API send failed:', err.message);
+    return { success: false, error: err.message, channel: 'zapi' };
+  }
+}
+```
+
+## Important
+- Do NOT replace any existing Z-API calls throughout the codebase yet
+- Just create this file so it's ready to use
+- Confirm the file compiles without TypeScript errors
+- Log on import: console.log('[ChannelRouter] Initialized — routes via Meta if connected, Z-API fallback')
+
+PROMPT 4B — Página WhatsApp Oficial (Frontend)
+Create the WhatsApp Official API settings page for ChatBanana.
+
+## File to create: client/src/pages/WhatsAppOficial.tsx
+
+## Design system (match existing pages exactly)
+- Background: #0f0c1a, cards: #1c1830, accent gradient: #8b5cf6 → #6d28d9
+- Use same component imports as other pages in the project
+- Use apiFetch helper (already handles Bearer token)
+- Use existing toast pattern for notifications
+
+## Full component:
+```tsx
+import { useState, useEffect } from 'react';
+import { Smartphone, CheckCircle, XCircle, RefreshCw, ExternalLink, Eye, EyeOff, Wifi } from 'lucide-react';
+import { apiFetch } from '../lib/api'; // adjust import path to match project
+// import toast from existing toast setup in the project
+
+export default function WhatsAppOficial() {
+  const [connection, setConnection] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [testing, setTesting] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [templates, setTemplates] = useState<any[]>([]);
+  const [showManualForm, setShowManualForm] = useState(false);
+  const [connecting, setConnecting] = useState(false);
+  const [showToken, setShowToken] = useState(false);
+  const [formData, setFormData] = useState({
+    waba_id: '',
+    phone_number_id: '',
+    access_token: ''
+  });
+
+  useEffect(() => {
+    loadConnection();
+  }, []);
+
+  async function loadConnection() {
+    try {
+      const data = await apiFetch('/api/whatsapp-official/connection');
+      setConnection(data.connected === false ? null : data);
+      if (data.connected !== false) {
+        loadTemplates();
+      }
+    } catch {
+      setConnection(null);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function loadTemplates() {
+    try {
+      const data = await apiFetch('/api/whatsapp-official/templates');
+      setTemplates(Array.isArray(data) ? data : []);
+    } catch {}
+  }
+
+  async function handleConnect() {
+    if (!formData.waba_id || !formData.phone_number_id || !formData.access_token) {
+      // show toast error: 'Preencha todos os campos'
+      return;
+    }
+    setConnecting(true);
+    try {
+      const data = await apiFetch('/api/whatsapp-official/connect', {
+        method: 'POST',
+        body: JSON.stringify({
+          waba_id: formData.waba_id,
+          phone_number_id: formData.phone_number_id,
+          access_token: formData.access_token
+        })
+      });
+      setConnection(data);
+      setShowManualForm(false);
+      setFormData({ waba_id: '', phone_number_id: '', access_token: '' });
+      // toast success: 'WhatsApp conectado com sucesso! 🎉'
+      loadTemplates();
+    } catch (err: any) {
+      // toast error: err.message
+    } finally {
+      setConnecting(false);
+    }
+  }
+
+  async function handleTest() {
+    setTesting(true);
+    try {
+      const data = await apiFetch('/api/whatsapp-official/test', { method: 'POST' });
+      if (data.success) {
+        // toast success: `Conexão OK — ${data.phoneNumber} (${data.qualityRating})`
+      } else {
+        // toast error: data.error
+      }
+    } catch (err: any) {
+      // toast error: err.message
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  async function handleDisconnect() {
+    if (!confirm('Desconectar o WhatsApp Oficial? Mensagens voltarão a usar o Z-API.')) return;
+    try {
+      await apiFetch('/api/whatsapp-official/connection', { method: 'DELETE' });
+      setConnection(null);
+      setTemplates([]);
+      // toast success: 'WhatsApp desconectado'
+    } catch (err: any) {
+      // toast error: err.message
+    }
+  }
+
+  async function handleSyncTemplates() {
+    setSyncing(true);
+    try {
+      const data = await apiFetch('/api/whatsapp-official/templates/sync', { method: 'POST' });
+      // toast success: `${data.synced} templates sincronizados`
+      loadTemplates();
+    } catch (err: any) {
+      // toast error: err.message
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  function getTierLabel(tier: string) {
+    const map: Record<string, string> = {
+      TIER_1K: '1.000 msg/dia',
+      TIER_10K: '10.000 msg/dia',
+      TIER_100K: '100.000 msg/dia',
+      TIER_UNLIMITED: 'Ilimitado'
+    };
+    return map[tier] || tier;
+  }
+
+  function getQualityColor(rating: string) {
+    if (rating === 'GREEN') return 'text-green-400 bg-green-400/10';
+    if (rating === 'YELLOW') return 'text-yellow-400 bg-yellow-400/10';
+    return 'text-red-400 bg-red-400/10';
+  }
+
+  function getTemplateStatusColor(status: string) {
+    if (status === 'APPROVED') return 'text-green-400 bg-green-400/10';
+    if (status === 'PENDING') return 'text-yellow-400 bg-yellow-400/10';
+    if (status === 'REJECTED') return 'text-red-400 bg-red-400/10';
+    return 'text-gray-400 bg-gray-400/10';
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-500" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-6 max-w-4xl mx-auto space-y-6">
+      {/* Header */}
+      <div>
+        <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+          <Smartphone className="w-7 h-7 text-green-400" />
+          WhatsApp API Oficial (Meta)
+        </h1>
+        <p className="text-gray-400 mt-1">
+          Canal oficial da Meta — sem risco de banimento, templates HSM e escala ilimitada.
+        </p>
+      </div>
+
+      {/* Connection Card */}
+      <div className="rounded-xl border border-white/10 bg-[#1c1830] p-6">
+        {connection ? (
+          // CONNECTED STATE
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-3 h-3 rounded-full bg-green-400 animate-pulse" />
+                <span className="text-green-400 font-semibold">Conectado via API Oficial</span>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleTest}
+                  disabled={testing}
+                  className="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white text-sm transition flex items-center gap-2"
+                >
+                  <Wifi className="w-4 h-4" />
+                  {testing ? 'Testando...' : 'Testar'}
+                </button>
+                <button
+                  onClick={handleDisconnect}
+                  className="px-4 py-2 rounded-lg border border-red-500/30 hover:bg-red-500/10 text-red-400 text-sm transition"
+                >
+                  Desconectar
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 mt-4">
+              <div className="bg-white/5 rounded-lg p-3">
+                <p className="text-xs text-gray-400 mb-1">Número</p>
+                <p className="text-white font-medium">{connection.display_phone_number}</p>
+              </div>
+              <div className="bg-white/5 rounded-lg p-3">
+                <p className="text-xs text-gray-400 mb-1">Empresa</p>
+                <p className="text-white font-medium">{connection.business_name}</p>
+              </div>
+              <div className="bg-white/5 rounded-lg p-3">
+                <p className="text-xs text-gray-400 mb-1">Qualidade</p>
+                <span className={`text-sm font-medium px-2 py-0.5 rounded-full ${getQualityColor(connection.quality_rating)}`}>
+                  {connection.quality_rating}
+                </span>
+              </div>
+              <div className="bg-white/5 rounded-lg p-3">
+                <p className="text-xs text-gray-400 mb-1">Limite diário</p>
+                <p className="text-white font-medium">{getTierLabel(connection.messaging_limit_tier)}</p>
+              </div>
+            </div>
+          </div>
+        ) : (
+          // DISCONNECTED STATE
+          <div className="text-center space-y-4">
+            <div className="w-16 h-16 rounded-full bg-green-500/10 flex items-center justify-center mx-auto">
+              <Smartphone className="w-8 h-8 text-green-400" />
+            </div>
+            <div>
+              <h3 className="text-white font-semibold text-lg">Conectar WhatsApp via API Oficial</h3>
+              <p className="text-gray-400 text-sm mt-1">
+                Use a API oficial da Meta para enviar mensagens com total segurança.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 text-sm text-left max-w-sm mx-auto">
+              {['Sem risco de banimento', 'Templates HSM aprovados', 'Status de entrega em tempo real', 'Escala ilimitada'].map(b => (
+                <div key={b} className="flex items-center gap-2 text-gray-300">
+                  <CheckCircle className="w-4 h-4 text-green-400 flex-shrink-0" />
+                  {b}
+                </div>
+              ))}
+            </div>
+
+            {!showManualForm ? (
+              <button
+                onClick={() => setShowManualForm(true)}
+                className="px-6 py-3 rounded-xl bg-gradient-to-r from-purple-600 to-purple-800 hover:from-purple-500 hover:to-purple-700 text-white font-semibold transition"
+              >
+                Conectar Manualmente
+              </button>
+            ) : (
+              <div className="text-left space-y-3 max-w-md mx-auto mt-4">
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">WABA ID</label>
+                  <input
+                    type="text"
+                    placeholder="Ex: 2354425141729203"
+                    value={formData.waba_id}
+                    onChange={e => setFormData(p => ({ ...p, waba_id: e.target.value }))}
+                    className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white text-sm focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Phone Number ID</label>
+                  <input
+                    type="text"
+                    placeholder="Ex: 966609613212096"
+                    value={formData.phone_number_id}
+                    onChange={e => setFormData(p => ({ ...p, phone_number_id: e.target.value }))}
+                    className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white text-sm focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Access Token</label>
+                  <div className="relative">
+                    <input
+                      type={showToken ? 'text' : 'password'}
+                      placeholder="Token permanente do System User"
+                      value={formData.access_token}
+                      onChange={e => setFormData(p => ({ ...p, access_token: e.target.value }))}
+                      className="w-full px-3 py-2 pr-10 rounded-lg bg-white/5 border border-white/10 text-white text-sm focus:outline-none focus:border-purple-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowToken(p => !p)}
+                      className="absolute right-3 top-2.5 text-gray-400 hover:text-white"
+                    >
+                      {showToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Encontre em developers.facebook.com → WhatsApp → Configuração da API
+                  </p>
+                </div>
+                <div className="flex gap-2 pt-1">
+                  <button
+                    onClick={() => setShowManualForm(false)}
+                    className="flex-1 px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white text-sm transition"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={handleConnect}
+                    disabled={connecting}
+                    className="flex-1 px-4 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-purple-800 hover:from-purple-500 hover:to-purple-700 text-white text-sm font-semibold transition"
+                  >
+                    {connecting ? 'Conectando...' : 'Conectar'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Templates Section — only if connected */}
+      {connection && (
+        <div className="rounded-xl border border-white/10 bg-[#1c1830] p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-white font-semibold">Templates HSM</h2>
+            <div className="flex gap-2">
+              
+                href="https://business.facebook.com/wa/manage/message-templates/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 text-xs flex items-center gap-1.5 transition"
+              >
+                <ExternalLink className="w-3 h-3" />
+                Criar template
+              </a>
+              <button
+                onClick={handleSyncTemplates}
+                disabled={syncing}
+                className="px-3 py-1.5 rounded-lg bg-purple-600/20 hover:bg-purple-600/30 text-purple-400 text-xs flex items-center gap-1.5 transition"
+              >
+                <RefreshCw className={`w-3 h-3 ${syncing ? 'animate-spin' : ''}`} />
+                {syncing ? 'Sincronizando...' : 'Sincronizar'}
+              </button>
+            </div>
+          </div>
+
+          {templates.length === 0 ? (
+            <div className="text-center py-8 text-gray-500">
+              <p>Nenhum template encontrado.</p>
+              <p className="text-xs mt-1">Crie templates no Meta Business Manager e clique em Sincronizar.</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {templates.map((t: any) => (
+                <div key={t.id} className="flex items-center justify-between p-3 rounded-lg bg-white/5">
+                  <div>
+                    <p className="text-white text-sm font-medium">{t.template_name}</p>
+                    <p className="text-gray-400 text-xs">{t.category} · {t.language}</p>
+                  </div>
+                  <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${getTemplateStatusColor(t.status)}`}>
+                    {t.status}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Info card — always shown */}
+      <div className="rounded-xl border border-yellow-500/20 bg-yellow-500/5 p-5">
+        <h3 className="text-yellow-400 font-semibold mb-3">API Oficial vs Z-API</h3>
+        <div className="grid grid-cols-2 gap-4 text-sm">
+          <div>
+            <p className="text-gray-400 font-medium mb-1">Z-API (atual)</p>
+            <ul className="space-y-1 text-gray-500 text-xs">
+              <li>⚠️ Risco de banimento</li>
+              <li>⚠️ Não suporta templates HSM</li>
+              <li>⚠️ Sem botões interativos nativos</li>
+            </ul>
+          </div>
+          <div>
+            <p className="text-green-400 font-medium mb-1">API Oficial Meta</p>
+            <ul className="space-y-1 text-gray-300 text-xs">
+              <li>✅ Zero risco de banimento</li>
+              <li>✅ Templates HSM aprovados</li>
+              <li>✅ Botões, listas e carrossel</li>
+            </ul>
+          </div>
+        </div>
+        <p className="text-gray-500 text-xs mt-3">
+          Workspaces com API Oficial conectada enviam automaticamente por este canal.
+        </p>
+      </div>
+    </div>
+  );
+}
+```
+
+## Add to router
+In App.tsx or the routes file, add:
+- Import: import WhatsAppOficial from './pages/WhatsAppOficial'
+- Route: use the same pattern as other pages (ProtectedRoute or Switch/Route)
+- Path: /whatsapp-oficial
+
+## Add to sidebar
+In the sidebar component, find where other menu items are listed.
+Add entry with:
+- Icon: Smartphone (lucide-react)
+- Label: "WhatsApp Oficial"
+- Path: /whatsapp-oficial
+- Green dot indicator if connection exists (fetch GET /api/whatsapp-official/connection on sidebar mount)
+
+## Replace all toast comments
+The code has comments like "// toast success: '...'" — replace them with the actual toast function used in the project. Look at other pages to find the pattern (might be: toast.success(), showToast(), addToast(), etc.)
+
+## After implementing:
+1. Confirm TypeScript compiles without errors
+2. Navigate to /whatsapp-oficial — page loads correctly
+3. Try connecting with real credentials:
+   - WABA ID: 2354425141729203
+   - Phone Number ID: 966609613212096
+   - Access Token: value of WHATSAPP_ACCESS_TOKEN env var
+4. Report the result of the connection attempt

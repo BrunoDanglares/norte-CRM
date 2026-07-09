@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Política de Privacidade — ChatBanana</title>
+  <style>
+    :root {
+      --bg:          #0f0c1a;
+      --card:        #1c1830;
+      --purple:      #8b5cf6;
+      --purple-dark: #6d28d9;
+      --blue:        #4CB8F0;
+      --amber:       #FFB300;
+      --green:       #34d399;
+      --text:        #d1d5db;
+      --text-muted:  #94a3b8;
+      --text-white:  #f1f5f9;
+      --border:      #2d2650;
+      --radius:      12px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      font-size: 15px;
+      line-height: 1.7;
+    }
+
+    header {
+      background: var(--card);
+      border-bottom: 1px solid var(--border);
+      padding: 18px 0;
+      position: sticky; top: 0; z-index: 100;
+    }
+    .header-inner {
+      max-width: 900px; margin: 0 auto; padding: 0 24px;
+      display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+    }
+    .logo { font-size: 22px; font-weight: 900; }
+    .logo span:first-child { color: var(--blue); }
+    .logo span:last-child  { color: var(--amber); }
+    .header-badge {
+      background: linear-gradient(135deg, #065f46, #059669);
+      color: #fff; font-size: 12px; font-weight: 600;
+      padding: 4px 14px; border-radius: 20px;
+    }
+
+    .hero {
+      background: linear-gradient(135deg, var(--card) 0%, #130f23 100%);
+      border-bottom: 1px solid var(--border);
+      padding: 56px 24px 48px;
+      text-align: center;
+    }
+    .hero h1 { font-size: clamp(28px, 5vw, 42px); font-weight: 800; color: var(--text-white); margin-bottom: 12px; }
+    .hero h1 span { color: var(--green); }
+    .hero p { color: var(--text-muted); font-size: 15px; }
+    .lgpd-badge {
+      display: inline-flex; align-items: center; gap: 8px;
+      margin-top: 16px;
+      background: rgba(52, 211, 153, 0.1);
+      border: 1px solid rgba(52, 211, 153, 0.3);
+      color: var(--green);
+      font-size: 12px; font-weight: 600;
+      padding: 6px 18px; border-radius: 20px;
+    }
+    .hero .date-badge {
+      display: inline-block; margin-top: 10px;
+      background: var(--card); border: 1px solid var(--border);
+      color: var(--text-muted); font-size: 12px;
+      padding: 5px 16px; border-radius: 20px;
+    }
+
+    .layout {
+      max-width: 900px; margin: 48px auto; padding: 0 24px;
+      display: grid; grid-template-columns: 220px 1fr;
+      gap: 40px; align-items: start;
+    }
+    @media (max-width: 700px) {
+      .layout { grid-template-columns: 1fr; }
+      .toc { display: none; }
+    }
+
+    .toc {
+      position: sticky; top: 80px;
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 20px;
+    }
+    .toc h3 {
+      font-size: 11px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 1px; color: var(--green); margin-bottom: 14px;
+    }
+    .toc a {
+      display: block; color: var(--text-muted); text-decoration: none;
+      font-size: 13px; padding: 5px 0 5px 10px;
+      border-left: 2px solid transparent; transition: all 0.15s;
+    }
+    .toc a:hover, .toc a.active { color: var(--green); border-left-color: var(--green); }
+
+    .content section { margin-bottom: 40px; scroll-margin-top: 80px; }
+
+    .section-header {
+      display: flex; align-items: center; gap: 12px; margin-bottom: 16px;
+    }
+    .section-num {
+      width: 36px; height: 36px; border-radius: 8px;
+      background: linear-gradient(135deg, #065f46, #059669);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px; font-weight: 700; color: #fff; flex-shrink: 0;
+    }
+    .section-header h2 { font-size: 18px; font-weight: 700; color: var(--text-white); }
+    .divider { height: 1px; background: var(--border); margin-bottom: 16px; }
+
+    p { margin-bottom: 12px; color: var(--text); }
+    ul { list-style: none; padding: 0; margin-bottom: 12px; }
+    ul li {
+      padding: 6px 0 6px 20px; position: relative;
+      color: var(--text); border-bottom: 1px solid var(--border);
+    }
+    ul li:last-child { border-bottom: none; }
+    ul li::before {
+      content: '▸'; color: var(--green);
+      position: absolute; left: 0; font-size: 12px; top: 9px;
+    }
+    strong { color: var(--text-white); font-weight: 600; }
+
+    .callout {
+      background: var(--card); border-left: 3px solid var(--green);
+      border-radius: 0 8px 8px 0; padding: 14px 18px; margin: 16px 0;
+      font-size: 14px; color: var(--text-muted);
+    }
+
+    /* Rights grid */
+    .rights-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 12px; margin: 16px 0;
+    }
+    .right-card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 10px; padding: 14px 16px;
+    }
+    .right-card .icon { font-size: 20px; margin-bottom: 6px; }
+    .right-card h4 { font-size: 13px; font-weight: 700; color: var(--text-white); margin-bottom: 4px; }
+    .right-card p { font-size: 12px; color: var(--text-muted); margin: 0; }
+
+    /* Partners */
+    .partners {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      gap: 10px; margin: 16px 0;
+    }
+    .partner-tag {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 8px; padding: 10px 14px; font-size: 13px;
+      color: var(--text-muted);
+    }
+    .partner-tag strong { color: var(--purple); display: block; margin-bottom: 2px; }
+
+    footer {
+      background: var(--card); border-top: 1px solid var(--border);
+      text-align: center; padding: 32px 24px;
+      color: var(--text-muted); font-size: 13px;
+    }
+    footer .logo { font-size: 18px; margin-bottom: 8px; }
+    .policy-links {
+      display: flex; justify-content: center; gap: 24px; margin-top: 16px; flex-wrap: wrap;
+    }
+    .policy-links a { color: var(--text-muted); text-decoration: none; font-size: 13px; transition: color 0.15s; }
+    .policy-links a:hover { color: var(--purple); }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <div class="logo"><span>Chat</span><span>Banana</span> 🍌</div>
+    <span class="header-badge">✓ Conformidade LGPD</span>
+  </div>
+</header>
+
+<div class="hero">
+  <h1>Política de <span>Privacidade</span></h1>
+  <p>Plataforma ChatBanana — Proteção de Dados em conformidade com a LGPD</p>
+  <div class="lgpd-badge">✓ Lei nº 13.709/2018 — LGPD</div><br>
+  <div class="date-badge">📅 Última atualização: <span id="data-atual"></span></div>
+</div>
+
+<div class="layout">
+  <nav class="toc">
+    <h3>Neste documento</h3>
+    <a href="#s1">1. Controlador de Dados</a>
+    <a href="#s2">2. Dados Coletados</a>
+    <a href="#s3">3. Finalidade e Base Legal</a>
+    <a href="#s4">4. Compartilhamento</a>
+    <a href="#s5">5. Segurança</a>
+    <a href="#s6">6. Retenção e Exclusão</a>
+    <a href="#s7">7. Seus Direitos (LGPD)</a>
+    <a href="#s8">8. Cookies</a>
+    <a href="#s9">9. Transferência Internacional</a>
+    <a href="#s10">10. Menores de Idade</a>
+    <a href="#s11">11. Alterações</a>
+    <a href="#s12">12. Contato / DPO</a>
+  </nav>
+
+  <main class="content">
+
+    <p>A ChatBanana está comprometida com a proteção dos seus dados pessoais e com o cumprimento da Lei Geral de Proteção de Dados Pessoais (LGPD — Lei nº 13.709/2018). Esta Política descreve como coletamos, utilizamos, armazenamos, compartilhamos e protegemos suas informações.</p>
+
+    <section id="s1">
+      <div class="section-header">
+        <div class="section-num">1</div>
+        <h2>Controlador de Dados</h2>
+      </div>
+      <div class="divider"></div>
+      <p>O controlador dos dados pessoais tratados nesta Política é a empresa responsável pela plataforma ChatBanana.</p>
+      <ul>
+        <li><strong>E-mail do Encarregado (DPO):</strong> privacidade@chatbanana.com.br</li>
+        <li><strong>Site:</strong> www.chatbanana.com.br</li>
+      </ul>
+      <div class="callout">Cada empresa (tenant) que utiliza o ChatBanana atua como <strong>controladora independente</strong> em relação aos dados de seus clientes finais. A ChatBanana atua como <strong>operadora</strong> nessa relação, conforme o Art. 5º, VII da LGPD.</div>
+    </section>
+
+    <section id="s2">
+      <div class="section-header">
+        <div class="section-num">2</div>
+        <h2>Dados Pessoais Coletados</h2>
+      </div>
+      <div class="divider"></div>
+      <p><strong>Dados dos Clientes (Usuários da Plataforma):</strong></p>
+      <ul>
+        <li>Nome completo e e-mail para criação de conta</li>
+        <li>Dados de pagamento processados via Stripe (número do cartão não é armazenado pela ChatBanana)</li>
+        <li>Registros de acesso (IP, data/hora, dispositivo) conforme o Marco Civil da Internet</li>
+      </ul>
+      <p><strong>Dados dos Leads/Contatos dos Clientes:</strong></p>
+      <ul>
+        <li>Número de telefone WhatsApp e nome</li>
+        <li>Histórico de mensagens de WhatsApp trocadas através da plataforma</li>
+        <li>Informações adicionais inseridas no CRM (e-mail, endereço, dados do negócio)</li>
+        <li>Gravações de áudio transcritas via IA (Whisper/OpenAI) — armazenadas temporariamente</li>
+      </ul>
+      <p><strong>Dados de Uso:</strong></p>
+      <ul>
+        <li>Logs de automações executadas e campanhas disparadas</li>
+        <li>Dados de desempenho para relatórios e melhoria do Serviço</li>
+      </ul>
+    </section>
+
+    <section id="s3">
+      <div class="section-header">
+        <div class="section-num">3</div>
+        <h2>Finalidade e Base Legal do Tratamento</h2>
+      </div>
+      <div class="divider"></div>
+      <p>Tratamos seus dados pessoais com base nas seguintes hipóteses legais da LGPD:</p>
+      <ul>
+        <li><strong>Execução de contrato</strong> (Art. 7º, V): para fornecer o Serviço contratado, processar pagamentos e gerenciar sua conta</li>
+        <li><strong>Legítimo interesse</strong> (Art. 7º, IX): para melhorar a plataforma, prevenir fraudes e garantir a segurança do Serviço</li>
+        <li><strong>Cumprimento de obrigação legal</strong> (Art. 7º, II): para atender exigências do Marco Civil da Internet e legislação tributária</li>
+        <li><strong>Consentimento</strong> (Art. 7º, I): para envio de comunicações de marketing, quando aplicável</li>
+      </ul>
+    </section>
+
+    <section id="s4">
+      <div class="section-header">
+        <div class="section-num">4</div>
+        <h2>Compartilhamento de Dados</h2>
+      </div>
+      <div class="divider"></div>
+      <p>A ChatBanana <strong>não vende dados pessoais</strong>. Compartilhamos informações apenas com os seguintes parceiros e apenas na medida necessária:</p>
+      <div class="partners">
+        <div class="partner-tag"><strong>Stripe</strong>Processamento de pagamentos</div>
+        <div class="partner-tag"><strong>OpenAI</strong>Transcrição de áudio e IA (Whisper/GPT)</div>
+        <div class="partner-tag"><strong>Z-API / Meta</strong>Envio e recebimento de mensagens WhatsApp</div>
+        <div class="partner-tag"><strong>Infraestrutura</strong>Servidores em nuvem para hospedagem</div>
+        <div class="partner-tag"><strong>N8n / Zapier / Make</strong>Apenas quando ativado pelo Cliente</div>
+        <div class="partner-tag"><strong>Autoridades</strong>Quando exigido por lei ou ordem judicial</div>
+      </div>
+      <p>Todos os parceiros são vinculados por acordos de processamento de dados e/ou confidencialidade.</p>
+    </section>
+
+    <section id="s5">
+      <div class="section-header">
+        <div class="section-num">5</div>
+        <h2>Segurança dos Dados</h2>
+      </div>
+      <div class="divider"></div>
+      <p>A ChatBanana adota medidas técnicas e organizacionais para proteger seus dados:</p>
+      <ul>
+        <li>Autenticação com JWT e senhas armazenadas com hash seguro (scrypt)</li>
+        <li>Isolamento de dados por workspace (multi-tenancy) — cada empresa acessa apenas seus próprios dados</li>
+        <li>Comunicações criptografadas via HTTPS/TLS</li>
+        <li>Acesso restrito aos dados por parte da equipe técnica, com base na necessidade</li>
+        <li>Monitoramento contínuo de segurança e logs de acesso</li>
+      </ul>
+      <div class="callout">Em caso de incidente de segurança que possa gerar risco relevante, a ChatBanana notificará a ANPD e os titulares afetados dentro do prazo legal.</div>
+    </section>
+
+    <section id="s6">
+      <div class="section-header">
+        <div class="section-num">6</div>
+        <h2>Retenção e Exclusão de Dados</h2>
+      </div>
+      <div class="divider"></div>
+      <ul>
+        <li><strong>Conta ativa:</strong> dados mantidos durante toda a vigência da assinatura</li>
+        <li><strong>Após cancelamento:</strong> 30 dias para exportação; após esse prazo, dados poderão ser eliminados</li>
+        <li><strong>Logs de acesso:</strong> mantidos por 6 meses (Marco Civil da Internet)</li>
+        <li><strong>Dados financeiros:</strong> mantidos por 5 anos (legislação tributária)</li>
+      </ul>
+    </section>
+
+    <section id="s7">
+      <div class="section-header">
+        <div class="section-num">7</div>
+        <h2>Seus Direitos como Titular (LGPD)</h2>
+      </div>
+      <div class="divider"></div>
+      <p>Em conformidade com os artigos 17 a 22 da LGPD, você tem os seguintes direitos:</p>
+      <div class="rights-grid">
+        <div class="right-card">
+          <div class="icon">👁️</div>
+          <h4>Acesso</h4>
+          <p>Saber se tratamos seus dados e acessá-los</p>
+        </div>
+        <div class="right-card">
+          <div class="icon">✏️</div>
+          <h4>Correção</h4>
+          <p>Corrigir dados incompletos ou inexatos</p>
+        </div>
+        <div class="right-card">
+          <div class="icon">🗑️</div>
+          <h4>Eliminação</h4>
+          <p>Excluir dados tratados com base no consentimento</p>
+        </div>
+        <div class="right-card">
+          <div class="icon">📦</div>
+          <h4>Portabilidade</h4>
+          <p>Receber seus dados em formato estruturado</p>
+        </div>
+        <div class="right-card">
+          <div class="icon">🚫</div>
+          <h4>Oposição</h4>
+          <p>Opor-se ao tratamento em certas hipóteses</p>
+        </div>
+        <div class="right-card">
+          <div class="icon">↩️</div>
+          <h4>Revogação</h4>
+          <p>Revogar o consentimento a qualquer momento</p>
+        </div>
+      </div>
+      <div class="callout">Para exercer seus direitos, envie solicitação para: <strong>privacidade@chatbanana.com.br</strong>. Respondemos em até <strong>15 dias úteis</strong>.</div>
+    </section>
+
+    <section id="s8">
+      <div class="section-header">
+        <div class="section-num">8</div>
+        <h2>Cookies</h2>
+      </div>
+      <div class="divider"></div>
+      <p>A plataforma ChatBanana utiliza apenas <strong>cookies essenciais</strong> para o funcionamento do sistema (autenticação e sessão). Não utilizamos cookies de rastreamento para fins publicitários.</p>
+      <p>Você pode configurar seu navegador para bloquear cookies, mas isso pode impactar o funcionamento da plataforma.</p>
+    </section>
+
+    <section id="s9">
+      <div class="section-header">
+        <div class="section-num">9</div>
+        <h2>Transferência Internacional de Dados</h2>
+      </div>
+      <div class="divider"></div>
+      <p>Alguns de nossos fornecedores (OpenAI, Stripe) processam dados fora do Brasil. Essas transferências são realizadas com as salvaguardas adequadas, incluindo cláusulas contratuais padrão e certificações de conformidade, em conformidade com o <strong>Art. 33 da LGPD</strong>.</p>
+    </section>
+
+    <section id="s10">
+      <div class="section-header">
+        <div class="section-num">10</div>
+        <h2>Proteção de Menores de Idade</h2>
+      </div>
+      <div class="divider"></div>
+      <p>O Serviço ChatBanana é destinado exclusivamente a <strong>pessoas jurídicas e maiores de 18 anos</strong>. Não coletamos intencionalmente dados de menores. Se identificarmos tal situação, os dados serão eliminados imediatamente.</p>
+    </section>
+
+    <section id="s11">
+      <div class="section-header">
+        <div class="section-num">11</div>
+        <h2>Alterações nesta Política</h2>
+      </div>
+      <div class="divider"></div>
+      <p>Podemos atualizar esta Política periodicamente. Alterações relevantes serão comunicadas por e-mail ou notificação na plataforma. A data de "Última atualização" sempre refletirá a versão vigente.</p>
+    </section>
+
+    <section id="s12">
+      <div class="section-header">
+        <div class="section-num">12</div>
+        <h2>Contato e Encarregado de Dados (DPO)</h2>
+      </div>
+      <div class="divider"></div>
+      <ul>
+        <li><strong>E-mail DPO:</strong> privacidade@chatbanana.com.br</li>
+        <li><strong>Suporte geral:</strong> suporte@chatbanana.com.br</li>
+        <li><strong>Site:</strong> www.chatbanana.com.br</li>
+        <li><strong>ANPD:</strong> www.gov.br/anpd (Autoridade Nacional de Proteção de Dados)</li>
+      </ul>
+    </section>
+
+  </main>
+</div>
+
+<footer>
+  <div class="logo"><span>Chat</span><span>Banana</span> 🍌</div>
+  <p>© <span id="ano"></span> ChatBanana. Todos os direitos reservados.</p>
+  <div class="policy-links">
+    <a href="termos.html">Termos e Condições</a>
+    <a href="privacidade.html">Política de Privacidade</a>
+    <a href="mailto:privacidade@chatbanana.com.br">privacidade@chatbanana.com.br</a>
+  </div>
+</footer>
+
+<script>
+  const now = new Date();
+  document.getElementById('data-atual').textContent =
+    now.toLocaleDateString('pt-BR', { day:'2-digit', month:'long', year:'numeric' });
+  document.getElementById('ano').textContent = now.getFullYear();
+
+  const sections = document.querySelectorAll('section[id]');
+  const links = document.querySelectorAll('.toc a');
+  window.addEventListener('scroll', () => {
+    let current = '';
+    sections.forEach(s => {
+      if (window.scrollY >= s.offsetTop - 120) current = s.id;
+    });
+    links.forEach(a => {
+      a.classList.toggle('active', a.getAttribute('href') === '#' + current);
+    });
+  });
+</script>
+</body>
+</html>

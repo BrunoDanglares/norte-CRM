@@ -1,0 +1,101 @@
+PROMPT 2 — Isolamento Multi-tenant (C4 + C5)Fix critical multi-tenancy isolation vulnerabilities in ChatBanana.
+These are TOCTOU (Time-of-Check-Time-of-Use) race conditions that could
+allow cross-workspace data modification.
+
+## FIX 1: Add workspace_id to all UPDATE queries in conversations (C4)
+
+File: server/routes.ts lines ~1137, 1150, 1165, 1179, 1200, 1220, 1225
+
+PROBLEM: Conversations are checked with workspace_id but updated without it:
+```typescript// WRONG — only checks id, not workspace:
+await db.update(conversations)
+.set({ ... })
+.where(eq(conversations.id, id));
+
+SOLUTION: Add workspace_id to EVERY conversation UPDATE:
+```typescript// Find resolveWorkspaceId or the wsId variable in scope
+const wsId = resolveWorkspaceId(req);// CORRECT — scope update to workspace:
+await db.update(conversations)
+.set({ ... })
+.where(
+and(
+eq(conversations.id, id),
+eq(conversations.workspaceId, wsId)  // ADD THIS to every update
+)
+);
+
+Go through ALL conversation UPDATE queries at lines ~1137, 1150, 1165, 1179,
+1200, 1220, 1225 and add the workspace_id condition to each one.
+Also check for similar patterns in leads, contacts, deals, messages tables
+in the same file and fix them too.
+
+---
+
+## FIX 2: Add workspace_id to automation engine UPDATE queries (C5)
+
+File: server/services/automationEngine.ts
+
+PROBLEM: Updates inside the automation engine use only entity IDs:
+```typescript// WRONG:
+await db.update(leads).set({...}).where(eq(leads.id, ctx.leadId));
+await db.update(conversations).set({...}).where(eq(conversations.id, ctx.conversationId));
+
+SOLUTION: The automation context (ctx) already has workspaceId.
+Add it to every UPDATE:
+```typescript// CORRECT:
+await db.update(leads)
+.set({ ... })
+.where(
+and(
+eq(leads.id, ctx.leadId),
+eq(leads.workspaceId, ctx.workspaceId)
+)
+);await db.update(conversations)
+.set({ ... })
+.where(
+and(
+eq(conversations.id, ctx.conversationId),
+eq(conversations.workspaceId, ctx.workspaceId)
+)
+);
+
+Search the entire automationEngine.ts for ALL instances of:
+- db.update(leads)
+- db.update(conversations)
+- db.update(messages)
+- db.update(contacts)
+- db.update(deals)
+
+And add and(eq(table.id, id), eq(table.workspaceId, ctx.workspaceId)) to each.
+
+---
+
+## FIX 3: Make storage layer workspace-scoped (M7 — elevating to critical)
+
+File: server/storage.ts
+
+PROBLEM: Methods like getLead(id), getContact(id), getConversation(id)
+accept only id without requiring workspaceId.
+
+SOLUTION: Update signatures to require workspaceId:
+```typescript// BEFORE:
+async getLead(id: number): Promise<Lead | undefined> {
+return db.query.leads.findFirst({ where: eq(leads.id, id) });
+}// AFTER:
+async getLead(id: number, workspaceId: string): Promise<Lead | undefined> {
+return db.query.leads.findFirst({
+where: and(eq(leads.id, id), eq(leads.workspaceId, workspaceId))
+});
+}
+
+Update for ALL methods: getLead, getContact, getConversation,
+getAutomacao, getConexao, getDeal, getAppointment.
+
+After updating signatures, fix all call sites to pass workspaceId.
+Use find/replace to locate all usages and update them.
+
+## After implementing:
+1. TypeScript compiler will catch any missed call sites (workspaceId now required)
+2. Test: confirm a request to /api/leads/1 from workspace B cannot return workspace A data
+3. Confirm automation engine still runs correctly after changes
+4. Run the full test suite if available

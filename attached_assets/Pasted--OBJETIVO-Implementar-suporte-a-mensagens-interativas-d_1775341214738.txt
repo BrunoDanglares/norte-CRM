@@ -1,0 +1,80 @@
+## OBJETIVO
+Implementar suporte a mensagens interativas do tipo LIST no envio
+via Meta Cloud API, para que o N8N possa enviar resposta híbrida
+(texto do agente + botões de atalho opcionais).
+
+## CONTEXTO
+O N8N monta a resposta híbrida e precisa chamar o ChatBanana
+para enviar uma mensagem do tipo lista interativa no WhatsApp.
+Os agentes continuam retornando texto livre — os botões são
+definidos pelo N8N baseado no intent atual, não pela IA.
+
+## PASSO 1 — VERIFICAR ENDPOINT EXISTENTE
+Verificar se já existe um endpoint em server/routes/ que aceita
+envio de mensagem interativa do tipo lista (list message).
+Se existir, reportar o path e o formato esperado.
+Se não existir, criar em server/routes/n8n.ts ou server/routes/messages.ts:
+
+POST /api/n8n/send-list
+Body:
+{
+  "phone": "5591999999999",
+  "workspaceId": "uuid",
+  "conversationId": "uuid",
+  "texto": "Texto da resposta do agente",
+  "footer": "Escolha uma opção ou digite livremente",
+  "button_label": "Ver opções",
+  "sections": [
+    {
+      "title": "Opções",
+      "rows": [
+        { "id": "SUPORTE_TECNICO", "title": "Suporte técnico" },
+        { "id": "FINANCEIRO", "title": "Financeiro" }
+      ]
+    }
+  ]
+}
+
+## PASSO 2 — IMPLEMENTAR ENVIO NO META SERVICE
+Em server/services/metaWhatsappService.ts ou similar,
+adicionar função sendListMessage que chama a Meta Cloud API
+com o formato interactive/list:
+
+{
+  "messaging_product": "whatsapp",
+  "to": phone,
+  "type": "interactive",
+  "interactive": {
+    "type": "list",
+    "body": { "text": texto },
+    "footer": { "text": footer },
+    "action": {
+      "button": button_label,
+      "sections": sections
+    }
+  }
+}
+
+## PASSO 3 — SALVAR MENSAGEM NO HISTÓRICO
+Após envio bem sucedido, salvar a mensagem no banco
+na tabela messages da conversa, tipo: 'list_message'
+para aparecer no histórico do atendente.
+
+## PASSO 4 — HANDLER DE RESPOSTA DO BOTÃO
+Verificar se o webhook que recebe mensagens do WhatsApp
+já trata o tipo interactive/list_reply (quando cliente clica).
+Se não tratar, adicionar:
+
+Quando chegar interactive.list_reply:
+- Extrair list_reply.id (ex: "SUPORTE_TECNICO")
+- Extrair list_reply.title (ex: "Suporte técnico")  
+- Tratar como mensagem de texto normal com o título
+- Salvar no histórico como mensagem do cliente
+- Continuar o fluxo normalmente para o N8N processar
+
+## REGRAS
+- Botões são opcionais — se sections vier vazio, envia texto simples
+- Se Meta API não suportar lista (ex: número não verificado),
+  fazer fallback para texto simples sem erro
+- Manter compatibilidade com envios de texto normais existentes
+- Reportar todos os arquivos modificados

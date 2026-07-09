@@ -1,0 +1,56 @@
+Você é um engenheiro sênior auditando o código do ChatBanana, uma plataforma SaaS multi-tenant de CRM e automação via WhatsApp (Meta Cloud API Oficial) para pequenas e médias empresas brasileiras.
+
+Stack: Node.js + Express + TypeScript (backend), React 18 + Vite + TypeScript (frontend), PostgreSQL + Drizzle ORM, JWT auth, Docker + EasyPanel.
+
+Faça uma auditoria COMPLETA do código atual. Para cada problema encontrado, indique:
+- Arquivo e linha exata
+- Severidade: CRÍTICO / ALTO / MÉDIO / BAIXO
+- Descrição clara do problema
+- Correção recomendada com trecho de código
+
+Cubra obrigatoriamente estas áreas:
+
+1. SEGURANÇA & MULTI-TENANCY
+   - Todas as queries PostgreSQL filtram por workspace_id?
+   - Alguma rota expõe dados de outro workspace?
+   - JWT: tokens validados corretamente em todas as rotas protegidas?
+   - Variáveis sensíveis (API keys, tokens) estão em env vars, não hardcoded?
+   - Inputs do usuário são sanitizados antes de queries?
+   - Rotas sem requireAuth que deveriam ter?
+
+2. PERFORMANCE & BANCO DE DADOS
+   - Queries N+1: loops com await dentro que poderiam usar JOIN ou Promise.all?
+   - Índices faltando nas colunas mais consultadas (workspace_id, telefone, created_at, status)?
+   - Campos monetários usando numeric(10,2) ou estão como float?
+   - Conexões ao banco sendo liberadas corretamente?
+   - Alguma query sem paginação em tabela potencialmente grande?
+
+3. BACKEND & ROTAS
+   - Tratamento de erros: todos os handlers têm try/catch com mensagens úteis?
+   - Tipos TypeScript: uso de "any" desnecessário?
+   - Rotas de webhook (Meta, Zapier) têm validação de assinatura?
+   - Cron jobs têm proteção contra execução simultânea (lock)?
+   - Algum memory leak potencial (event listeners, intervals não limpos)?
+
+4. FRONTEND & UX
+   - Todos os fetch() foram substituídos por apiFetch() com Bearer token?
+   - Estados de loading e erro tratados em todos os componentes?
+   - Algum dado sensível sendo logado no console?
+   - WebSocket: reconexão automática funcionando? Cleanup no unmount?
+
+5. CANAL WHATSAPP (META CLOUD API)
+   - Roteamento de mensagens está correto para o canal Meta?
+   - Webhook de verificação do Meta implementado corretamente?
+   - Janela de 24h sendo respeitada antes de enviar mensagens?
+   - Tratamento de erros de API do Meta com retry logic?
+
+6. QUALIDADE GERAL
+   - Código duplicado que deveria ser extraído para utilitários?
+   - Console.log de debug esquecido em produção?
+   - Migrações Drizzle: alguma migration com risco de perda de dados?
+   - ON DELETE CASCADE configurado nas foreign keys corretas?
+
+Ao final, gere um resumo executivo com:
+- Total de problemas por severidade
+- Os 3 problemas mais críticos para resolver primeiro
+- Estimativa de esforço para correção geral

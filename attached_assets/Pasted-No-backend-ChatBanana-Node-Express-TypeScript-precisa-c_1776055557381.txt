@@ -1,0 +1,159 @@
+No backend ChatBanana (Node/Express/TypeScript), precisa criar o serviço de métricas ISP e instrumentar os arquivos existentes para emitir eventos. O serviço deve ser sempre fire-and-forget — nunca bloqueia nem propaga erro para o agente.
+
+**1. Cria `server/services/ispMetricsService.ts`:**
+
+```typescript
+import { db } from '../db';
+import { ispSessionMetrics, ispSystemEvents } from '../db/schema';
+import { eq } from 'drizzle-orm';
+
+// Fire-and-forget: chama sem await, nunca lança
+function safe(fn: () => Promise<void>) {
+  fn().catch(err => console.error('[Metrics] erro silencioso:', err));
+}
+
+export const ispMetrics = {
+
+  // Chamado no início de cada sessão (primeiro turn)
+  sessionStart(params: {
+    workspaceId: string;
+    conversationId: string;
+    phone: string;
+  }) {
+    safe(async () => {
+      await db.insert(ispSessionMetrics).values({
+        ...params,
+        startedAt: new Date(),
+      }).onConflictDoNothing(); // idempotente — ignora se já existe
+    });
+  },
+
+  // Atualiza campos da sessão (pode chamar múltiplas vezes)
+  sessionUpdate(conversationId: string, patch: Partial<typeof ispSessionMetrics.$inferInsert>) {
+    safe(async () => {
+      await db.update(ispSessionMetrics)
+        .set(patch)
+        .where(eq(ispSessionMetrics.conversationId, conversationId));
+    });
+  },
+
+  // Chamado quando a sessão termina (resolução, escalação, max turns)
+  sessionEnd(conversationId: string, resolutionType: string, latencyMs?: number) {
+    safe(async () => {
+      await db.update(ispSessionMetrics)
+        .set({
+          resolutionType,
+          resolvedAt: new Date(),
+          ...(latencyMs ? { totalLatencyMs: latencyMs } : {}),
+        })
+        .where(eq(ispSessionMetrics.conversationId, conversationId));
+    });
+  },
+
+  // Evento de infraestrutura — circuit breaker, timeout, phone lock, etc.
+  systemEvent(params: {
+    workspaceId?: string;
+    eventType: string;
+    label?: string;
+    metadata?: Record<string, unknown>;
+  }) {
+    safe(async () => {
+      await db.insert(ispSystemEvents).values({
+        ...params,
+        createdAt: new Date(),
+      });
+    });
+  },
+};
+```
+
+**2. Instrumenta `server/utils/circuitBreaker.ts`:**
+
+Quando o circuito abrir, emite evento:
+```typescript
+import { ispMetrics } from '../services/ispMetricsService';
+
+// Onde loga o circuit breaker aberto, adiciona:
+ispMetrics.systemEvent({
+  eventType: 'CIRCUIT_BREAKER_OPEN',
+  label: key,
+  metadata: { failures: state.failures },
+});
+
+// Onde o circuito fecha (sucesso após meio-aberto), adiciona:
+ispMetrics.systemEvent({
+  eventType: 'CIRCUIT_BREAKER_CLOSE',
+  label: key,
+});
+```
+
+**3. Instrumenta `server/utils/withTimeout.ts`:**
+
+Quando o timeout estourar, emite evento:
+```typescript
+import { ispMetrics } from '../services/ispMetricsService';
+
+// No setTimeout, antes do reject:
+ispMetrics.systemEvent({
+  eventType: label.startsWith('OpenAI') ? 'TIMEOUT_GPT' : 'TIMEOUT_ERP',
+  label,
+  metadata: { ms },
+});
+```
+
+**4. Instrumenta `server/utils/phoneLock.ts`:**
+
+Quando descartar por lock ativo:
+```typescript
+import { ispMetrics } from '../services/ispMetricsService';
+
+// Onde loga phone lock descarte, adiciona:
+ispMetrics.systemEvent({
+  workspaceId: workspaceId, // se a chave inclui workspaceId, extrai daqui
+  eventType: 'PHONE_LOCK_DISCARD',
+  label: phone,
+});
+```
+
+**5. Instrumenta `ispAgentEngine.ts`:**
+
+```typescript
+import { ispMetrics } from './ispMetricsService';
+
+// No início de _runISPAgentInner (após stale session check):
+ispMetrics.sessionStart({
+  workspaceId: conversation.workspaceId,
+  conversationId: conversation.id,
+  phone: conversation.phone, // adapta para o campo real
+});
+
+// Quando detectar agente e situação:
+ispMetrics.sessionUpdate(conversation.id, {
+  agentUsed: agentName,        // 'financeiro' | 'comercial' | 'suporte'
+  situationDetected: situation, // ex: 'F1'
+});
+
+// No guard de max turns (já existe):
+ispMetrics.systemEvent({
+  workspaceId: conversation.workspaceId,
+  eventType: 'MAX_TURNS_REACHED',
+  metadata: { turns, conversationId: conversation.id },
+});
+ispMetrics.sessionEnd(conversation.id, 'max_turns');
+
+// Quando ERP indisponível:
+ispMetrics.systemEvent({
+  workspaceId: conversation.workspaceId,
+  eventType: 'ERP_DEGRADED_MODE',
+  metadata: { conversationId: conversation.id },
+});
+ispMetrics.sessionUpdate(conversation.id, { erpUnavailable: true });
+
+// Quando sessão resolve normalmente:
+ispMetrics.sessionEnd(conversation.id, 'resolved', latencyMs);
+
+// Quando escala para humano:
+ispMetrics.sessionEnd(conversation.id, 'escalated');
+```
+
+Adapta os nomes de campo para os que existem no código real. Mostra os trechos alterados em cada arquivo após aplicar.

@@ -1,0 +1,119 @@
+Quero corrigir meu sistema de atendimento para que a IA seja acionada em TODOS os pontos do fluxo, independente da forma que o cliente responde.
+
+## 🎯 PROBLEMA ATUAL
+
+- O sistema só entende respostas exatas (botões ou palavras específicas)
+- Se o cliente digita diferente, manda áudio ou responde fora do padrão, o fluxo quebra
+- A IA não está sendo chamada em todos os nós do fluxo
+
+---
+
+## 🚀 OBJETIVO
+
+Transformar o sistema em um fluxo inteligente onde:
+
+- TODA mensagem passa pela IA antes de qualquer decisão
+- A IA interpreta:
+  - texto livre
+  - áudio transcrito
+  - respostas fora do padrão
+- O sistema entende intenção mesmo fora do script
+
+---
+
+## 🧠 NOVA ARQUITETURA OBRIGATÓRIA
+
+### 🔁 PIPELINE UNIVERSAL
+
+Toda mensagem deve seguir este fluxo:
+
+1. Receber mensagem
+2. Se for áudio:
+   → transcrever para texto
+3. Buscar estado da conversa
+4. Enviar para IA ORQUESTRADORA:
+   - mensagem
+   - estado atual
+5. IA retorna:
+   - intenção
+   - próximo fluxo
+   - ação
+6. Sistema executa o fluxo correto
+
+---
+
+## 🧠 REGRAS
+
+- Nunca depender de texto exato (ex: "1", "financeiro")
+- Sempre interpretar intenção
+
+Exemplos:
+
+"quero meu boleto"
+"manda a fatura"
+"to devendo?"
+"2 via"
+"me manda o pagamento"
+
+→ todos devem cair em: FINANCEIRO
+
+---
+
+## 🎙️ ÁUDIO
+
+- Implementar transcrição automática
+- Tratar áudio igual texto após transcrição
+
+---
+
+## ⚙️ IMPLEMENTAÇÃO
+
+Criar função central obrigatória:
+
+handleIncomingMessage(message, state)
+
+Essa função deve:
+
+- Sempre passar pela IA
+- Nunca pular essa etapa
+- Retornar decisão estruturada
+
+---
+
+## 🚨 BLOQUEIO DE ERRO
+
+Remover completamente respostas como:
+
+"não entendi"
+"erro ao processar"
+
+Substituir por:
+
+- tentativa de interpretação
+- ou pedido inteligente de esclarecimento
+
+---
+
+## 🧪 TESTES OBRIGATÓRIOS
+
+Testar:
+
+- resposta com botão
+- resposta escrita diferente
+- resposta com erro de digitação
+- resposta em áudio
+
+Todos devem funcionar
+
+---
+
+## 🎯 RESULTADO ESPERADO
+
+- IA funcionando em TODOS os pontos do fluxo
+- Sistema fluido e inteligente
+- Sem dependência de script fixo
+- Experiência natural para o cliente
+
+---
+
+Quero código limpo, estruturado e pronto para produção.

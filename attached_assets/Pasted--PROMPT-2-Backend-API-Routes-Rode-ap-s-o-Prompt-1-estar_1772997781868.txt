@@ -1,0 +1,81 @@
+ PROMPT 2 — Backend (API Routes)
+
+Rode após o Prompt 1 estar confirmado.
+
+
+Preciso criar/atualizar as rotas da API REST para o módulo de Automações no backend Node.js/Express.
+
+O arquivo de rotas de automações deve conter exatamente estas 9 rotas:
+
+---
+
+GET /api/automacoes
+- Retorna todas as automações ordenadas por updated_at DESC
+- Adiciona campo calculado `passos` = número de itens no array nodes
+- Formato de resposta: { ok: true, data: [...] }
+
+GET /api/automacoes/stats
+- Retorna estatísticas gerais:
+  { ok: true, data: { active: N, paused: N, draft: N, total_execucoes: N, success_rate: 99.1 } }
+- Calcula contando registros por status e somando execucoes
+
+GET /api/automacoes/:id
+- Retorna uma automação pelo id
+- Inclui os últimos 10 logs de automacao_logs para essa automação
+- Formato: { ok: true, data: { ...automacao, passos: N, logs: [...] } }
+
+POST /api/automacoes
+- Cria nova automação
+- Body obrigatório: { nome, trigger_type }
+- Body opcional: { descricao, trigger_channel, nodes, status }
+- nodes default: []
+- status default: 'DRAFT'
+- Resposta: { ok: true, data: automacaoCreated }
+
+PUT /api/automacoes/:id
+- Atualiza qualquer campo da automação
+- Aceita: { nome, descricao, trigger_type, trigger_channel, status, nodes }
+- Atualiza updated_at automaticamente
+- Resposta: { ok: true, data: automacaoUpdated }
+
+PATCH /api/automacoes/:id/toggle
+- Alterna o status: ACTIVE → PAUSED, PAUSED ou DRAFT → ACTIVE
+- Resposta: { ok: true, data: { id, status: novoStatus }, message: 'Automação ativada' ou 'Automação pausada' }
+
+POST /api/automacoes/:id/duplicate
+- Duplica uma automação existente
+- O clone recebe nome = original.nome + ' (cópia)', status = 'DRAFT', execucoes = 0
+- Resposta: { ok: true, data: cloneCreated }
+
+POST /api/automacoes/:id/execute
+- Simula execução da automação nó por nó
+- Body opcional: { payload: {} } com dados de teste
+- Para cada nó no array nodes, gera um resultado baseado no tipo:
+  - trigger: { triggered: true }
+  - delay: { waited: 'X unidade' }
+  - send_message: { sent: true, preview: primeiros 80 chars do content }
+  - condition: { field, operator, value, result: 'true' ou 'false' }
+  - tag_lead: { tags, action }
+  - assign_agent: { assigned: 'Agente Teste', strategy }
+  - update_lead: { field, value }
+  - ai_response: { reply: '[Resposta simulada da IA]', model }
+  - webhook: { url, statusCode: 200 }
+  - end: { finished: true }
+- Cada item do log deve ter: { nodeId, type, label, status: 'success', duration: ms aleatório entre 10-120, output }
+- Incrementa o campo execucoes em +1 no banco
+- Atualiza ultima_execucao com NOW()
+- Salva um registro em automacao_logs com status, payload e log completo
+- Resposta: { ok: true, data: { executedAt, success: true, log: [...], total_nodes: N } }
+
+DELETE /api/automacoes/:id
+- Exclui a automação (CASCADE apaga os logs automaticamente)
+- Resposta: { ok: true, message: 'Automação removida' }
+
+---
+
+Regras gerais:
+- Todas as rotas exigem autenticação JWT (use o middleware auth já existente no projeto)
+- Todas as rotas têm try/catch e retornam { error: mensagem } com status 500 em caso de falha
+- Use o cliente de banco já configurado no projeto (Prisma ou pg, o que estiver sendo usado)
+
+Registre o router no arquivo principal de rotas como /api/automacoes.

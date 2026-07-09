@@ -1,0 +1,203 @@
+Olindo o screenshot, o card do Zapier/Make está desabilitado e precisa de toda a implementação. Vou estruturar isso em 3 prompts sequenciais seguindo o padrão do projeto.
+
+📋 Status da Integração
+EtapaO que fazStatusPrompt 1Backend — rotas, tabela, webhooks outbound⏳Prompt 2Frontend — modal de configuração, campos⏳Prompt 3Disparo de eventos CRM → Zapier/Make⏳
+
+PROMPT 1 — Backend: Tabela + Rotas da Integração
+Implemente o backend da integração Zapier/Make no FlowCRM.
+
+## 1. Migration SQL — adicionar tabela zapier_config
+
+Crie ou adicione ao arquivo de migrations:
+```sql
+CREATE TABLE IF NOT EXISTS zapier_config (
+  id SERIAL PRIMARY KEY,
+  tenant_id INTEGER NOT NULL,
+  enabled BOOLEAN DEFAULT false,
+  webhook_url TEXT,
+  events TEXT[] DEFAULT ARRAY['lead_created','lead_updated','lead_status_changed','message_received'],
+  selected_events TEXT[] DEFAULT '{}',
+  secret_token TEXT,
+  last_triggered_at TIMESTAMP,
+  trigger_count INTEGER DEFAULT 0,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+```
+
+Execute essa migration no banco.
+
+## 2. Rotas Express — arquivo server/routes/zapier.ts (ou .js)
+
+Crie as seguintes rotas sob o prefixo /api/zapier:
+
+### GET /api/zapier/config
+Retorna a config atual do tenant (tenant_id = 1 por ora).
+Se não existir, retorna { enabled: false, webhook_url: null, selected_events: [] }.
+
+### POST /api/zapier/config
+Salva ou atualiza a configuração:
+Body: { enabled: boolean, webhook_url: string, selected_events: string[] }
+Faz upsert na tabela zapier_config por tenant_id.
+Gera um secret_token aleatório (crypto.randomBytes(24).toString('hex')) se ainda não existir.
+Retorna a config salva.
+
+### POST /api/zapier/test
+Dispara um webhook de teste para o webhook_url configurado.
+Payload de teste:
+{
+  event: "test",
+  timestamp: new Date().toISOString(),
+  data: { message: "Conexão com FlowCRM funcionando!", source: "FlowCRM" }
+}
+Faz POST para o webhook_url com header X-FlowCRM-Secret: <secret_token>.
+Retorna { success: true, status: <http_status_da_resposta> } ou erro.
+
+### GET /api/zapier/events
+Retorna a lista de eventos disponíveis para selecionar:
+[
+  { key: "lead_created", label: "Lead criado" },
+  { key: "lead_updated", label: "Lead atualizado" },
+  { key: "lead_status_changed", label: "Status do lead alterado" },
+  { key: "message_received", label: "Mensagem recebida (WhatsApp)" },
+  { key: "lead_assigned", label: "Lead atribuído a usuário" },
+  { key: "deal_won", label: "Negócio ganho" },
+  { key: "deal_lost", label: "Negócio perdido" }
+]
+
+## 3. Utilitário de disparo — server/lib/zapierWebhook.ts (ou .js)
+
+Crie uma função exportada:
+
+async function triggerZapierWebhook(tenantId: number, event: string, data: object)
+
+Lógica:
+1. Busca zapier_config onde tenant_id = tenantId AND enabled = true
+2. Se não encontrar ou webhook_url estiver vazio, retorna sem fazer nada
+3. Verifica se o event está em selected_events (se selected_events estiver vazio, dispara para todos)
+4. Faz POST para webhook_url com body:
+   {
+     event,
+     timestamp: new Date().toISOString(),
+     tenant_id: tenantId,
+     data
+   }
+   Header: X-FlowCRM-Secret: <secret_token>
+5. Atualiza last_triggered_at e incrementa trigger_count
+6. Loga erros mas não lança exceção (fire-and-forget)
+
+## 4. Registrar rotas
+
+No arquivo principal do servidor (server/index.ts ou app.ts), registre:
+import zapierRoutes from './routes/zapier'
+app.use('/api/zapier', zapierRoutes)
+
+Confirme que todas as rotas estão respondendo corretamente.
+
+PROMPT 2 — Frontend: Modal de Configuração
+Implemente o frontend da integração Zapier/Make na página de Integrações do FlowCRM.
+
+## Contexto
+O card do Zapier/Make já existe na UI com toggle desabilitado.
+Quando o toggle for ativado, deve abrir um modal de configuração.
+
+## 1. Estado e chamadas de API
+
+Na página/componente de Integrações, adicione:
+- useEffect que faz GET /api/zapier/config ao montar o componente
+- Estado: zapierConfig = { enabled, webhook_url, selected_events, trigger_count, last_triggered_at }
+
+## 2. Comportamento do toggle do card Zapier/Make
+
+- Se enabled = false e usuário ativa o toggle → abre modal de configuração
+- Se enabled = true e usuário desativa → faz POST /api/zapier/config com { enabled: false } e atualiza UI
+
+## 3. Modal de configuração (ZapierConfigModal)
+
+Crie um modal com os seguintes campos e seções:
+
+### Seção: Webhook URL
+Label: "URL do Webhook Zapier ou Make"
+Input text, placeholder: "https://hooks.zapier.com/hooks/catch/..."
+Abaixo: link "Como obter meu webhook URL?" abrindo https://zapier.com/app/zaps em nova aba
+
+### Seção: Eventos para disparar
+Título: "Selecionar eventos"
+Subtítulo: "Escolha quais eventos do CRM enviarão dados para o Zapier/Make"
+Fetch GET /api/zapier/events e renderize cada evento como checkbox
+Seleção múltipla, mínimo 1 evento obrigatório para salvar
+
+### Seção: Segurança (informativo, collapsible)
+Mostre o secret_token gerado (se config já existir) como campo readonly com botão copiar
+Texto: "Use este token para validar que os webhooks vêm do FlowCRM"
+
+### Botões do modal
+- "Testar conexão" → POST /api/zapier/test → mostra toast de sucesso/erro
+- "Salvar" → POST /api/zapier/config com { enabled: true, webhook_url, selected_events } → fecha modal, atualiza card
+- "Cancelar" → fecha modal sem salvar, NÃO ativa o toggle
+
+## 4. Card Zapier/Make após ativação
+
+Quando enabled = true, o card deve mostrar (igual ao padrão dos outros cards):
+- Badge verde "Conectado"
+- Texto: "<trigger_count> disparos | Último: <last_triggered_at formatado>"
+- Texto: "<selected_events.length> eventos configurados"
+
+## 5. Ícone do card
+Use o ícone já existente (raio laranja/⚡) ou importe Zap do lucide-react para o card do Zapier/Make.
+
+Mantenha o estilo visual consistente com os cards N8n, OpenAI e Stripe já existentes.
+
+PROMPT 3 — Disparar Eventos Reais do CRM
+Integre os disparos do webhook Zapier/Make nos pontos corretos do FlowCRM.
+
+## Importar o utilitário
+
+Em cada arquivo de rota/serviço abaixo, importe:
+import { triggerZapierWebhook } from '../lib/zapierWebhook'
+
+## 1. Lead criado
+No endpoint POST /api/leads (ou onde leads são criados), após inserir no banco, adicione:
+await triggerZapierWebhook(tenantId, 'lead_created', {
+  lead_id: novoLead.id,
+  name: novoLead.name,
+  phone: novoLead.phone,
+  email: novoLead.email,
+  source: novoLead.source,
+  created_at: novoLead.created_at
+})
+
+## 2. Lead atualizado
+No endpoint PUT/PATCH /api/leads/:id, após update:
+await triggerZapierWebhook(tenantId, 'lead_updated', {
+  lead_id: lead.id,
+  fields_updated: Object.keys(body),
+  updated_data: lead
+})
+
+## 3. Status do lead alterado
+Se houver endpoint específico para mudar status/etapa do pipeline (ex: PATCH /api/leads/:id/status ou drag-drop do kanban), adicione:
+await triggerZapierWebhook(tenantId, 'lead_status_changed', {
+  lead_id: lead.id,
+  lead_name: lead.name,
+  previous_status: previousStatus,
+  new_status: newStatus
+})
+
+## 4. Mensagem recebida via WhatsApp
+No webhook handler do Z-API (onde mensagens inbound são processadas), após criar/atualizar o lead:
+await triggerZapierWebhook(tenantId, 'message_received', {
+  lead_id: lead.id,
+  phone: messageData.phone,
+  message: messageData.text,
+  received_at: new Date().toISOString()
+})
+
+## Observação importante
+A função triggerZapierWebhook é fire-and-forget — use await mas ela não vai travar o fluxo principal mesmo se o webhook externo falhar. Confirme que try/catch interno está implementado na função.
+
+Após implementar, teste o fluxo completo:
+1. Configure um webhook de teste no https://webhook.site
+2. Ative a integração no CRM com esse URL
+3. Crie um lead manualmente
+4. Verifique se o payload chegou no webhook.site

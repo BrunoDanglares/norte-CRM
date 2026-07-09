@@ -1,0 +1,170 @@
+Você é um engenheiro sênior especialista em Node.js, n8n e arquitetura SaaS multi-tenant.
+
+CONTEXTO:
+Existe um node HTTP no n8n que envia dados para o endpoint `/api/n8n/ai` (ChatBanana), responsável pelo atendimento comercial.
+
+O payload atual já está FUNCIONANDO em produção e possui a estrutura:
+
+{
+workspace_id,
+prompt_name,
+mensagem,
+context,
+historico
+}
+
+IMPORTANTE:
+
+* NÃO pode haver breaking changes
+* NÃO pode remover campos existentes
+* NÃO pode alterar nomes atuais
+* NÃO pode mudar comportamento existente
+* Apenas EXTENDER e ORGANIZAR
+
+---
+
+OBJETIVO:
+
+Melhorar o desempenho da IA comercial tornando o contexto:
+
+* mais controlado
+* mais previsível
+* mais orientado à venda
+* preparado para escala
+
+---
+
+IMPLEMENTAÇÕES OBRIGATÓRIAS:
+
+1. NÃO REMOVER Object.assign
+
+Manter:
+
+Object.assign({}, $json, ...)
+
+IMPORTANTE:
+
+* NÃO remover
+* NÃO alterar
+* Apenas complementar
+
+---
+
+2. CRIAR BLOCO "contexto_controlado"
+
+Adicionar dentro de context:
+
+contexto_controlado: {
+
+intent: $json.intent,
+fluxo_atual: $json.fluxo_atual,
+cliente_nome: $json.cliente_nome,
+ja_identificado: $json.ja_identificado,
+
+motivo: $json.motivo,
+prioridade: $json.prioridade,
+
+mudou_intencao: $json.mudou_intencao,
+ambiguidade: $json.ambiguidade,
+
+tipo_input: $json.tipo_input ?? "texto",
+
+cliente: {
+plano_atual: $json.cliente?.plano ?? "nao identificado",
+status: $json.cliente?.status ?? "desconhecido"
+},
+
+financeiro: {
+valor_devido: $json.financial?.valor_devido ?? 0,
+suspenso: $json.financial?.is_suspended ?? false
+}
+}
+
+---
+
+3. CONTROLE DE COMPORTAMENTO
+
+Adicionar:
+
+modo: {
+foco: "venda",
+respeitar_intencao: true,
+ignorar_fluxo_anterior: $json.mudou_intencao ?? false
+}
+
+---
+
+4. METADADOS OPERACIONAIS
+
+Adicionar:
+
+operacao: {
+origem: "n8n",
+canal: "whatsapp",
+versao: "v1"
+}
+
+---
+
+5. IDENTIFICAÇÃO DO INPUT
+
+Adicionar:
+
+tipo_input: $json.tipo_input ?? "texto"
+
+---
+
+6. CONTEXTO EXISTENTE (MANTER)
+
+Preservar:
+
+* conversation_id
+* telefone
+* contact_name
+* sessao
+* briefing
+
+---
+
+7. COMPATIBILIDADE TOTAL
+
+Garantir:
+
+* Nenhum campo atual seja removido
+* Object.assign continue funcionando
+* Sistema funcione mesmo ignorando novos campos
+* Código null-safe
+
+---
+
+8. RESULTADO FINAL (CONCEITO)
+
+O context final deve conter:
+
+{
+...dados antigos,
+contexto_controlado: {...},
+modo: {...},
+operacao: {...}
+}
+
+---
+
+IMPORTANTE:
+
+Se houver qualquer dúvida:
+
+* NÃO simplificar
+* NÃO refatorar estrutura
+* NÃO remover campos existentes
+
+Apenas ORGANIZAR e ADICIONAR.
+
+---
+
+RESULTADO ESPERADO:
+
+* IA comercial mais assertiva
+* aumento de conversão
+* respostas mais coerentes
+* base pronta para escala SaaS

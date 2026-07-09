@@ -1,0 +1,126 @@
+Você vai atuar como engenheiro sênior especialista em Node.js, integrações HTTP e arquitetura SaaS.
+
+CONTEXTO:
+Existe um módulo de enrichment ERP em produção dentro de um fluxo n8n.
+Esse módulo envia um payload com CPF, contrato_id e workspace_id para um endpoint.
+
+O sistema já está FUNCIONANDO em produção.
+
+OBJETIVO:
+Melhorar o módulo de enrichment sem alterar comportamento atual e sem causar breaking changes.
+
+REGRAS CRÍTICAS (OBRIGATÓRIO):
+
+* NÃO alterar a estrutura atual do payload
+* NÃO remover campos existentes
+* NÃO renomear variáveis
+* NÃO mudar comportamento atual
+* Apenas ADICIONAR novos campos opcionais
+* Código deve ser compatível com n8n (expressões JS)
+* Tudo deve ser null-safe
+
+---
+
+IMPLEMENTAÇÕES NECESSÁRIAS:
+
+1. CONTEXTO ADICIONAL (NÃO OBRIGATÓRIO)
+
+Adicionar ao payload um novo objeto "contexto" com:
+
+* telefone
+* nome do contato
+* origem (sempre "whatsapp")
+
+IMPORTANTE:
+
+* Só adicionar, não substituir nada existente
+* Se não existir dado → enviar null
+
+---
+
+2. METADADOS DE EXECUÇÃO
+
+Adicionar um objeto "meta":
+
+* origem: "n8n"
+* timestamp: ISO string
+* versao: "v1"
+
+---
+
+3. TIPO DE ENRICHMENT (PREPARAÇÃO PARA ESCALA)
+
+Adicionar campo opcional:
+
+tipo: "completo"
+
+IMPORTANTE:
+
+* NÃO alterar comportamento atual
+* Apenas preparar para futuras otimizações
+
+---
+
+4. SEGURANÇA (DEFENSIVO)
+
+Garantir que:
+
+* CPF sempre seja string ou null
+* contrato_id sempre seja string ou null
+* workspace_id sempre exista (fallback seguro)
+
+---
+
+5. ESTRUTURA FINAL (EXEMPLO)
+
+O payload final deve ficar assim (sem remover nada existente):
+
+{
+action: 'enrichmentCompleto',
+params: {
+cpf: ...,
+contrato_id: ...
+},
+contexto: {
+telefone: ...,
+nome: ...,
+origem: "whatsapp"
+},
+workspace_id: ...,
+tipo: "completo",
+meta: {
+origem: "n8n",
+timestamp: "...",
+versao: "v1"
+}
+}
+
+---
+
+6. COMPATIBILIDADE
+
+Garantir:
+
+* Código continua funcionando mesmo se novos campos forem ignorados pelo backend
+* Nenhuma dependência externa seja criada
+* Nenhuma lógica atual seja afetada
+
+---
+
+IMPORTANTE:
+
+Se houver qualquer dúvida:
+
+* NÃO simplificar
+* NÃO refatorar
+* NÃO otimizar removendo código
+* NÃO alterar nomes existentes
+
+Apenas EXTENDER o payload com segurança.
+
+RESULTADO ESPERADO:
+
+* Módulo mais robusto
+* Preparado para escala SaaS
+* Preparado para múltiplos ERPs
+* Zero impacto no funcionamento atual

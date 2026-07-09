@@ -1,0 +1,145 @@
+PROMPT 3 — Remover Z-API + Limpar Código
+Remove Z-API from ChatBanana codebase. After Prompts 1 and 2,
+Z-API is no longer needed for message sending or receiving.
+Keep ONLY what is needed for workspaces still using Z-API connections
+as a temporary compatibility shim during customer migration.
+
+## IMPORTANT: Before running this prompt
+Confirm:
+1. All existing workspaces using Z-API have been migrated to Web.js or Meta
+2. No active Z-API connections exist in the conexoes table
+3. channel-router.ts no longer routes to Z-API for any active workspace
+
+If any workspace still uses Z-API, do NOT run this prompt yet.
+Instead, coordinate migration of those workspaces first.
+
+## Step 1: Remove from channel-router.ts
+
+In server/services/channel-router.ts:
+- Remove sendViaZAPI() function entirely
+- Remove the Z-API fallback from the routing chain
+- Remove zapiFetch and Z-API credential imports
+- Final routing: Meta → Web.js → error if neither available
+```typescript
+export async function sendMessage(params: SendMessageParams): Promise<SendMessageResult> {
+  const { workspaceId } = params;
+
+  // PRIORITY 1: Meta Cloud API
+  const metaConnection = await db.query.whatsapp_official_connections.findFirst({
+    where: and(
+      eq(whatsapp_official_connections.workspace_id, workspaceId),
+      eq(whatsapp_official_connections.status, 'active')
+    )
+  });
+  if (metaConnection) return sendViaMeta(params, metaConnection);
+
+  // PRIORITY 2: Web.js
+  const wwebSession = getActiveSessionForWorkspace(workspaceId);
+  if (wwebSession) return sendViaWebJS(params, workspaceId);
+
+  // No channel available
+  console.error('[ChannelRouter] No active WhatsApp channel for workspace:', workspaceId);
+  return { 
+    success: false, 
+    error: 'Nenhum canal WhatsApp configurado. Conecte via WhatsApp Web.js ou API Oficial.',
+    channel: 'none' as any
+  };
+}
+```
+
+## Step 2: Remove Z-API functions from automationEngine.ts
+
+Delete these functions entirely (now unused after Prompt 2):
+- sendMessageViaZAPI()
+- sendImageViaZAPI()  
+- sendDocumentViaZAPI()
+
+Also remove all zapiFetch imports from automationEngine.ts.
+
+## Step 3: Archive Z-API webhook (don't delete — keep for debugging)
+
+In server/routes/webhook-zapi.ts:
+- Add a comment at the top: // DEPRECATED — Z-API removed. Kept for reference only.
+- Unregister the route in server/index.ts:
+  - Comment out: app.use('/api/webhook/zapi', zapiWebhookRouter)
+  - Add: // Z-API webhook disabled — use Meta or Web.js
+
+## Step 4: Remove from conexoes.ts
+
+In server/routes/conexoes.ts:
+- Remove the Z-API provider option from connection creation
+- Remove: automatic Z-API instance creation via Account Token
+- Remove: Z-API webhook configuration (POST /api/conexoes/:id/webhook-config)
+- Remove: Z-API-specific status check
+- Keep: Web.js (wweb) connection creation and management
+
+## Step 5: Remove from server/utils/helpers.ts
+
+Delete or mark as unused:
+- zapiFetch() function
+- getZapiIntegConfig() function
+- invalidateZapiCache() function
+- fetchAndSaveProfilePic() — keep only if it has a Web.js equivalent
+
+## Step 6: Remove from server/index.ts boot sequence
+
+Remove:
+- Z-API webhook check loop on boot
+- Campaign dispatch via Z-API
+- Any Z-API health check
+
+Keep:
+- Web.js restoreAllSessions() call (keep this)
+- Meta webhook endpoint (keep this)
+
+## Step 7: Update frontend
+
+In client/src/pages/conexoes.tsx:
+- Remove the Z-API provider option from the connection creation UI
+- Remove the Z-API credentials form (instanceId, token fields)
+- Keep only: Web.js (wweb) and the link to /whatsapp-oficial for Meta
+- Update the provider description to show only 2 options
+
+In client/src/pages/integracoes.tsx:
+- Remove the Z-API credentials configuration section
+- Or replace with a "Z-API foi substituído por Web.js e API Oficial" notice
+
+## Step 8: Cleanup schema (optional — low risk)
+
+In shared/schema.ts:
+- Remove instanceId, token, webhookUrl columns from conexoes table
+  ONLY if no Web.js sessions use these columns
+  Check: does whatsappWebJS.ts use instanceId or token from conexoes? If yes, keep them.
+
+## Step 9: Remove env vars documentation
+
+Remove from .env.example (if exists):
+- ZAPI_BASE_URL
+- ZAPI_INSTANCE_ID
+- ZAPI_TOKEN
+- ZAPI_CLIENT_TOKEN
+- ZAPI_ACCOUNT_TOKEN
+
+Add to EasyPanel: remove these vars after confirming removal works.
+
+## Step 10: Final verification
+
+Run these checks:
+```bash
+grep -r "zapi\|z-api\|zapiFetch\|zapiClient" ./server --include="*.ts" | grep -v "webhook-zapi\|DEPRECATED"
+```
+→ Should return 0 results (except the archived webhook file)
+```bash
+grep -r "zapi\|z-api" ./client --include="*.tsx" --include="*.ts"
+```
+→ Should return 0 results
+
+## After implementing:
+1. TypeScript compiles without errors
+2. Frontend build succeeds
+3. Test: create a new Web.js connection → QR code appears → scan → connected
+4. Test: send message via inbox → goes through Web.js
+5. Test: automation sends message → goes through Web.js
+6. Test: workspace with Meta API → goes through Meta
+7. Confirm no Z-API references remain in active code paths
+8. Report final file count and any unexpected Z-API dependencies found

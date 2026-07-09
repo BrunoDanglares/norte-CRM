@@ -1,0 +1,81 @@
+PROMPT 5 — Frontend: Painel do GestorCriar a página do painel do gestor em 
+client/src/pages/parceiros-painel.tsx
+e adicionar a rota /parceiros/painel no App.tsx (protegida).
+
+=== LAYOUT GERAL ===
+
+Usar o layout padrão do sistema com sidebar existente.
+Adicionar item "Painel de Parceiro" no app-sidebar.tsx com 
+ícone Network ou LayoutDashboard, visível apenas quando 
+workspace.account_type === 'gestor'. Posicionar abaixo de Dashboard.
+
+=== SEÇÃO 1 — Header com stats (cards no topo) ===
+
+4 StatCards usando o componente stat-card.tsx existente:
+- Total de Clientes (totalClients)
+- Clientes Ativos (activeClients) 
+- Total de Leads (totalLeads)
+- Total de Conversas (totalConversations)
+
+Dados via GET /api/partner/stats com TanStack Query.
+
+=== SEÇÃO 2 — Lista de clientes ===
+
+Tabela com as colunas:
+- Empresa (businessName do workspace)
+- Responsável (nome do admin user)
+- Email (email do admin)
+- Criado em (data formatada pt-BR)
+- Status (badge verde "Ativo" / cinza "Inativo")
+- Ações: botão "Acessar" e botão "..." com opções
+
+Dados via GET /api/partner/clients.
+
+Botão "Acessar" chama:
+  1. POST /api/partner/impersonate/:clientWorkspaceId
+  2. Com o token retornado, POST /api/auth/impersonate { token }
+  3. Salva o novo JWT no AuthContext (sobrescrevendo temporariamente)
+  4. Salva no sessionStorage: 
+     { partnerToken: tokenOriginal, partnerWorkspaceId: wsIdOriginal }
+  5. Redireciona para /inbox
+
+=== SEÇÃO 3 — Modal "Adicionar Cliente" ===
+
+Botão "+ Adicionar Cliente" no topo direito abre Dialog com:
+Aba 1 — "Criar Agora":
+  Formulário com campos:
+  - Nome da empresa *
+  - Nome do responsável *
+  - Email do responsável *
+  - Senha provisória *
+  - Telefone WhatsApp (opcional)
+  Submit: POST /api/partner/clients
+  Após sucesso: fecha modal, invalida query de clients, 
+  mostra toast "Cliente criado com sucesso!"
+
+Aba 2 — "Enviar Convite":
+  Formulário com campos:
+  - Nome do responsável *
+  - Email do responsável *  
+  - Nome da empresa *
+  Submit: POST /api/partner/invites
+  Exibe o link gerado em um campo copiável com botão "Copiar link"
+  Toast: "Link de convite copiado!"
+
+=== BANNER DE IMPERSONATION ===
+
+No componente raiz (App.tsx ou layout principal), verificar se 
+sessionStorage tem 'partnerToken'.
+
+Se sim, exibir barra fixa no TOPO da tela (acima de tudo), 
+altura 40px, cor amber/yellow (#FFB300 com texto escuro):
+"👁 Você está visualizando como cliente. 
+ [Nome do workspace atual]    [Voltar ao meu painel →]"
+
+Botão "Voltar ao meu painel":
+  1. Restaura JWT original do sessionStorage
+  2. Remove partnerToken e partnerWorkspaceId do sessionStorage
+  3. Atualiza AuthContext com o JWT original
+  4. Redireciona para /parceiros/painel
+
+Confirme quando implementado.

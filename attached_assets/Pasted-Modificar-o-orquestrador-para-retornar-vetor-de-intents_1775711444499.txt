@@ -1,0 +1,128 @@
+Modificar o orquestrador para retornar vetor de intents e criar
+o resolvedor de prioridade. Duas mudanças no mesmo PR.
+
+══ MUDANÇA 1 — orchestrator.ts: retornar vetor de intents ══
+
+Localize a função decidirProximoPasso (ou equivalente) em
+server/services/agents/orchestrator.ts.
+
+Substitua a interface de retorno atual por:
+
+  interface IntentVector {
+    intents: Array<{
+      intent: string;
+      confidence: number;
+      action: string | null;
+    }>;
+    dominant: string;
+    secondary: string | null;
+    fluxo: string;
+  }
+
+Atualize o system prompt enviado à OpenAI para solicitar o
+novo formato. Substitua o system prompt atual do orquestrador
+pelo seguinte (mantendo as regras de intent e reclassificação
+que já existem, apenas mudando o formato do JSON de resposta):
+
+"Você é o cérebro de roteamento de um provedor de internet (ISP).
+Analise a mensagem e retorne TODOS os intents detectados com
+seus níveis de confiança.
+
+Responda APENAS em JSON válido:
+{
+  \"intents\": [
+    { \"intent\": \"FINANCEIRO\", \"confidence\": 0.9, \"action\": \"LISTAR_FATURAS\" },
+    { \"intent\": \"SUPORTE_TECNICO\", \"confidence\": 0.3, \"action\": null }
+  ],
+  \"fluxo\": \"financeiro\"
+}
+
+Regras de intent (mesmas de antes):
+- FINANCEIRO: boleto, fatura, pagamento, pix, segunda via,
+  desbloqueio, suspenso, bloqueado, devendo
+- SUPORTE_TECNICO: sem internet, lento, caiu, offline, wifi,
+  roteador, conexão, velocidade, sinal
+- VENDAS: contratar, planos, preços, upgrade, instalação,
+  cobertura, comercial
+- CANCELAMENTO: cancelar, desistir, trocar de provedor,
+  não quero mais
+- INCIDENTE_REGIONAL: queda em massa, problema na região
+- HUMANO: falar com atendente, pessoa, transferir
+- GERAL: cumprimento genérico, mensagem ambígua
+
+Regras de confiança:
+- Inclua APENAS intents com confiança >= 0.3
+- Ordene do maior para o menor confidence
+- Se a mensagem for curta e ambígua: GERAL com confidence 0.3
+- Se cliente SUSPENSO pede suporte: inclua FINANCEIRO com
+  confidence 0.85 E SUPORTE_TECNICO com confidence menor
+- Inclua no máximo 3 intents por resposta
+
+Ações válidas por intent:
+- FINANCEIRO: LISTAR_FATURAS, GERAR_BOLETO, GERAR_PIX,
+  DESBLOQUEAR, PROMESSA_PAGAMENTO
+- SUPORTE_TECNICO: DIAGNOSTICAR, ABRIR_OS, REINICIAR_ONU
+- VENDAS: VERIFICAR_COBERTURA, LISTAR_PLANOS, UPGRADE
+- CANCELAMENTO: INICIAR_RETENCAO
+- Outros: null"
+
+Na função que processa o retorno da IA, parse o novo JSON e
+retorne o IntentVector. Se o parse falhar, retorne fallback:
+  { intents: [{ intent: 'GERAL', confidence: 0.3, action: null }],
+    dominant: 'GERAL', secondary: null, fluxo: 'triagem' }
+
+Para compatibilidade com o resto do motor que ainda usa o
+formato antigo, adicione um getter:
+  vector.dominant  → intent de maior confidence
+  vector.secondary → segundo intent se confidence >= 0.35
+
+══ MUDANÇA 2 — CRIAR server/services/agents/priorityResolver.ts ══
+
+Implemente o seguinte conteúdo:
+
+  const DEFAULT_PRIORITIES: Record<string, number> = {
+    HUMANO: 1,
+    CANCELAMENTO: 2,
+    FINANCEIRO: 3,
+    SUPORTE_TECNICO: 4,
+    VENDAS: 5,
+    INCIDENTE_REGIONAL: 4,
+    GERAL: 6,
+  };
+
+  export function resolveIntent(
+    vector: IntentVector,
+    tenantPriorities?: Record<string, number>
+  ): string {
+    const priorities = {
+      ...DEFAULT_PRIORITIES,
+      ...(tenantPriorities ?? {}),
+    };
+
+    const candidates = vector.intents
+      .filter(i => i.confidence >= 0.3)
+      .sort((a, b) => {
+        const pa = priorities[a.intent] ?? 99;
+        const pb = priorities[b.intent] ?? 99;
+        if (pa !== pb) return pa - pb;
+        return b.confidence - a.confidence;
+      });
+
+    return candidates[0]?.intent ?? vector.dominant;
+  }
+
+  export function buildIntentContext(vector: IntentVector): string {
+    if (vector.intents.length <= 1) return '';
+    const secondary = vector.intents
+      .slice(1)
+      .map(i => `${i.intent}(${Math.round(i.confidence * 100)}%)`)
+      .join(', ');
+    return `\nContexto adicional detectado na mensagem: ${secondary}.` +
+      ' Use para enriquecer a resposta se relevante.';
+  }
+
+  export type { IntentVector };
+
+Adicione ao index.ts:
+  export { resolveIntent, buildIntentContext } from './priorityResolver';
+  export type { IntentVector } from './priorityResolver';

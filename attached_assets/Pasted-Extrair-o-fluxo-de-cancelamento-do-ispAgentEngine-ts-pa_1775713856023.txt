@@ -1,0 +1,145 @@
+Extrair o fluxo de cancelamento do ispAgentEngine.ts para
+um arquivo dedicado. Não altere o comportamento — apenas
+organize o código.
+
+══ CRIAR server/services/agents/cancelamentoAgent.ts ══
+
+Implemente a classe seguindo o mesmo padrão dos outros agentes
+(FinanceiroAgent, SuporteAgent, ComercialAgent):
+
+import { AgentInput, AgentResponse } from './types';
+import { n8nAiService } from '../n8nAiService';
+import { n8nSendService } from '../n8nSendService';
+import { n8nErpService } from '../n8nErpService';
+
+export class CancelamentoAgent {
+
+  async handle(input: AgentInput): Promise<AgentResponse> {
+    const { sessionState, workspaceId, conversaId, tenantSettings } = input;
+    const dados = sessionState.dados_coletados;
+
+    // Detectar situação de cancelamento
+    const situationCode = this.detectSituation(input);
+
+    // Verificar débito em aberto (para C6/F9)
+    let contextoERP = '';
+    if (sessionState.contrato_id) {
+      try {
+        const faturas = await n8nErpService.consultarFaturas(
+          sessionState.contrato_id, workspaceId
+        );
+        const vencidas = faturas?.filter(
+          (f: any) => f.status === 'vencida' || f.status === 'aberto'
+        ) ?? [];
+        if (vencidas.length > 0) {
+          const total = vencidas.reduce(
+            (s: number, f: any) => s + (f.valor ?? 0), 0
+          );
+          contextoERP = `Débito em aberto: R$ ${total.toFixed(2)} ` +
+            `(${vencidas.length} fatura(s)). `;
+          dados.valor_divida = total.toFixed(2);
+        }
+      } catch (e) {
+        contextoERP = 'Não foi possível verificar débitos no momento. ';
+      }
+    }
+
+    // Coletar motivo se ainda não coletado
+    if (!dados.motivo_cancelamento && input.textoEfetivo) {
+      dados.motivo_cancelamento = input.textoEfetivo;
+    }
+
+    // Montar contexto para a IA
+    const contexto = {
+      cliente_nome: sessionState.cliente_nome,
+      contrato_id: sessionState.contrato_id,
+      motivo_cancelamento: dados.motivo_cancelamento ?? 'não informado',
+      valor_divida: dados.valor_divida ?? '0',
+      fim_fidelidade: dados.fim_fidelidade ?? 'não informado',
+      erp_context: contextoERP,
+      intents_secundarios: input.contextoAdicional ?? '',
+    };
+
+    const resposta = await n8nAiService.gerarResposta(
+      'agente_cancelamento',
+      workspaceId,
+      contexto,
+      conversaId,
+      situationCode,
+      'cancelamento'
+    );
+
+    // Se a IA propõe transferir para humano
+    if (resposta.includes('TRANSFERIR_HUMANO')) {
+      return {
+        message: '',
+        redirectTo: 'HUMANO',
+        guardFeedback:
+          `Motivo: ${dados.motivo_cancelamento ?? 'cancelamento'}. ` +
+          contextoERP,
+      };
+    }
+
+    // Se a IA propõe transferir para comercial (retenção)
+    if (resposta.includes('TRANSFERIR_COMERCIAL')) {
+      return {
+        message: '',
+        redirectTo: 'VENDAS',
+        guardFeedback:
+          `Cliente quer cancelar. Motivo: ${dados.motivo_cancelamento}. ` +
+          contextoERP,
+      };
+    }
+
+    return { message: resposta };
+  }
+
+  detectSituation(input: AgentInput): string {
+    const texto = (input.textoEfetivo ?? '').toLowerCase();
+    const dados = input.sessionState.dados_coletados;
+
+    // C6 — Retenção (sempre escala)
+    if (dados.valor_divida && parseFloat(dados.valor_divida) > 0) {
+      return 'F9'; // cancelamento com débito — situação F9
+    }
+
+    // C6 — Retenção padrão
+    return 'C6';
+  }
+}
+
+export const cancelamentoAgent = new CancelamentoAgent();
+
+══ ATUALIZAR server/services/agents/index.ts ══
+
+Adicionar:
+  export { cancelamentoAgent, CancelamentoAgent }
+    from './cancelamentoAgent';
+
+══ REMOVER do ispAgentEngine.ts ══
+
+Localize o bloco inline de cancelamento — geralmente
+identificado por:
+  - Chamada direta a n8nAiService.gerarResposta com
+    prompt 'agente_cancelamento'
+  - Verificações de TRANSFERIR_HUMANO e TRANSFERIR_COMERCIAL
+    inline no motor
+
+Substitua esse bloco por:
+
+  import { cancelamentoAgent } from './agents/cancelamentoAgent';
+
+  // No bloco de dispatch:
+  case 'CANCELAMENTO':
+  case 'cancelamento':
+    return await handleComGuard(
+      cancelamentoAgent, input, actionCtx
+    );
+
+O handleComGuard já existe desde o Bloco A — apenas
+adicione o cancelamentoAgent na lista de agentes protegidos.
+
+Confirme que os testes abaixo funcionam após a mudança:
+1. "quero cancelar" → entra no cancelamentoAgent
+2. "quero cancelar" + débito em aberto → situação F9 detectada
+3. "quero cancelar" + sem débito → situação C6 detectada

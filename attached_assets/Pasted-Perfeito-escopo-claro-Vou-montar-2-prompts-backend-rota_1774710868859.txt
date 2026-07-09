@@ -1,0 +1,822 @@
+Perfeito — escopo claro. Vou montar 2 prompts: backend (rotas de importação) e frontend (modal de importação na aba de Contatos).
+
+PROMPT 1 — Backend: Importação em Massa
+Implement bulk contact import from SGP and IXC ERP systems into the ChatBanana CRM contacts tab.
+
+## Context
+- ISP module already exists with isp_configs, sgp-adapter, ixc-adapter, isp-provider-factory
+- Contacts table already exists in the schema (used throughout the CRM)
+- Multi-tenant: all operations scoped by workspace_id
+- Import runs server-side: fetches all clients from ERP in paginated batches, upserts into contacts table
+- Use getProviderFromConfig from isp-provider-factory to abstract SGP vs IXC
+
+## Step 1: Add import tracking table
+
+Add to Drizzle schema:
+
+### isp_import_logs
+Tracks each import job run.
+
+Columns:
+- id: serial primary key
+- workspace_id: uuid not null references workspaces(id) on delete cascade
+- erp_type: text not null ('sgp' | 'ixc')
+- status: text not null default 'running' ('running' | 'completed' | 'failed')
+- filter_status: text not null ('active' | 'active_overdue' | 'all')
+- total_fetched: integer not null default 0
+- total_imported: integer not null default 0
+- total_updated: integer not null default 0
+- total_skipped: integer not null default 0
+- total_errors: integer not null default 0
+- error_message: text
+- started_at: timestamp default now()
+- finished_at: timestamp
+- created_at: timestamp default now()
+
+Run migration after adding table.
+
+## Step 2: Extend ISP Provider interface
+
+In server/services/isp-provider.interface.ts, add new method to ISPProvider:
+```typescript
+// Add to ISPProvider interface:
+getAllCustomers(
+  credentials: ISPCredentials,
+  options: {
+    filterStatus: 'active' | 'active_overdue' | 'all';
+    page: number;
+    limit: number;
+  }
+): Promise<{
+  customers: ISPCustomer[];
+  total: number;
+  hasMore: boolean;
+}>;
+```
+
+## Step 3: Implement getAllCustomers in SGP adapter
+
+In server/services/sgp-adapter.ts, add:
+```typescript
+export async function getAllCustomers(credentials: ISPCredentials, options: {
+  filterStatus: 'active' | 'active_overdue' | 'all';
+  page: number;
+  limit: number;
+}): Promise<{ customers: ISPCustomer[]; total: number; hasMore: boolean }> {
+  
+  // SGP: POST /api/ura/consultacliente/ supports pagination
+  // Filter by contratoStatus:
+  // active = contratoStatus 1
+  // active_overdue = contratoStatus 1,4
+  // all = no filter
+
+  const statusFilter: Record<string, string> = {
+    active: '1',
+    active_overdue: '1,4',
+    all: ''
+  };
+
+  const formData = new FormData();
+  formData.append('token', credentials.apiToken);
+  formData.append('app', credentials.sgpApp || 'ChatBanana');
+  formData.append('pagina', String(options.page));
+  formData.append('quantidade', String(options.limit));
+  if (statusFilter[options.filterStatus]) {
+    formData.append('contratoStatus', statusFilter[options.filterStatus]);
+  }
+
+  const response = await sgpFetch(
+    `${credentials.baseUrl}/api/ura/consultacliente/`,
+    { method: 'POST', body: formData },
+    credentials
+  );
+
+  const contratos = response.contratos || [];
+  const total = parseInt(response.total || response.totalRegistros || '0') || contratos.length;
+
+  const customers: ISPCustomer[] = contratos.map((c: any) => ({
+    id: String(c.clienteId),
+    contratoId: String(c.contratoId || ''),
+    nome: c.razaoSocial || '',
+    cpf: c.cpfCnpj || '',
+    telefone: c.telefones?.[0]?.replace(/\D/g, '') || '',
+    email: c.emails?.[0] || '',
+    plano: c.servico_plano || c.planointernet || '',
+    dataNascimento: c.dataNascimento || null,
+    status: mapSGPStatus(c.contratoStatus),
+    endereco: `${c.endereco_logradouro || ''}, ${c.endereco_numero || ''} - ${c.endereco_bairro || ''}`,
+    clienteSince: c.dataCadastro || null
+  }));
+
+  return {
+    customers,
+    total,
+    hasMore: (options.page * options.limit) < total
+  };
+}
+
+function mapSGPStatus(contratoStatus: number): ISPCustomer['status'] {
+  const map: Record<number, ISPCustomer['status']> = {
+    1: 'ativo',
+    2: 'suspenso',
+    3: 'cancelado',
+    4: 'inadimplente'
+  };
+  return map[contratoStatus] || 'ativo';
+}
+```
+
+## Step 4: Implement getAllCustomers in IXC adapter
+
+In server/services/ixc-adapter.ts, add:
+```typescript
+export async function getAllCustomers(credentials: ISPCredentials, options: {
+  filterStatus: 'active' | 'active_overdue' | 'all';
+  page: number;
+  limit: number;
+}): Promise<{ customers: ISPCustomer[]; total: number; hasMore: boolean }> {
+
+  // IXC: GET /cliente with ativo filter
+  // active = ativo=S
+  // active_overdue = ativo=S (IXC doesn't distinguish overdue at client level — filter at invoice level)
+  // all = no ativo filter
+
+  let url = `${credentials.baseUrl}/cliente?page=${options.page}&rp=${options.limit}&ixcsoft=listar`;
+  
+  if (options.filterStatus === 'active' || options.filterStatus === 'active_overdue') {
+    url += `&qtype=ativo&query=S&oper=%3D`;
+  }
+
+  const response = await ixcFetch(url, {
+    method: 'GET',
+    headers: { ...getIXCHeaders(credentials), 'ixcsoft': 'listar' }
+  });
+
+  if (response.type === 'error') return { customers: [], total: 0, hasMore: false };
+
+  const registros = response.registros || [];
+  const total = parseInt(response.total || '0') || registros.length;
+
+  const customers: ISPCustomer[] = registros.map((c: any) => ({
+    id: String(c.id),
+    contratoId: '',
+    nome: c.razao || c.fantasia || '',
+    cpf: c.cpf_cnpj || '',
+    telefone: (c.whatsapp || c.celular || c.fone || '').replace(/\D/g, ''),
+    email: c.email || '',
+    plano: '',
+    dataNascimento: c.data_nascimento || null,
+    status: c.ativo === 'S' ? 'ativo' : 'cancelado',
+    endereco: `${c.endereco || ''}, ${c.numero || ''} - ${c.bairro || ''} - ${c.cidade || ''}`,
+    clienteSince: c.data_cadastro || null
+  }));
+
+  return {
+    customers,
+    total,
+    hasMore: (options.page * options.limit) < total
+  };
+}
+```
+
+## Step 5: Add clienteSince to ISPCustomer interface
+
+In isp-provider.interface.ts, add to ISPCustomer:
+```typescript
+clienteSince?: string | null; // date string — when customer became a client
+```
+
+## Step 6: Create import service
+
+File to create: server/services/isp-import.ts
+```typescript
+import { db } from '../db';
+import { isp_configs, isp_import_logs, contacts } from '../db/schema';
+import { eq, and } from 'drizzle-orm';
+import { getProviderFromConfig } from './isp-provider-factory';
+import { ISPCustomer } from './isp-provider.interface';
+
+const BATCH_SIZE = 50; // fetch 50 customers per page from ERP
+const DELAY_BETWEEN_PAGES = 500; // ms — avoid rate limiting
+
+export interface ImportOptions {
+  workspaceId: string;
+  filterStatus: 'active' | 'active_overdue' | 'all';
+}
+
+export interface ImportProgress {
+  logId: number;
+  status: 'running' | 'completed' | 'failed';
+  totalFetched: number;
+  totalImported: number;
+  totalUpdated: number;
+  totalSkipped: number;
+  totalErrors: number;
+  progress: number; // 0-100
+  message: string;
+}
+
+// In-memory progress store (per workspace, cleared on completion)
+const importProgress = new Map<string, ImportProgress>();
+
+export function getImportProgress(workspaceId: string): ImportProgress | null {
+  return importProgress.get(workspaceId) || null;
+}
+
+export async function startBulkImport(options: ImportOptions): Promise<{ logId: number }> {
+  const { workspaceId, filterStatus } = options;
+
+  // Check if import already running for this workspace
+  const existing = importProgress.get(workspaceId);
+  if (existing?.status === 'running') {
+    throw new Error('Importação já está em andamento para este workspace');
+  }
+
+  // Load ISP config
+  const config = await db.query.isp_configs.findFirst({
+    where: and(eq(isp_configs.workspace_id, workspaceId), eq(isp_configs.is_active, true))
+  });
+  if (!config) throw new Error('Módulo ISP não configurado');
+
+  // Create import log
+  const [log] = await db.insert(isp_import_logs).values({
+    workspace_id: workspaceId,
+    erp_type: config.erp_type || 'sgp',
+    status: 'running',
+    filter_status: filterStatus,
+    started_at: new Date()
+  }).returning();
+
+  // Initialize progress
+  const progress: ImportProgress = {
+    logId: log.id,
+    status: 'running',
+    totalFetched: 0,
+    totalImported: 0,
+    totalUpdated: 0,
+    totalSkipped: 0,
+    totalErrors: 0,
+    progress: 0,
+    message: 'Iniciando importação...'
+  };
+  importProgress.set(workspaceId, progress);
+
+  // Run async (non-blocking)
+  runImport(workspaceId, config, log.id, filterStatus, progress).catch(err => {
+    console.error('[ISP Import] Fatal error:', err);
+    progress.status = 'failed';
+    progress.message = err.message;
+    importProgress.set(workspaceId, progress);
+  });
+
+  return { logId: log.id };
+}
+
+async function runImport(
+  workspaceId: string,
+  config: any,
+  logId: number,
+  filterStatus: 'active' | 'active_overdue' | 'all',
+  progress: ImportProgress
+) {
+  const { provider, credentials } = getProviderFromConfig(config);
+  let page = 1;
+  let totalCustomers = 0;
+  let hasMore = true;
+
+  console.log(`[ISP Import] Starting for workspace ${workspaceId} | filter: ${filterStatus}`);
+
+  try {
+    while (hasMore) {
+      progress.message = `Buscando página ${page} do ${config.erp_type?.toUpperCase()}...`;
+      importProgress.set(workspaceId, progress);
+
+      const result = await provider.getAllCustomers(credentials, {
+        filterStatus,
+        page,
+        limit: BATCH_SIZE
+      });
+
+      if (page === 1) {
+        totalCustomers = result.total || result.customers.length;
+        console.log(`[ISP Import] Total customers to import: ${totalCustomers}`);
+      }
+
+      hasMore = result.hasMore && result.customers.length > 0;
+      progress.totalFetched += result.customers.length;
+
+      // Process this batch
+      await processBatch(workspaceId, result.customers, progress);
+
+      // Update progress percentage
+      if (totalCustomers > 0) {
+        progress.progress = Math.min(99, Math.round((progress.totalFetched / totalCustomers) * 100));
+      }
+      importProgress.set(workspaceId, progress);
+
+      page++;
+
+      // Rate limit protection
+      if (hasMore) await sleep(DELAY_BETWEEN_PAGES);
+    }
+
+    // Mark completed
+    progress.status = 'completed';
+    progress.progress = 100;
+    progress.message = `Importação concluída! ${progress.totalImported} novos, ${progress.totalUpdated} atualizados.`;
+    importProgress.set(workspaceId, progress);
+
+    await db.update(isp_import_logs).set({
+      status: 'completed',
+      total_fetched: progress.totalFetched,
+      total_imported: progress.totalImported,
+      total_updated: progress.totalUpdated,
+      total_skipped: progress.totalSkipped,
+      total_errors: progress.totalErrors,
+      finished_at: new Date()
+    }).where(eq(isp_import_logs.id, logId));
+
+    console.log(`[ISP Import] Completed: ${progress.totalImported} imported, ${progress.totalUpdated} updated`);
+
+  } catch (err: any) {
+    progress.status = 'failed';
+    progress.message = `Erro: ${err.message}`;
+    importProgress.set(workspaceId, progress);
+
+    await db.update(isp_import_logs).set({
+      status: 'failed',
+      error_message: err.message,
+      total_fetched: progress.totalFetched,
+      total_imported: progress.totalImported,
+      total_updated: progress.totalUpdated,
+      finished_at: new Date()
+    }).where(eq(isp_import_logs.id, logId));
+
+    throw err;
+  }
+}
+
+async function processBatch(
+  workspaceId: string,
+  customers: ISPCustomer[],
+  progress: ImportProgress
+) {
+  for (const customer of customers) {
+    try {
+      // Skip if no phone (can't create WhatsApp contact without phone)
+      const phone = customer.telefone?.replace(/\D/g, '');
+      if (!phone || phone.length < 10) {
+        progress.totalSkipped++;
+        continue;
+      }
+
+      // Normalize phone: ensure starts with 55 (Brazil)
+      const normalizedPhone = phone.startsWith('55') ? phone : `55${phone}`;
+
+      // Check if contact already exists by phone in this workspace
+      const existing = await db.query.contacts.findFirst({
+        where: and(
+          eq(contacts.workspace_id, workspaceId),
+          eq(contacts.telefone, normalizedPhone)
+        )
+      });
+
+      // Build contact data
+      // Check actual column names in contacts table — adjust field names accordingly
+      const contactData = {
+        workspace_id: workspaceId,
+        nome: customer.nome || 'Sem nome',
+        telefone: normalizedPhone,
+        // Only update nome and telefone as per requirements
+        // Store ERP metadata in tags or custom fields if available
+        updated_at: new Date()
+      };
+
+      if (existing) {
+        // Update existing contact
+        await db.update(contacts)
+          .set(contactData)
+          .where(eq(contacts.id, existing.id));
+        progress.totalUpdated++;
+      } else {
+        // Create new contact
+        await db.insert(contacts).values({
+          ...contactData,
+          created_at: new Date()
+        });
+        progress.totalImported++;
+      }
+
+    } catch (err: any) {
+      console.error(`[ISP Import] Error processing customer ${customer.id}:`, err.message);
+      progress.totalErrors++;
+    }
+  }
+}
+
+function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)); }
+```
+
+## Step 7: Create import routes
+
+Add to server/routes/isp.ts (or create server/routes/isp-import.ts):
+```typescript
+// POST /api/isp/import/start
+// Starts bulk import job (non-blocking)
+router.post('/import/start', async (req, res) => {
+  try {
+    const workspaceId = resolveWorkspaceId(req);
+    const { filter_status = 'active' } = req.body;
+
+    if (!['active', 'active_overdue', 'all'].includes(filter_status)) {
+      return res.status(400).json({ error: 'filter_status inválido' });
+    }
+
+    const { logId } = await startBulkImport({
+      workspaceId,
+      filterStatus: filter_status as any
+    });
+
+    res.json({ success: true, logId, message: 'Importação iniciada' });
+  } catch (err: any) {
+    if (err.message.includes('já está em andamento')) {
+      return res.status(409).json({ error: err.message });
+    }
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/isp/import/progress
+// Poll import progress (frontend polls every 2 seconds)
+router.get('/import/progress', async (req, res) => {
+  const workspaceId = resolveWorkspaceId(req);
+  const progress = getImportProgress(workspaceId);
+
+  if (!progress) {
+    return res.json({ status: 'idle', message: 'Nenhuma importação em andamento' });
+  }
+
+  res.json(progress);
+});
+
+// GET /api/isp/import/history
+// List past import jobs
+router.get('/import/history', async (req, res) => {
+  try {
+    const workspaceId = resolveWorkspaceId(req);
+    const history = await db.select()
+      .from(isp_import_logs)
+      .where(eq(isp_import_logs.workspace_id, workspaceId))
+      .orderBy(desc(isp_import_logs.created_at))
+      .limit(10);
+
+    res.json(history);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+```
+
+## Step 8: Register routes
+In server/index.ts or wherever ISP routes are registered, ensure the new import routes are included in the existing ISP router.
+
+## After implementing:
+1. Run migration — confirm isp_import_logs table created
+2. Confirm TypeScript compiles
+3. Test: POST /api/isp/import/start with { filter_status: 'active' }
+4. Poll GET /api/isp/import/progress every 2 seconds
+5. Report: what column names exist in the contacts table (especially nome/name, telefone/phone)
+6. Report: does the contacts table have any extra fields like tags, observacoes, custom_fields that we can use to store ERP metadata?
+
+PROMPT 2 — Frontend: Modal de Importação na Aba Contatos
+Add a bulk ERP import modal to the ChatBanana CRM contacts page.
+
+## Context
+- The contacts page already exists (likely at /contatos or similar)
+- Add an "Importar do ERP" button near the existing "Novo contato" button
+- Clicking opens a modal with import options and real-time progress
+- Only show this button if workspace has active ISP config (check GET /api/isp/config)
+- Use existing design system: bg #1c1830, accent #8b5cf6, same component patterns
+
+## File to update: the existing contacts page component
+
+### 1. Add state for import modal
+```typescript
+const [showImportModal, setShowImportModal] = useState(false);
+const [ispConfigured, setIspConfigured] = useState(false);
+const [importStatus, setImportStatus] = useState<'idle' | 'running' | 'completed' | 'failed'>('idle');
+const [importProgress, setImportProgress] = useState<any>(null);
+const [filterStatus, setFilterStatus] = useState<'active' | 'active_overdue' | 'all'>('active');
+const [importHistory, setImportHistory] = useState<any[]>([]);
+const pollRef = useRef<NodeJS.Timeout | null>(null);
+
+// Check if ISP is configured on mount
+useEffect(() => {
+  apiFetch('/api/isp/config')
+    .then(data => setIspConfigured(data.configured !== false && data.is_active))
+    .catch(() => setIspConfigured(false));
+}, []);
+```
+
+### 2. Add "Importar do ERP" button
+
+Find where the "Novo contato" button is rendered. Add next to it (only if ispConfigured):
+```tsx
+{ispConfigured && (
+  <button
+    onClick={() => {
+      setShowImportModal(true);
+      loadImportHistory();
+    }}
+    className="flex items-center gap-2 px-4 py-2 rounded-lg border border-purple-500/30 hover:bg-purple-500/10 text-purple-400 text-sm transition"
+  >
+    <Download className="w-4 h-4" />
+    Importar do ERP
+  </button>
+)}
+```
+
+Import Download from lucide-react.
+
+### 3. Import Modal component
+
+Add the modal JSX at the bottom of the contacts page component:
+```tsx
+{showImportModal && (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+    <div className="bg-[#1c1830] rounded-2xl border border-white/10 w-full max-w-lg mx-4 p-6 space-y-5">
+      
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-purple-500/10 flex items-center justify-center">
+            <Download className="w-5 h-5 text-purple-400" />
+          </div>
+          <div>
+            <h2 className="text-white font-semibold">Importar Clientes do ERP</h2>
+            <p className="text-gray-400 text-xs">SGP / IXC → Contatos do CRM</p>
+          </div>
+        </div>
+        <button
+          onClick={() => {
+            setShowImportModal(false);
+            stopPolling();
+          }}
+          className="text-gray-400 hover:text-white transition"
+          disabled={importStatus === 'running'}
+        >
+          <X className="w-5 h-5" />
+        </button>
+      </div>
+
+      {/* Filter selection — only show when idle */}
+      {importStatus === 'idle' && (
+        <div className="space-y-3">
+          <label className="text-sm text-gray-300 font-medium">Quais clientes importar?</label>
+          <div className="space-y-2">
+            {[
+              { value: 'active', label: 'Apenas clientes ativos', desc: 'Contratos ativos e em dia' },
+              { value: 'active_overdue', label: 'Ativos + inadimplentes', desc: 'Ativos incluindo com fatura em atraso' },
+              { value: 'all', label: 'Todos os clientes', desc: 'Ativos, suspensos e cancelados' }
+            ].map(opt => (
+              <button
+                key={opt.value}
+                onClick={() => setFilterStatus(opt.value as any)}
+                className={`w-full p-3 rounded-xl border-2 text-left transition ${
+                  filterStatus === opt.value
+                    ? 'border-purple-500 bg-purple-500/10'
+                    : 'border-white/10 bg-white/5 hover:bg-white/10'
+                }`}
+              >
+                <div className="text-white text-sm font-medium">{opt.label}</div>
+                <div className="text-gray-400 text-xs mt-0.5">{opt.desc}</div>
+              </button>
+            ))}
+          </div>
+
+          {/* Info box */}
+          <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3 text-xs text-blue-300">
+            <strong>Como funciona:</strong> O sistema busca todos os clientes do ERP em lotes e cria ou atualiza os contatos no CRM. Contatos existentes com o mesmo telefone serão atualizados com nome e telefone do ERP.
+          </div>
+
+          <button
+            onClick={startImport}
+            className="w-full py-3 rounded-xl bg-gradient-to-r from-purple-600 to-purple-800 hover:from-purple-500 hover:to-purple-700 text-white font-semibold transition"
+          >
+            Iniciar Importação
+          </button>
+        </div>
+      )}
+
+      {/* Progress — show when running */}
+      {importStatus === 'running' && importProgress && (
+        <div className="space-y-4">
+          <div className="text-center">
+            <div className="text-white font-medium mb-1">Importando clientes...</div>
+            <div className="text-gray-400 text-sm">{importProgress.message}</div>
+          </div>
+
+          {/* Progress bar */}
+          <div className="w-full bg-white/10 rounded-full h-3">
+            <div
+              className="bg-gradient-to-r from-purple-500 to-purple-700 h-3 rounded-full transition-all duration-500"
+              style={{ width: `${importProgress.progress || 0}%` }}
+            />
+          </div>
+          <div className="text-center text-purple-400 text-sm font-medium">
+            {importProgress.progress || 0}%
+          </div>
+
+          {/* Stats */}
+          <div className="grid grid-cols-4 gap-2">
+            {[
+              { label: 'Buscados', value: importProgress.totalFetched, color: 'text-gray-300' },
+              { label: 'Novos', value: importProgress.totalImported, color: 'text-green-400' },
+              { label: 'Atualizados', value: importProgress.totalUpdated, color: 'text-blue-400' },
+              { label: 'Erros', value: importProgress.totalErrors, color: 'text-red-400' }
+            ].map(stat => (
+              <div key={stat.label} className="bg-white/5 rounded-lg p-2 text-center">
+                <div className={`text-lg font-bold ${stat.color}`}>{stat.value || 0}</div>
+                <div className="text-gray-500 text-xs">{stat.label}</div>
+              </div>
+            ))}
+          </div>
+
+          <p className="text-gray-500 text-xs text-center">
+            Não feche esta janela durante a importação.
+          </p>
+        </div>
+      )}
+
+      {/* Completed */}
+      {importStatus === 'completed' && importProgress && (
+        <div className="space-y-4">
+          <div className="text-center">
+            <div className="w-16 h-16 rounded-full bg-green-500/10 flex items-center justify-center mx-auto mb-3">
+              <CheckCircle className="w-8 h-8 text-green-400" />
+            </div>
+            <div className="text-white font-semibold text-lg">Importação concluída!</div>
+            <div className="text-gray-400 text-sm mt-1">{importProgress.message}</div>
+          </div>
+
+          <div className="grid grid-cols-4 gap-2">
+            {[
+              { label: 'Total', value: importProgress.totalFetched, color: 'text-gray-300' },
+              { label: 'Novos', value: importProgress.totalImported, color: 'text-green-400' },
+              { label: 'Atualizados', value: importProgress.totalUpdated, color: 'text-blue-400' },
+              { label: 'Erros', value: importProgress.totalErrors, color: 'text-red-400' }
+            ].map(stat => (
+              <div key={stat.label} className="bg-white/5 rounded-lg p-2 text-center">
+                <div className={`text-lg font-bold ${stat.color}`}>{stat.value || 0}</div>
+                <div className="text-gray-500 text-xs">{stat.label}</div>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex gap-2">
+            <button
+              onClick={() => {
+                setImportStatus('idle');
+                setImportProgress(null);
+              }}
+              className="flex-1 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white text-sm transition"
+            >
+              Nova importação
+            </button>
+            <button
+              onClick={() => {
+                setShowImportModal(false);
+                setImportStatus('idle');
+                // Reload contacts list
+                window.location.reload();
+              }}
+              className="flex-1 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-purple-800 text-white text-sm font-semibold transition"
+            >
+              Ver contatos
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Failed */}
+      {importStatus === 'failed' && (
+        <div className="text-center space-y-3">
+          <div className="w-16 h-16 rounded-full bg-red-500/10 flex items-center justify-center mx-auto">
+            <XCircle className="w-8 h-8 text-red-400" />
+          </div>
+          <div className="text-white font-semibold">Importação falhou</div>
+          <div className="text-red-400 text-sm">{importProgress?.message}</div>
+          <button
+            onClick={() => {
+              setImportStatus('idle');
+              setImportProgress(null);
+            }}
+            className="w-full py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white text-sm transition"
+          >
+            Tentar novamente
+          </button>
+        </div>
+      )}
+
+      {/* Import history — show when idle */}
+      {importStatus === 'idle' && importHistory.length > 0 && (
+        <div>
+          <div className="text-xs text-gray-400 font-medium mb-2">Últimas importações</div>
+          <div className="space-y-1.5">
+            {importHistory.slice(0, 3).map((h: any) => (
+              <div key={h.id} className="flex items-center justify-between p-2 rounded-lg bg-white/5 text-xs">
+                <div>
+                  <span className={`px-1.5 py-0.5 rounded text-xs font-medium mr-2 ${
+                    h.status === 'completed' ? 'bg-green-500/10 text-green-400' :
+                    h.status === 'failed' ? 'bg-red-500/10 text-red-400' :
+                    'bg-yellow-500/10 text-yellow-400'
+                  }`}>
+                    {h.status === 'completed' ? '✓' : h.status === 'failed' ? '✗' : '⟳'}
+                  </span>
+                  <span className="text-gray-300">{h.erp_type?.toUpperCase()}</span>
+                </div>
+                <div className="text-gray-500">
+                  {h.total_imported} novos · {h.total_updated} atualizados · {' '}
+                  {new Date(h.created_at).toLocaleDateString('pt-BR')}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  </div>
+)}
+```
+
+### 4. Import functions
+
+Add these functions to the contacts page component:
+```typescript
+// Add CheckCircle, XCircle, X to lucide-react imports
+
+async function startImport() {
+  try {
+    setImportStatus('running');
+    setImportProgress({ progress: 0, message: 'Iniciando...', totalFetched: 0, totalImported: 0, totalUpdated: 0, totalErrors: 0 });
+
+    await apiFetch('/api/isp/import/start', {
+      method: 'POST',
+      body: JSON.stringify({ filter_status: filterStatus })
+    });
+
+    // Start polling progress every 2 seconds
+    startPolling();
+  } catch (err: any) {
+    setImportStatus('failed');
+    setImportProgress({ message: err.message });
+  }
+}
+
+function startPolling() {
+  if (pollRef.current) clearInterval(pollRef.current);
+  pollRef.current = setInterval(async () => {
+    try {
+      const progress = await apiFetch('/api/isp/import/progress');
+      setImportProgress(progress);
+
+      if (progress.status === 'completed') {
+        setImportStatus('completed');
+        stopPolling();
+      } else if (progress.status === 'failed') {
+        setImportStatus('failed');
+        stopPolling();
+      }
+    } catch {
+      stopPolling();
+    }
+  }, 2000);
+}
+
+function stopPolling() {
+  if (pollRef.current) {
+    clearInterval(pollRef.current);
+    pollRef.current = null;
+  }
+}
+
+async function loadImportHistory() {
+  try {
+    const history = await apiFetch('/api/isp/import/history');
+    setImportHistory(Array.isArray(history) ? history : []);
+  } catch {}
+}
+
+// Cleanup on unmount
+useEffect(() => {
+  return () => stopPolling();
+}, []);
+```
+
+## After implementing:
+1. Navigate to /contatos — confirm "Importar do ERP" button appears (only if ISP configured)
+2. Click the button — confirm modal opens with 3 filter options
+3. Select "Apenas clientes ativos" and click "Iniciar Importação"
+4. Confirm progress bar animates and stats update in real time
+5. After completion, check contacts list for new entries
+6. Report total contacts imported

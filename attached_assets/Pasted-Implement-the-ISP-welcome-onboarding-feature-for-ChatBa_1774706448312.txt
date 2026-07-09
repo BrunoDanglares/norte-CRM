@@ -1,0 +1,78 @@
+Implement the ISP welcome onboarding feature for ChatBanana.
+Triggers automatically when a lead's status changes to 'cliente'.
+
+## Context
+- File to create: server/services/isp-onboarding.ts
+- Use sendMessage from channel-router for sending
+- Log to isp_automation_logs
+- Fire-and-forget pattern — never blocks the lead update response
+- Check actual status values in leads table before implementing
+
+## File to create: server/services/isp-onboarding.ts
+```typescriptimport { db } from '../db';
+import { isp_configs, isp_automation_logs } from '../db/schema';
+import { eq, and } from 'drizzle-orm';
+import { sendMessage } from './channel-router';const DEFAULT_ONBOARDING = `Olá, {{nome}}! 🎉Seja muito bem-vindo(a) à família {{empresa}}!Sua internet está configurada no plano {{plano}}.📞 Suporte técnico: {{suporte}}
+💬 Atendimento: Pode chamar aqui mesmo pelo WhatsApp a qualquer hora!Qualquer dúvida estamos sempre à disposição. Seja bem-vindo(a)! 😊`;export async function triggerWelcomeOnboarding(params: {
+workspaceId: string;
+customerName: string;
+customerPhone: string;
+planName?: string;
+}) {
+const { workspaceId, customerName, customerPhone, planName } = params;const config = await db.query.isp_configs.findFirst({
+where: and(
+eq(isp_configs.workspace_id, workspaceId),
+eq(isp_configs.is_active, true),
+eq(isp_configs.onboarding_enabled, true)
+)
+});if (!config) return; // ISP not configured or onboarding disabledconst delayMs = (config.onboarding_delay_minutes || 5) * 60 * 1000;console.log([ISP Onboarding] Scheduled welcome for ${customerName} in ${config.onboarding_delay_minutes}min);setTimeout(async () => {
+try {
+const message = (config.onboarding_message || DEFAULT_ONBOARDING)
+.replace(/{{nome}}/g, customerName.split(' ')[0])
+.replace(/{{empresa}}/g, config.company_name || '')
+.replace(/{{plano}}/g, planName || 'seu plano')
+.replace(/{{suporte}}/g, config.support_phone || config.company_name || 'nossa equipe');  const result = await sendMessage({
+    workspaceId,
+    to: customerPhone,
+    type: 'text',
+    content: message
+  });  await db.insert(isp_automation_logs).values({
+    workspace_id: workspaceId,
+    automation_type: 'onboarding',
+    customer_phone: customerPhone,
+    customer_name: customerName,
+    message_preview: message.substring(0, 100),
+    channel: result.channel || 'whatsapp',
+    success: result.success,
+    error_message: result.error || null,
+    sent_at: new Date()
+  }).catch(() => {});  console.log(`[ISP Onboarding] ${result.success ? '✅' : '❌'} Welcome sent to ${customerName}`);
+} catch (err: any) {
+  console.error('[ISP Onboarding] Error:', err.message);
+}
+}, delayMs);
+}
+
+## Wire up trigger in lead status update route
+
+Find in the codebase where lead status is updated — likely PATCH /api/leads/:id or similar in server/routes.ts.
+
+After the DB update succeeds, add:
+```typescriptimport { triggerWelcomeOnboarding } from '../services/isp-onboarding';// After successful lead status update:
+const clientStatuses = ['cliente', 'client', 'ativo', 'active']; // adjust to actual values used
+const wasNotClient = !clientStatuses.includes(previousStatus);
+const isNowClient = clientStatuses.includes(newStatus);if (wasNotClient && isNowClient) {
+const workspaceId = resolveWorkspaceId(req);
+triggerWelcomeOnboarding({
+workspaceId,
+customerName: updatedLead.nome || updatedLead.name,
+customerPhone: updatedLead.telefone || updatedLead.phone,
+planName: updatedLead.plano || updatedLead.plan || undefined
+}).catch(err => console.error('[ISP Onboarding] Trigger error:', err));
+}
+
+## After implementing
+1. Confirm TypeScript compiles
+2. Test: update a lead status to 'cliente' via the UI or API
+3. Check logs for: "[ISP Onboarding] Scheduled welcome for X in 5min"
+4. Report what status values actually exist in the leads table

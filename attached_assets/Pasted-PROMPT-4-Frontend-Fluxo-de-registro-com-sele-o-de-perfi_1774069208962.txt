@@ -1,0 +1,78 @@
+PROMPT 4 — Frontend: Fluxo de registro com seleção de perfilAtualizar a página de registro (client/src/pages/register.tsx) 
+para implementar um fluxo em 2 etapas com seleção de perfil.
+
+=== ETAPA 1 — Escolha do perfil (tela inicial) ===
+
+Substituir o formulário atual por uma tela de seleção com dois 
+cards grandes e visuais, usando o tema dark purple do sistema
+(background #0f0c1a, cards #1c1830, accent #8b5cf6).
+
+Card 1 — "Sou Dono de Negócio"
+- Ícone: Store ou ShoppingBag (lucide-react)
+- Título: "Sou Dono de Negócio"
+- Subtítulo: "Quero automatizar o atendimento da minha empresa 
+  no WhatsApp"
+- Bullet points:
+  ✓ Gerencie seus leads e clientes
+  ✓ Automatize respostas no WhatsApp
+  ✓ Acompanhe seu pipeline de vendas
+- Badge: "A partir de R$ 97/mês"
+- Ao clicar: avança para etapa 2 com account_type = 'empreendedor'
+
+Card 2 — "Sou Gestor de Automação"
+- Ícone: Briefcase ou Network (lucide-react)
+- Título: "Sou Gestor de Automação"
+- Subtítulo: "Quero oferecer automação e CRM para meus clientes"
+- Bullet points:
+  ✓ Gerencie múltiplos clientes em um painel
+  ✓ Crie workspaces para cada cliente
+  ✓ Ofereça sua própria solução de CRM
+- Badge: "7 dias grátis • A partir de R$ 397/mês"
+- Ao clicar: avança para etapa 2 com account_type = 'gestor'
+- Destaque visual extra (borda gradient purple)
+
+=== ETAPA 2 — Formulário de cadastro ===
+
+Se account_type === 'empreendedor':
+  Campos: Nome completo, Email, Senha, Nome da empresa, 
+          Telefone (opcional)
+  Título: "Crie sua conta"
+  Botão submit: "Começar agora"
+
+Se account_type === 'gestor':
+  Campos: Nome completo, Email, Senha, Nome da sua agência/empresa,
+          Telefone (opcional)
+  Título: "Crie sua conta de parceiro"
+  Subtítulo: "Comece com até 3 clientes gratuitamente por 7 dias"
+  Botão submit: "Criar conta de parceiro"
+
+Adicionar botão "← Voltar" para retornar à etapa 1.
+
+=== SUBMIT ===
+
+POST /api/auth/register com os campos + account_type
+Após sucesso, salvar JWT no AuthContext igual ao fluxo atual.
+
+Redirecionamento após registro:
+- account_type === 'empreendedor': redireciona para /crm
+- account_type === 'gestor': redireciona para /parceiros/painel
+
+=== ROTA DE CONVITE ===
+
+Criar nova página client/src/pages/register-invite.tsx:
+- Rota: /registro?invite=TOKEN
+- Ao carregar, busca GET /api/partner/invites/info?token=TOKEN
+  (adicionar essa rota no backend: retorna clientName, businessName, 
+   partnerName sem dados sensíveis)
+- Mostra mensagem: "Você foi convidado por [partnerName] para 
+  usar o ChatBanana"
+- Formulário só com campo Senha e Confirmar Senha
+- Submit: POST /api/auth/register-invite { token, password }
+- Após sucesso: redireciona para /inbox
+
+Adicionar rota no App.tsx: 
+  /registro → RegisterInvitePage (verificar se tem ?invite= 
+  no query string, se sim usa RegisterInvitePage, 
+  se não usa RegisterPage normal)
+
+Confirme quando implementado.

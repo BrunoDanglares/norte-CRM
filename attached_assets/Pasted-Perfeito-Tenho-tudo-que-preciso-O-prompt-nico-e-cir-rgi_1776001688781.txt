@@ -1,0 +1,151 @@
+Perfeito. Tenho tudo que preciso. O prompt é único e cirúrgico.
+
+O que vai ser feito:
+
+Quando o Baileys retornar uma URL do WhatsApp, o backend baixa a imagem imediatamente e salva em uploads/avatars/{workspaceId}/{phone}.jpg
+Grava o caminho local (/uploads/avatars/...) no banco — nunca mais URL externa
+As 14 conversas com URL expirada são reprocessadas num backfill automático na inicialização
+Frontend não muda nada — conv.avatar continua sendo exibido normalmente
+
+
+Prompt para o Replit AI Agent:
+Preciso corrigir o sistema de avatares do WhatsApp. Atualmente, quando o Baileys retorna 
+uma URL de foto (pps.whatsapp.net), ela é salva diretamente no banco e expira em horas. 
+A solução é baixar e cachear a imagem localmente no momento da busca.
+
+CONTEXTO DO SISTEMA:
+- Uploads servidos via Express em: app.use("/uploads", express.static(uploadsDir))
+- uploadsDir aponta para a pasta uploads/ na raiz do projeto
+- Avatares manuais já ficam em: uploads/avatars/{workspaceId}/
+- Campo no banco: conversations.avatar (texto, guarda a URL atual)
+- Função que busca avatar do Baileys: fetchWhatsAppAvatar() em whatsappWebJS.ts
+- Função de backfill: backfillWhatsAppAvatars() e backfillConversationAvatars()
+
+TAREFA 1 — Criar utilitário de cache de avatar
+Crie o arquivo server/services/avatarCache.ts:
+
+```typescript
+import fs from "fs";
+import path from "path";
+import https from "https";
+import http from "http";
+
+const uploadsDir = path.resolve("uploads");
+
+export async function downloadAndCacheAvatar(
+  externalUrl: string,
+  workspaceId: string,
+  phone: string
+): Promise<string | null> {
+  try {
+    const dir = path.join(uploadsDir, "avatars", workspaceId);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+    const filename = `${phone.replace(/\D/g, "")}.jpg`;
+    const localPath = path.join(dir, filename);
+    const publicUrl = `/uploads/avatars/${workspaceId}/${filename}`;
+
+    await new Promise<void>((resolve, reject) => {
+      const protocol = externalUrl.startsWith("https") ? https : http;
+      const file = fs.createWriteStream(localPath);
+      protocol.get(externalUrl, (res) => {
+        if (res.statusCode !== 200) {
+          file.close();
+          fs.unlink(localPath, () => {});
+          reject(new Error(`HTTP ${res.statusCode}`));
+          return;
+        }
+        res.pipe(file);
+        file.on("finish", () => { file.close(); resolve(); });
+      }).on("error", (err) => {
+        file.close();
+        fs.unlink(localPath, () => {});
+        reject(err);
+      });
+    });
+
+    return publicUrl;
+  } catch (err) {
+    console.error("[avatarCache] Erro ao baixar avatar:", err);
+    return null;
+  }
+}
+
+export function localAvatarExists(workspaceId: string, phone: string): string | null {
+  const filename = `${phone.replace(/\D/g, "")}.jpg`;
+  const localPath = path.join(uploadsDir, "avatars", workspaceId, filename);
+  if (fs.existsSync(localPath)) {
+    return `/uploads/avatars/${workspaceId}/${filename}`;
+  }
+  return null;
+}
+```
+
+TAREFA 2 — Modificar fetchWhatsAppAvatar() em whatsappWebJS.ts
+
+Localize a função fetchWhatsAppAvatar(). Após obter a URL externa do Baileys 
+(sock.profilePictureUrl), adicione a chamada ao cache antes de salvar no banco:
+
+- Importe: import { downloadAndCacheAvatar } from "./avatarCache";
+- Após receber a URL externa, chame:
+  const localUrl = await downloadAndCacheAvatar(externalUrl, workspaceId, phone);
+  const urlToSave = localUrl ?? externalUrl;
+- Use urlToSave ao atualizar conversations.avatar no banco
+
+TAREFA 3 — Backfill das URLs expiradas existentes
+
+Crie a função backfillExpiredAvatars() em server/services/avatarCache.ts:
+
+```typescript
+import { db } from "../db"; // ajuste o import conforme o projeto
+import { conversations } from "../../shared/schema";
+import { isNull, not, like } from "drizzle-orm";
+
+export async function backfillExpiredAvatars() {
+  try {
+    // Busca conversas com URL externa (não local) ainda salva
+    const rows = await db
+      .select({ id: conversations.id, avatar: conversations.avatar, 
+                workspaceId: conversations.workspaceId, telefone: conversations.telefone })
+      .from(conversations)
+      .where(like(conversations.avatar, "http%"));
+
+    console.log(`[avatarCache] Backfill: ${rows.length} conversas com URL externa`);
+
+    for (const row of rows) {
+      if (!row.avatar || !row.workspaceId || !row.telefone) continue;
+      const localUrl = await downloadAndCacheAvatar(row.avatar, row.workspaceId, row.telefone);
+      if (localUrl) {
+        await db.update(conversations)
+          .set({ avatar: localUrl })
+          .where(eq(conversations.id, row.id));
+        console.log(`[avatarCache] Cacheado: ${row.telefone} → ${localUrl}`);
+      }
+    }
+  } catch (err) {
+    console.error("[avatarCache] Erro no backfill:", err);
+  }
+}
+```
+
+TAREFA 4 — Chamar o backfill na inicialização do servidor
+
+No arquivo server/index.ts (ou onde o servidor Express é iniciado), após a conexão 
+com o banco estar estabelecida, adicione:
+
+```typescript
+import { backfillExpiredAvatars } from "./services/avatarCache";
+// Após DB pronto:
+backfillExpiredAvatars().catch(console.error);
+```
+
+IMPORTANTE:
+- Não altere nenhuma lógica de frontend
+- Não altere o schema do banco — apenas o valor salvo em conversations.avatar muda
+  (de URL externa para caminho /uploads/...)
+- Se a imagem já existir localmente (localAvatarExists), não baixe novamente
+- Ajuste os imports do Drizzle (db, conversations, eq, like, etc.) conforme os 
+  paths reais do projeto
+- Os campos exatos podem variar: confirme os nomes reais das colunas em 
+  conversations (workspaceId vs workspace_id, telefone vs phone, etc.) 
+  antes de escrever as queries

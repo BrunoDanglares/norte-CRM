@@ -1,0 +1,155 @@
+Você é um engenheiro sênior especialista em Node.js, n8n e arquitetura SaaS.
+
+CONTEXTO:
+Existe um node no n8n responsável por registrar entrada no MENU e atualizar sessão do cliente.
+
+O payload atual já está FUNCIONANDO em produção.
+
+IMPORTANTE:
+
+* NÃO pode haver breaking changes
+* NÃO pode remover campos existentes
+* NÃO pode alterar nomes atuais
+* Apenas EXTENDER com melhorias
+
+---
+
+OBJETIVO:
+
+Tornar o registro do MENU:
+
+* mais consistente
+* mais rastreável
+* preparado para escala SaaS
+
+---
+
+IMPLEMENTAÇÕES OBRIGATÓRIAS:
+
+1. INTENT DINÂMICO
+
+Substituir:
+
+intent: "MENU"
+
+Por:
+
+intent: $("Code: Contexto + SDR").item.json.intent ?? "MENU"
+
+---
+
+2. PROTEÇÃO DE assistant_message
+
+Garantir:
+
+* nunca vazio
+* sempre string
+
+Fallback:
+
+"Menu inicial apresentado ao cliente"
+
+---
+
+3. REGISTRAR TIPO DE INPUT
+
+Adicionar:
+
+tipo_input: $("Code: Contexto + SDR").item.json.tipo_input ?? "texto"
+
+---
+
+4. REGISTRAR MUDANÇA DE INTENÇÃO
+
+Adicionar:
+
+mudou_intencao: $("Code: Contexto + SDR").item.json.mudou_intencao ?? false
+
+---
+
+5. NORMALIZAÇÃO DO CPF
+
+Garantir:
+
+* apenas números
+* string ou null
+
+---
+
+6. NORMALIZAÇÃO cliente_id_erp
+
+Garantir:
+
+* sempre string
+
+---
+
+7. METADADOS (ESSENCIAL)
+
+Adicionar:
+
+meta: {
+origem: "n8n",
+agente: "menu",
+timestamp: new Date().toISOString()
+}
+
+---
+
+8. PRESERVAR session_updates
+
+Manter:
+
+* fluxo_atual: "menu"
+* identificado
+* cliente_nome
+* dados_coletados
+* cliente_id_erp
+
+---
+
+9. CÓDIGO DEFENSIVO
+
+Garantir:
+
+* null safety
+* fallback seguro
+* nenhuma exceção
+
+---
+
+10. ESTRUTURA FINAL
+
+{
+workspace_id,
+conversation_id,
+telefone,
+user_message,
+assistant_message,
+intent,
+tipo_input,
+mudou_intencao,
+session_updates,
+meta
+}
+
+---
+
+IMPORTANTE:
+
+Se houver dúvida:
+
+* NÃO simplificar
+* NÃO refatorar estrutura existente
+* NÃO remover campos
+
+Apenas EXTENDER com segurança
+
+---
+
+RESULTADO ESPERADO:
+
+* consistência do fluxo
+* logs confiáveis
+* base para analytics
+* sistema pronto para escala SaaS

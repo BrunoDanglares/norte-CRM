@@ -1,0 +1,103 @@
+PROMPT 3 — Backend: processador de mensagens Instagram
+Crie o arquivo `server/services/instagramMessageProcessor.ts`:
+```ts
+import { db } from '../db';
+import { instagramMessages } from '../../shared/schema';
+import { upsertInstagramLead, sendInstagramDM } from './instagramService';
+import { triggerAutomation } from './automationEngine'; // importe a função que dispara automações no projeto
+
+interface InstagramMessageEvent {
+  workspaceId: string;
+  connectionId: string;
+  igAccountUserId: string;
+  accessToken: string;
+  senderIgUserId: string;
+  recipientIgUserId: string;
+  message: {
+    mid: string;
+    text?: string;
+    attachments?: Array<{ type: string; payload: { url: string } }>;
+    is_echo?: boolean;
+  };
+}
+
+export async function processInstagramMessage(event: InstagramMessageEvent) {
+  const {
+    workspaceId, connectionId, igAccountUserId, accessToken,
+    senderIgUserId, recipientIgUserId, message
+  } = event;
+
+  // Ignorar echos (mensagens que nós enviamos)
+  if (message.is_echo) return;
+
+  // Evitar duplicatas
+  const existing = await db.query.instagramMessages?.findFirst({
+    where: (t, { eq }) => eq(t.igMessageId, message.mid),
+  });
+  if (existing) return;
+
+  // Determinar tipo e conteúdo
+  const messageType = message.text
+    ? 'text'
+    : message.attachments?.[0]?.type === 'image' ? 'image'
+    : message.attachments?.[0]?.type === 'video' ? 'video'
+    : message.attachments?.[0]?.type === 'audio' ? 'audio'
+    : 'unknown';
+
+  const mediaUrl = message.attachments?.[0]?.payload?.url;
+
+  // Buscar ou criar lead
+  let lead = null;
+  try {
+    lead = await upsertInstagramLead(workspaceId, senderIgUserId, `@ig_${senderIgUserId}`);
+  } catch (err) {
+    console.error('[Instagram] Erro ao upsert lead:', err);
+  }
+
+  // Salvar mensagem
+  await db.insert(instagramMessages).values({
+    workspaceId,
+    instagramConnectionId: connectionId,
+    igMessageId: message.mid,
+    fromIgUserId: senderIgUserId,
+    toIgUserId: igAccountUserId,
+    direction: 'inbound',
+    messageType,
+    content: message.text || null,
+    mediaUrl: mediaUrl || null,
+    leadId: lead?.id || null,
+    metadata: { raw: message },
+  });
+
+  console.log(`[Instagram] DM recebido de ${senderIgUserId}: "${message.text}"`);
+
+  // Disparar automações com trigger instagram_dm_received
+  if (lead) {
+    try {
+      await triggerAutomation({
+        workspaceId,
+        trigger: 'instagram_dm_received',
+        channel: 'instagram',
+        lead,
+        message: {
+          type: messageType,
+          content: message.text || '',
+          mediaUrl,
+        },
+        meta: {
+          igUserId: senderIgUserId,
+          igAccountUserId,
+          accessToken,
+          connectionId,
+        },
+      });
+    } catch (err) {
+      console.error('[Instagram] Erro ao disparar automação:', err);
+    }
+  }
+}
+```
+
+**ATENÇÃO:** A função `triggerAutomation` deve ser adaptada para o nome/assinatura real da função que no projeto dispara automações quando uma mensagem chega (provavelmente em `server/services/automationEngine.ts` ou `message-processor.ts`). Ajuste o import e a chamada para bater com o que já existe.
+
+Reporte qual é a função/arquivo existente que processa mensagens e dispara automações no WhatsApp — para que eu possa ajustar o próximo prompt.

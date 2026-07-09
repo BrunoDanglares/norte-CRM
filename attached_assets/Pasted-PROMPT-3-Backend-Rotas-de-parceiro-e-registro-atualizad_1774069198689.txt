@@ -1,0 +1,77 @@
+PROMPT 3 — Backend: Rotas de parceiro e registro atualizadoAdicionar rotas de parceiro em server/routes.ts e atualizar 
+o fluxo de registro. Todas as rotas novas usam o middleware 
+requireAuth já existente.
+
+=== 1. ATUALIZAR POST /api/auth/register ===
+
+Adicionar ao body esperado:
+- account_type: 'empreendedor' | 'gestor' (default: 'empreendedor')
+
+Ao criar o workspace, salvar account_type tanto no workspace 
+quanto no user criado.
+
+Se account_type === 'gestor', setar:
+- max_sub_workspaces: 3 (trial de 7 dias com 3 clientes)
+- partner_since: new Date()
+
+=== 2. NOVA ROTA: POST /api/auth/register-invite ===
+
+Aceita convite de parceiro para criar conta de cliente:
+Body: { token, password }
+
+- Busca invite pelo token (storage.getPartnerInvite)
+- Valida se status === 'pending' e não expirou
+- Cria workspace com os dados do invite (businessName como nome)
+  e parent_workspace_id = invite.partner_workspace_id
+- Cria user admin com adminName, clientEmail e password
+- Atualiza invite: status = 'accepted', accepted_at = now,
+  created_workspace_id = novoWorkspaceId
+- Retorna JWT igual ao login normal
+
+=== 3. ROTAS DO PAINEL DO GESTOR (prefixo /api/partner) ===
+
+GET /api/partner/clients
+  - Retorna storage.getPartnerClients(req.workspaceId)
+
+POST /api/partner/clients
+  - Body: { businessName, adminName, adminEmail, adminPassword, phone }
+  - Valida se parceiro não excedeu max_sub_workspaces
+  - Chama storage.createClientWorkspace(...)
+  - Retorna cliente criado
+
+GET /api/partner/clients/:workspaceId
+  - Retorna dados do sub-workspace específico
+  - Valida que parent_workspace_id === req.workspaceId (segurança)
+
+DELETE /api/partner/clients/:workspaceId
+  - NÃO deleta o workspace, apenas seta parent_workspace_id = null
+  - Representa "desvinculação" do cliente
+
+GET /api/partner/stats
+  - Retorna storage.getPartnerStats(req.workspaceId)
+
+GET /api/partner/invites
+  - Retorna storage.getPartnerInvites(req.workspaceId)
+
+POST /api/partner/invites
+  - Body: { clientEmail, clientName, businessName }
+  - Cria invite via storage.createPartnerInvite
+  - Retorna link: `${process.env.APP_URL}/registro?invite=${token}`
+
+=== 4. ROTA DE IMPERSONATION ===
+
+POST /api/partner/impersonate/:clientWorkspaceId
+  - Valida que clientWorkspaceId tem parent = req.workspaceId
+  - Chama storage.createImpersonationToken(...)
+  - Retorna { token, redirectUrl: '/inbox' }
+
+POST /api/auth/impersonate
+  - Body: { token }
+  - Chama storage.validateImpersonationToken(token)
+  - Se válido, busca admin user do targetWorkspace
+  - Gera JWT normal para esse user, mas adiciona campo extra:
+    { ...payload, impersonating: true, 
+      partnerWorkspaceId: result.partnerWorkspaceId }
+  - Retorna JWT + userData igual ao login normal
+
+Confirme quando todas as rotas estiverem implementadas.

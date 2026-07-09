@@ -1,0 +1,264 @@
+Perform a comprehensive code audit of the entire ChatBanana codebase.
+This is a production SaaS platform — be thorough, critical, and precise.
+Do NOT make any changes yet. Only audit and report.
+
+## Platform Context
+- WhatsApp-native CRM SaaS, multi-tenant via workspace_id (UUID)
+- Stack: React 18 + Vite + TypeScript (frontend), Node.js + Express (backend)
+- PostgreSQL + Drizzle ORM, JWT auth, Z-API + Meta Cloud API, OpenAI
+- Deploy: Docker + EasyPanel + VPS
+
+---
+
+## AUDIT SCOPE — Run ALL of the following checks:
+
+---
+
+### 1. SECURITY AUDIT
+
+#### 1.1 Authentication & Authorization
+- [ ] Are ALL /api/* routes protected with requireAuth middleware?
+- [ ] Are there any routes that should require auth but don't?
+- [ ] Is the JWT secret strong and stored only in env vars?
+- [ ] Are there any hardcoded credentials, tokens, or API keys anywhere in the code?
+- [ ] Is the Meta webhook at /api/webhook/meta and Z-API webhook correctly public (no auth)?
+- [ ] Are any other routes accidentally public that shouldn't be?
+
+#### 1.2 Multi-tenancy Isolation
+- [ ] Do ALL database queries include workspace_id as a filter?
+- [ ] Are there any queries that could return data from other workspaces?
+- [ ] Does resolveWorkspaceId(req) work correctly in all routes?
+- [ ] Are there any direct ID lookups (findFirst by id only) without workspace_id check?
+- [ ] Can a user access another workspace's data by manipulating IDs in the URL?
+
+Search for patterns like:
+- db.query.*.findFirst({ where: eq(*.id, id) }) WITHOUT workspace_id
+- db.select().from(*).where(eq(*.id, ...)) WITHOUT workspace_id
+- Any route param :id used in DB query without workspace scoping
+
+#### 1.3 Input Validation
+- [ ] Are request bodies validated before being used in DB queries?
+- [ ] Are there any SQL injection risks (raw queries without parameterization)?
+- [ ] Are file uploads validated for type and size?
+- [ ] Are phone numbers sanitized before being used in WhatsApp API calls?
+- [ ] Are CPF/CNPJ inputs sanitized before ERP API calls?
+
+#### 1.4 Sensitive Data Exposure
+- [ ] Are API tokens (SGP, IXC, Z-API, Meta, OpenAI) ever returned in API responses?
+- [ ] Are JWT secrets or passwords ever logged to console?
+- [ ] Are there any console.log statements that print sensitive data in production?
+- [ ] Is the Meta access_token masked when returning isp_configs or whatsapp_official_connections?
+
+#### 1.5 Webhook Security
+- [ ] Is the Meta webhook verify token checked correctly?
+- [ ] Is the Z-API webhook protected against spoofing?
+- [ ] Are webhook payloads validated before processing?
+
+---
+
+### 2. PERFORMANCE AUDIT
+
+#### 2.1 Database Queries
+- [ ] Are there any N+1 query problems? (loop with DB query inside)
+- [ ] Are there missing indexes on frequently queried columns?
+  Check for: workspace_id, phone numbers, foreign keys, status fields
+- [ ] Are there any queries fetching entire tables without LIMIT?
+- [ ] Are there any SELECT * queries that should be selecting specific columns?
+- [ ] Are heavy queries (reports, billing logs) paginated?
+
+#### 2.2 API Response Times
+- [ ] Are any synchronous operations blocking the event loop?
+- [ ] Are external API calls (Meta, OpenAI, SGP, IXC) properly using async/await?
+- [ ] Are there any missing timeouts on external HTTP calls?
+- [ ] Are webhook handlers responding 200 immediately before processing?
+  (Critical: Meta will retry if no 200 within 20s)
+
+#### 2.3 Memory & Resources
+- [ ] Are there any memory leaks? (event listeners not removed, intervals not cleared)
+- [ ] Are file uploads and media processed in memory or streamed?
+- [ ] Are there any infinite loops or recursive calls without exit conditions?
+- [ ] Are scheduler jobs (node-cron) properly error-handled to prevent crashes?
+
+#### 2.4 Frontend Performance
+- [ ] Are there any components re-rendering excessively? (missing useCallback/useMemo)
+- [ ] Are large lists virtualized or paginated?
+- [ ] Are images optimized and lazy-loaded?
+- [ ] Are there unnecessary API calls on component mount?
+- [ ] Are WebSocket connections properly managed and cleaned up?
+
+---
+
+### 3. CODE QUALITY AUDIT
+
+#### 3.1 TypeScript
+- [ ] Are there any 'any' types that should be properly typed?
+- [ ] Are there unused variables or imports?
+- [ ] Are there TypeScript errors being suppressed with @ts-ignore?
+- [ ] Are all exported interfaces consistent between frontend and backend?
+- [ ] Are there any missing null/undefined checks that could cause runtime errors?
+
+#### 3.2 Error Handling
+- [ ] Are all async functions wrapped in try/catch?
+- [ ] Are errors properly typed and not swallowed silently?
+- [ ] Are there any unhandled promise rejections?
+- [ ] Do all API routes return appropriate HTTP status codes?
+  (200, 201, 400, 401, 403, 404, 409, 500, 502)
+- [ ] Are external API errors (Meta, SGP, IXC, OpenAI) caught and handled gracefully?
+- [ ] Are scheduler errors caught so one failure doesn't kill all workspaces?
+
+#### 3.3 Code Consistency
+- [ ] Are there duplicate functions doing the same thing in different files?
+- [ ] Is the resolveWorkspaceId helper used consistently everywhere?
+- [ ] Is apiFetch used consistently in the frontend (not raw fetch)?
+- [ ] Are all WhatsApp message sends going through channel-router (not direct Z-API/Meta calls)?
+- [ ] Is the automation engine trigger called consistently from both Z-API and Meta webhooks?
+
+#### 3.4 Dead Code
+- [ ] Are there any commented-out code blocks that should be removed?
+- [ ] Are there any unused routes, components, or services?
+- [ ] Are there any TODO/FIXME comments that indicate unfinished work?
+- [ ] Are there any mock data or test data left in production code?
+
+---
+
+### 4. ARCHITECTURE AUDIT
+
+#### 4.1 Multi-tenancy Completeness
+List ALL tables in the schema and verify each has workspace_id:
+- Go through schema.ts and list every table
+- Mark: ✅ has workspace_id | ⚠️ missing workspace_id | ❓ unclear if needed
+
+#### 4.2 Channel Router Coverage
+- [ ] Is sendMessage from channel-router used for ALL outbound WhatsApp messages?
+- [ ] Are there any places still calling Z-API directly that should use channel-router?
+- [ ] Are there any places still calling Meta API directly that should use channel-router?
+- [ ] Does the automation engine always use channel-router for send_message nodes?
+
+#### 4.3 ISP Module Integrity
+- [ ] Do both SGP and IXC adapters implement ALL methods of ISPProvider interface?
+  (searchCustomerByCPF, getOpenInvoices, generateSecondCopy, createSupportTicket,
+   getTicketStatus, getOverdueCustomers, getInvoicesDueSoon, getCustomerByPhone,
+   getAllCustomers, trustUnlock, confirmPayment, reactivateContract)
+- [ ] Does the isp-provider-factory correctly route to the right adapter?
+- [ ] Are ISP scheduler errors caught per-workspace (one failure shouldn't stop others)?
+
+#### 4.4 Webhook Processing
+- [ ] Does the Meta webhook correctly resolve workspace by phone_number_id?
+- [ ] Does the Z-API webhook correctly resolve workspace by instance_id?
+- [ ] Is deduplication working? (same message not processed twice)
+- [ ] Are all webhook events logged for debugging?
+
+#### 4.5 Environment Variables
+List ALL environment variables used in the codebase and check:
+- [ ] Are they all documented somewhere?
+- [ ] Are any missing from the EasyPanel environment config?
+- [ ] Are any optional vars handled gracefully when undefined?
+- [ ] Are there any vars with default values that shouldn't have defaults in production?
+
+---
+
+### 5. DATA INTEGRITY AUDIT
+
+#### 5.1 Schema Consistency
+- [ ] Are all foreign keys properly defined with ON DELETE CASCADE where appropriate?
+- [ ] Are there any tables missing created_at or updated_at timestamps?
+- [ ] Are there any enum-like text fields that should have CHECK constraints?
+- [ ] Are there any unique constraints missing that could cause duplicate data?
+  (Check: workspace_id + phone in contacts, workspace_id + wamid in messages)
+
+#### 5.2 Migration Safety
+- [ ] Are all recent migrations non-destructive? (no dropping columns with data)
+- [ ] Are there any migrations that could fail on a non-empty database?
+
+#### 5.3 Billing & Financial Data
+- [ ] Are monetary values stored as numeric/decimal (not float)?
+- [ ] Are isp_billing_logs unique constraints preventing duplicate sends?
+- [ ] Are isp_unlock_logs tracking cooldown correctly?
+
+---
+
+### 6. DEPENDENCY AUDIT
+
+#### 6.1 Security Vulnerabilities
+Run: npm audit
+- List all HIGH and CRITICAL vulnerabilities
+- Identify which are in production dependencies vs dev-only
+- Suggest safe upgrade paths
+
+#### 6.2 Outdated Packages
+Check for significantly outdated core dependencies:
+- React, Express, Drizzle ORM, TypeScript, Vite
+- node-cron, openai, stripe
+- Are any packages deprecated or abandoned?
+
+#### 6.3 Unused Dependencies
+- Are there packages in package.json not actually imported anywhere?
+- Are there packages imported but could be replaced with native Node.js/browser APIs?
+
+---
+
+### 7. FRONTEND AUDIT
+
+#### 7.1 Routing & Navigation
+- [ ] Are all routes protected with ProtectedRoute?
+- [ ] Are there any routes accessible without authentication?
+- [ ] Is there a proper 404 page?
+- [ ] Are deep links handled correctly?
+
+#### 7.2 State Management
+- [ ] Is auth state properly persisted and restored from localStorage?
+- [ ] Are there any race conditions in data fetching?
+- [ ] Are loading and error states handled for all API calls?
+- [ ] Are forms properly reset after submission?
+
+#### 7.3 UX Consistency
+- [ ] Do all forms have proper validation feedback?
+- [ ] Are all async actions showing loading states?
+- [ ] Are error messages user-friendly (not raw API errors)?
+- [ ] Are success confirmations shown after mutations?
+- [ ] Is the design system (colors, spacing, components) consistent across all pages?
+
+---
+
+## AUDIT REPORT FORMAT
+
+After completing all checks, generate a structured report with:
+
+### 🔴 CRITICAL (fix immediately — security or data loss risk)
+List each issue with:
+- File and line number
+- Description of the problem
+- Exact fix required
+
+### 🟡 HIGH (fix before next release — bugs or performance)
+Same format as critical.
+
+### 🟠 MEDIUM (fix in next sprint — code quality)
+Same format.
+
+### 🟢 LOW (nice to have — minor improvements)
+Same format.
+
+### 📊 SUMMARY STATS
+- Total issues found: X
+- Critical: X | High: X | Medium: X | Low: X
+- Security score: X/10
+- Code quality score: X/10
+- Performance score: X/10
+- Architecture score: X/10
+
+### ✅ WHAT'S WORKING WELL
+List the parts of the codebase that are well-implemented.
+
+---
+
+## IMPORTANT INSTRUCTIONS
+
+1. Do NOT make any code changes during this audit
+2. Be specific — include file names, function names, line numbers
+3. Prioritize ruthlessly — not everything is equally important
+4. Focus on issues that could affect real users in production
+5. If you find a critical security issue, flag it immediately at the top
+
+Start the audit now. Begin with Security (Section 1) as it is highest priority.
+Report findings section by section as you complete each one.

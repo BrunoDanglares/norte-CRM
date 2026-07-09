@@ -1,0 +1,151 @@
+PROMPT 6 — Frontend: Atualizar Billing para planos de parceiro
+Atualizar a página de billing (client/src/pages/billing.tsx) 
+para exibir planos diferentes dependendo do account_type do 
+workspace logado.
+
+=== SE account_type === 'empreendedor' ===
+
+Manter os planos atuais (ou criar se não existirem):
+
+Plano Solo — R$ 97/mês
+  - 1 workspace
+  - Até 1.000 leads
+  - Automações ilimitadas
+  - 1 conexão WhatsApp
+  - Suporte via chat
+
+Plano Profissional — R$ 197/mês (destacado como "Mais popular")
+  - 1 workspace
+  - Leads ilimitados
+  - Automações ilimitadas
+  - 3 conexões WhatsApp
+  - IA incluída (GPT)
+  - Suporte prioritário
+
+=== SE account_type === 'gestor' ===
+
+Exibir seção especial "Planos de Parceiro" com visual diferente 
+(usar gradiente purple mais intenso nos cards).
+
+Mostrar badge "🤝 Conta de Parceiro" no topo da página.
+
+Plano Parceiro Starter — R$ 397/mês
+  - Até 5 clientes (workspaces)
+  - Todos os recursos por workspace
+  - Painel de gestão centralizado
+  - Suporte prioritário
+
+Plano Parceiro Pro — R$ 797/mês (destacado)
+  - Até 15 clientes
+  - Tudo do Starter
+  - White-label (nome customizável)
+  - Suporte dedicado via WhatsApp
+
+Plano Parceiro Agency — R$ 1.497/mês
+  - Até 40 clientes
+  - Tudo do Pro
+  - White-label completo com logo
+  - Gerente de conta dedicado
+  - Onboarding assistido para clientes
+
+Abaixo dos planos, exibir:
+"Tem mais de 40 clientes? Entre em contato para um plano 
+Enterprise personalizado." com botão "Falar com comercial" 
+que abre link do WhatsApp.
+
+=== INDICADOR DE USO (só para gestor) ===
+
+Acima dos planos, card mostrando:
+"Você está usando X de Y clientes disponíveis no seu plano"
+Barra de progresso visual.
+Se >= 80% do limite: exibir aviso amarelo "Você está próximo 
+do limite. Faça upgrade para continuar crescendo."
+
+Dados: GET /api/partner/stats para totalClients e do workspace 
+para max_sub_workspaces.
+
+Confirme quando implementado.
+
+PROMPT 7 — Ajustes finais e proteções
+Fazer os ajustes finais de segurança e UX no sistema de parceiros.
+
+=== 1. PROTEÇÃO DE ROTAS ===
+
+No ProtectedRoute.tsx (ou criar lógica similar), adicionar suporte 
+a requiredAccountType opcional:
+
+<ProtectedRoute 
+  path="/parceiros/painel" 
+  component={ParceiroPainel}
+  requiredAccountType="gestor" 
+/>
+
+Se usuário logado tiver account_type !== 'gestor' e tentar acessar 
+/parceiros/painel, redirecionar para /dashboard com toast 
+"Acesso disponível apenas para contas de parceiro".
+
+=== 2. SEGURANÇA NO BACKEND ===
+
+Em todas as rotas /api/partner/*, adicionar validação:
+  const workspace = await storage.getWorkspace(req.workspaceId);
+  if (workspace.account_type !== 'gestor') {
+    return res.status(403).json({ 
+      error: 'Acesso restrito a contas de parceiro' 
+    });
+  }
+
+Na rota POST /api/partner/clients, adicionar validação:
+  const stats = await storage.getPartnerStats(req.workspaceId);
+  if (stats.totalClients >= workspace.max_sub_workspaces) {
+    return res.status(403).json({
+      error: 'Limite de clientes atingido. Faça upgrade do plano.',
+      code: 'CLIENT_LIMIT_REACHED'
+    });
+  }
+
+=== 3. SIDEBAR — CONTEXTO DE IMPERSONATION ===
+
+Quando sessionStorage tiver 'partnerToken' (modo impersonation):
+- Adicionar no final da sidebar um item fixo com fundo amber:
+  "👁 Modo visualização" 
+  "[Nome do cliente]"
+  Botão "Sair" que executa o mesmo fluxo de voltar do banner
+
+=== 4. LANDING PAGE ===
+
+Na página landing.tsx, atualizar a seção de planos/CTA para 
+mencionar o modelo de parceiro.
+
+Adicionar seção "Para Gestores de Automação" com:
+- Título: "Revenda ChatBanana para seus clientes"
+- 3 bullet points de benefício
+- CTA "Quero ser parceiro" → /register (que vai mostrar a 
+  tela de seleção de perfil)
+
+=== 5. EMAIL DE BOAS-VINDAS (opcional se tiver serviço de email) ===
+
+Se o sistema já tiver envio de email configurado, ao criar 
+conta de gestor, enviar email com:
+- Boas-vindas ao programa de parceiros
+- Link para o painel: /parceiros/painel
+- Link para documentação/tutorial (pode ser placeholder por ora)
+
+Se não tiver email configurado, apenas logar no console por ora 
+e deixar um TODO comentado.
+
+=== 6. TESTE DE INTEGRAÇÃO ===
+
+Verificar manualmente o fluxo completo:
+a) Acessar /register → ver tela de seleção de perfil
+b) Escolher "Gestor" → preencher formulário → criar conta
+c) Ser redirecionado para /parceiros/painel
+d) Criar um cliente pelo modal "Criar Agora"
+e) Clicar em "Acessar" no cliente criado
+f) Ver o banner amarelo de impersonation
+g) Navegar pelo inbox do cliente
+h) Clicar "Voltar ao meu painel"
+i) Estar de volta no /parceiros/painel com JWT original
+
+Reportar qualquer erro encontrado nesse fluxo.
+
+Confirme quando tudo estiver implementado e funcional.

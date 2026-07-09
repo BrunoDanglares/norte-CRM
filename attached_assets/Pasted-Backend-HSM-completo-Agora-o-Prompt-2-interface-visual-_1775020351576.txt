@@ -1,0 +1,187 @@
+Backend HSM completo! Agora o Prompt 2 — interface visual para gerenciar os templates.
+
+Prompt 2 — Frontend: Gerenciador de Templates HSM
+Crie a interface de gerenciamento de templates HSM dentro da página
+de configuração do WhatsApp Oficial no ChatBanana.
+
+--- LOCALIZAÇÃO ---
+
+No frontend, localize a página ou modal de configuração do WhatsApp
+Oficial (provavelmente em client/src/pages/ ou components/whatsapp/).
+Adicione uma nova seção/tab "Templates HSM" dentro dessa página.
+
+--- COMPONENTE: WhatsappTemplates ---
+
+Crie um componente interno (sem arquivo separado) chamado WhatsappTemplates.
+
+ESTADO LOCAL:
+const [templates, setTemplates] = useState<Template[]>([])
+const [loading, setLoading] = useState(false)
+const [syncing, setSyncing] = useState(false)
+const [showModal, setShowModal] = useState(false)
+const [form, setForm] = useState({
+  templateName: '',
+  category: 'UTILITY',
+  language: 'pt_BR',
+  headerType: '',
+  headerContent: '',
+  bodyText: '',
+  footerText: '',
+})
+
+INTERFACE Template:
+interface Template {
+  id: number
+  templateName: string
+  templateId?: string
+  category: string
+  language: string
+  status: string
+  headerType?: string
+  headerContent?: string
+  bodyText: string
+  footerText?: string
+  variablesCount: number
+  rejectionReason?: string
+  submittedAt?: string
+  approvedAt?: string
+  createdAt: string
+}
+
+FETCH inicial:
+useEffect(() => {
+  apiFetch('/api/whatsapp-official/templates')
+    .then(r => r.json())
+    .then(data => setTemplates(Array.isArray(data) ? data : []))
+    .catch(() => setTemplates([]))
+}, [])
+
+--- LAYOUT DO COMPONENTE ---
+
+1. HEADER da seção:
+   Linha com título "Templates HSM" à esquerda e dois botões à direita:
+   - "Sincronizar todos" (ícone refresh) — chama POST /sync-all
+   - "+ Novo template" — abre o modal
+
+2. CARDS DE STATUS (3 cards em linha, estilo métrica):
+   Calcular dos templates carregados:
+   - Aprovados: templates.filter(t => t.status === 'APPROVED').length — cor #5DCAA5
+   - Pendentes: templates.filter(t => t.status === 'PENDING').length — cor #EF9F27
+   - Rejeitados: templates.filter(t => t.status === 'REJECTED').length — cor #E24B4A
+
+3. LISTA DE TEMPLATES:
+   Para cada template, um card com:
+   
+   LINHA 1: nome do template (monospace, #8b5cf6) + badge de status + badge de categoria
+   
+   BADGE STATUS:
+   - APPROVED: fundo #0f2e23, cor #5DCAA5, texto "Aprovado"
+   - PENDING: fundo #3a2e10, cor #EF9F27, texto "Pendente"
+   - REJECTED: fundo #2e1010, cor #E24B4A, texto "Rejeitado"
+   - IN_APPEAL: fundo #1a2040, cor #4CB8F0, texto "Em revisão"
+   
+   BADGE CATEGORIA:
+   - UTILITY: fundo #1e1540, cor #8b5cf6, texto "Utilidade"
+   - MARKETING: fundo #3a2e10, cor #EF9F27, texto "Marketing"
+   - AUTHENTICATION: fundo #0f2e23, cor #5DCAA5, texto "Autenticação"
+
+   LINHA 2: preview do bodyText truncado a 120 chars, cor #7c6fa0, fontSize 12px
+
+   LINHA 3 (se REJECTED): motivo da rejeição em vermelho, fontSize 11px
+   "Motivo: {rejectionReason}"
+
+   LINHA 4: rodapé do card com:
+   - Idioma: "pt_BR" → "Português (BR)", "en_US" → "Inglês (EUA)"
+   - Variáveis: "{N} variáveis"
+   - Data de criação: timeAgo(createdAt)
+   - Botões à direita:
+     * "Sincronizar" (ícone refresh pequeno) → POST /templates/:id/sync
+     * "Excluir" (ícone trash, cor vermelha) → DELETE /templates/:id
+       com confirmação: window.confirm("Excluir o template '{nome}'?")
+
+4. ESTADO VAZIO (sem templates):
+   Card centralizado com texto:
+   "Nenhum template criado ainda.
+   Crie um template e aguarde a aprovação da Meta (24-48h)."
+   + botão "+ Criar primeiro template"
+
+--- MODAL DE CRIAÇÃO ---
+
+Modal simples (sem biblioteca externa — usar div com overlay):
+
+Overlay: fundo rgba(0,0,0,0.6), position absolute cobrindo o pai
+Card do modal: background #1c1830, border #2a2440, borderRadius 12px,
+padding 24px, width 560px, maxWidth 90%
+
+CAMPOS DO FORMULÁRIO:
+
+Campo 1 — Nome do template (obrigatório)
+Input text, placeholder "ex: cobranca_vencimento"
+Nota abaixo: "Apenas letras minúsculas, números e underscores. Ex: cobranca_3dias"
+Validação client-side: /^[a-z0-9_]+$/
+
+Campo 2 — Categoria (select)
+Opções: UTILITY (Utilidade — notificações, cobranças), MARKETING (Marketing — promoções), AUTHENTICATION (Autenticação — códigos)
+Default: UTILITY
+
+Campo 3 — Idioma (select)
+Opções: pt_BR (Português - Brasil), en_US (English - US), es_ES (Español)
+Default: pt_BR
+
+Campo 4 — Cabeçalho (select + input condicional)
+Select: Nenhum, Texto, Imagem, Documento, Vídeo
+Se "Texto" selecionado: mostrar input de texto abaixo
+
+Campo 5 — Corpo da mensagem (textarea, obrigatório)
+rows=6, placeholder:
+"Olá {{1}}, sua fatura de R$ {{2}} vence em {{3}} dias.
+Acesse o link para pagar: {{4}}"
+Nota abaixo: "Use {{1}}, {{2}}, {{3}}... para variáveis que serão preenchidas no envio."
+Contador de chars: X / 1024
+
+Campo 6 — Rodapé (input text, opcional)
+placeholder "ChatBanana CRM"
+
+BOTÕES DO MODAL:
+- "Cancelar" — fecha o modal
+- "Enviar para aprovação" — submit
+
+SUBMIT:
+1. Validar campos obrigatórios (nome + bodyText)
+2. Validar regex do nome
+3. POST /api/whatsapp-official/templates com os dados do form
+4. Se sucesso: fechar modal, recarregar lista, mostrar toast
+   "Template enviado! A Meta leva 24-48h para aprovar."
+5. Se erro: mostrar mensagem de erro da API
+
+--- ESTILOS ---
+
+Manter o padrão ChatBanana:
+- background cards: #1c1830
+- borders: 0.5px solid #2a2440
+- texto primário: #c4b8f0
+- texto secundário: #7c6fa0
+- accent: #8b5cf6
+- todos os estilos inline
+
+--- ONDE ADICIONAR NO MENU ---
+
+Na página de configuração do WhatsApp Oficial (onde já existe
+informações da conexão, phone number, etc.), adicionar uma seção
+abaixo das informações existentes com título "Templates HSM"
+separado por um divider (border-top: 0.5px solid #2a2440).
+
+Ou, se a página já tiver tabs, adicionar como nova tab "Templates".
+
+--- HELPER: timeAgo local ---
+
+Implementar função local timeAgo(dateStr: string): string
+- < 1h: "X min atrás"
+- < 24h: "Xh atrás"
+- < 7 dias: "X dias atrás"
+- >= 7 dias: formatar como DD/MM/AAAA
+
+Confirme quando implementado, descrevendo:
+1. Onde exatamente o componente foi inserido na UI
+2. Se os templates existentes aparecem na listagem
+3. Se o modal de criação abre e valida corretamente

@@ -1,0 +1,108 @@
+PROMPT 2 — Backend: Filtrar todas as queries por workspace_idAdicione filtro de workspace_id em TODAS as queries do storage.ts
+e nas rotas do FlowCRM.
+
+## CONTEXTO
+- req.user.tenantId contém o workspace_id do usuário autenticado (via JWT)
+- A migration do Prompt 1 já adicionou workspace_id nas tabelas core
+- Todas as queries precisam incluir WHERE workspace_id = $n
+
+---
+
+## PARTE 1: Helper para extrair workspaceId nas rotas
+
+No arquivo de rotas (server/routes.ts), adicione este helper no topo:
+```typescriptfunction getWorkspaceId(req: AuthRequest): number {
+return req.user!.tenantId
+}
+
+Use getWorkspaceId(req) em vez de hardcoded 1 em todas as rotas.
+
+---
+
+## PARTE 2: Corrigir queries em storage.ts
+
+Para CADA método que acessa as tabelas core, adicione
+AND workspace_id = $n na cláusula WHERE.
+
+Padrão a seguir em todos os métodos:
+
+### getLeads / getLeadById
+```typescript// ANTES
+SELECT * FROM leads WHERE id = $1// DEPOIS
+SELECT * FROM leads WHERE id = $1 AND workspace_id = $2
+// parâmetros: [id, workspaceId]
+
+### createLead
+```typescript// ANTES
+INSERT INTO leads (name, phone, ...) VALUES ($1, $2, ...)// DEPOIS
+INSERT INTO leads (name, phone, ..., workspace_id) VALUES ($1, $2, ..., $n)
+
+### updateLead / deleteLead
+```typescript// ANTES
+UPDATE leads SET ... WHERE id = $1// DEPOIS
+UPDATE leads SET ... WHERE id = $1 AND workspace_id = $2
+
+Aplique o mesmo padrão para:
+- leads (todos os métodos)
+- contacts (todos os métodos)
+- conversations (todos os métodos)
+- messages (todos os métodos)
+- deals (todos os métodos)
+- appointments (todos os métodos)
+- transactions (todos os métodos)
+- automations (todos os métodos)
+- campaigns (todos os métodos)
+- pipeline_stages (todos os métodos)
+- tags (todos os métodos)
+- zapier_config (renomeado de tenant_id)
+- automation_pending_inputs (renomeado de tenant_id)
+
+---
+
+## PARTE 3: Corrigir as rotas para passar workspaceId
+
+Em cada rota que chama métodos do storage, passe o workspaceId:
+```typescript// Exemplo leads
+router.get('/api/leads', requireAuth, async (req: AuthRequest, res) => {
+const workspaceId = getWorkspaceId(req)
+const leads = await storage.getLeads(workspaceId)
+res.json(leads)
+})router.post('/api/leads', requireAuth, async (req: AuthRequest, res) => {
+const workspaceId = getWorkspaceId(req)
+const lead = await storage.createLead({ ...req.body, workspace_id: workspaceId })
+res.json(lead)
+})router.patch('/api/leads/:id', requireAuth, async (req: AuthRequest, res) => {
+const workspaceId = getWorkspaceId(req)
+const lead = await storage.updateLead(req.params.id, req.body, workspaceId)
+if (!lead) return res.status(404).json({ error: 'Lead não encontrado' })
+res.json(lead)
+})
+
+Aplique para todas as rotas de todas as entidades listadas na Parte 2.
+
+---
+
+## PARTE 4: Corrigir webhook inbound Z-API
+
+No handler POST /api/webhooks/zapi, ao criar lead ou conversa
+a partir de mensagem inbound, identifique o workspace pela conexão:
+```typescript// Busque a conexão Z-API pelo instanceId recebido no webhook
+const conexao = await db.query(
+'SELECT workspace_id FROM conexoes WHERE zapi_instance_id = $1',
+[webhookPayload.instanceId]
+)
+const workspaceId = conexao.rows[0]?.workspace_id || 1// Use workspaceId ao criar lead/conversa
+await storage.createLead({ ...leadData, workspace_id: workspaceId })
+
+---
+
+## PARTE 5: Corrigir engine de automações
+
+No arquivo da engine (automationEngine.ts), o context já tem tenantId.
+Renomeie context.tenantId para context.workspaceId em todo o arquivo
+e atualize as queries internas que usavam tenant_id para workspace_id.
+
+Confirme após implementar:
+1. Nenhuma query acessa dados sem filtrar por workspace_id
+2. Criar um lead via API só aparece para o workspace do usuário autenticado
+3. Webhook inbound associa mensagem ao workspace correto pela conexão Z-API

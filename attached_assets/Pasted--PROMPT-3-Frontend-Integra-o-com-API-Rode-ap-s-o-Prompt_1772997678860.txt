@@ -1,0 +1,63 @@
+🖥️ PROMPT 3 — Frontend (Integração com API)
+Rode após o Prompt 2 estar funcionando.
+Preciso integrar o módulo de Automações do frontend com a API real do backend.
+
+O arquivo atual é Automacoes.jsx e já tem toda a UI construída (editor visual, lista lateral, templates, modal de teste). O problema é que ele roda com dados mock locais — qualquer alteração se perde ao recarregar.
+
+Faça APENAS as integrações com a API, sem alterar a UI ou a lógica visual existente:
+
+---
+
+1. CARREGAR LISTA AO MONTAR O COMPONENTE
+Substitua o estado inicial `useState(MOCK_DATA)` por `useState([])`.
+No useEffect inicial, faça GET /api/automacoes e popule o estado com os dados retornados.
+Se a requisição falhar, use MOCK_DATA como fallback para não quebrar a UI.
+Mostre um estado de loading enquanto carrega.
+
+2. CRIAR NOVA AUTOMAÇÃO
+Na função `createNew()`, após montar o objeto `novo`, faça POST /api/automacoes com:
+{ nome: novo.nome, trigger_type: newTrig, nodes: novo.nodes, status: 'DRAFT' }
+Use o id retornado pela API para o objeto na lista local (substitua _local: true pelo id real).
+Se falhar, adicione localmente mesmo assim (fallback).
+
+3. SALVAR AUTOMAÇÃO (botão 💾 Salvar)
+Na função `save()`:
+- Se a automação tem um id real (não _local), faça PUT /api/automacoes/:id com { nodes, passos: nodes.length }
+- Se falhar ou for local, salve apenas no estado local
+- Em ambos os casos mostre a notificação de sucesso
+
+4. TOGGLE ATIVAR/PAUSAR
+Na função `toggleStatus(i)`:
+- Se a automação tem id real, faça PATCH /api/automacoes/:id/toggle
+- Atualize o status no estado local com o valor retornado pela API
+- Se falhar, atualize localmente mesmo assim
+
+5. DUPLICAR AUTOMAÇÃO
+Na função `duplicateAuto(i)`:
+- Se a automação tem id real, faça POST /api/automacoes/:id/duplicate
+- Adicione o resultado da API na lista local
+- Se falhar, crie a cópia localmente com _local: true
+
+6. EXCLUIR AUTOMAÇÃO
+Na função `deleteAuto(i)`:
+- Se a automação tem id real, faça DELETE /api/automacoes/:id
+- Só remova do estado local após confirmação de sucesso da API
+- Se falhar, mostre erro mas não remova da lista
+
+7. USAR TEMPLATE
+Na função `useTemplate(tpl)`:
+- Após criar o objeto local, faça POST /api/automacoes com os dados do template
+- Substitua o objeto local pelo retorno da API (com id real)
+- Se falhar, mantenha como _local: true
+
+8. EXECUTAR TESTE
+Na função `testRun()`:
+- Se a automação tem id real, faça POST /api/automacoes/:id/execute com { payload: { nome: 'João Teste', empresa: 'Empresa Teste', telefone: '11999990000' } }
+- Use o log retornado pela API no modal de resultados
+- Se falhar ou for local, use a simulação local já existente (função buildLog)
+
+---
+
+Para fazer as requisições use fetch ou axios — o que já estiver configurado no projeto.
+Inclua o token JWT no header Authorization: Bearer <token> em todas as requisições.
+Não altere nenhuma parte da UI, estilos, templates ou lógica do editor visual.

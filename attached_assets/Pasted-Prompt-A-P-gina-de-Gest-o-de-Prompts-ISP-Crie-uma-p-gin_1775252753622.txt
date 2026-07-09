@@ -1,0 +1,179 @@
+Prompt A — Página de Gestão de Prompts ISP
+Crie uma página de gestão de prompts do Agente ISP no painel ChatBanana.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PASSO 1 — Criar client/src/pages/isp-prompts.tsx
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+import { useState, useEffect } from 'react';
+import { useToast } from '@/hooks/use-toast';
+import { apiFetch } from '@/lib/apiFetch';
+import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
+import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Save, RefreshCw, Bot } from 'lucide-react';
+
+const AGENTS = [
+  { name: 'agente_financeiro',         label: 'Financeiro',         desc: 'Cobranças, 2ª via, liberação 48h' },
+  { name: 'agente_suporte_online',     label: 'Suporte Online',     desc: 'Cliente conectado com problemas' },
+  { name: 'agente_suporte_offline',    label: 'Suporte Offline',    desc: 'Cliente sem internet' },
+  { name: 'agente_incidente_regional', label: 'Incidente Regional', desc: 'Problema coletivo de rede' },
+  { name: 'agente_cancelamento',       label: 'Cancelamento',       desc: 'Retenção de clientes' },
+  { name: 'agente_vendas',             label: 'Vendas',             desc: 'Novos clientes e upgrades' },
+  { name: 'cliente_nao_encontrado',    label: 'Não Encontrado',     desc: 'Cliente sem cadastro no ERP' },
+];
+
+export default function ISPPromptsPage() {
+  const { toast } = useToast();
+  const [templates, setTemplates] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => { loadTemplates(); }, []);
+
+  async function loadTemplates() {
+    setLoading(true);
+    try {
+      const res = await apiFetch('/api/n8n/ai/templates');
+      const data = await res.json();
+      const map: Record<string, string> = {};
+      (data.templates ?? []).forEach((t: any) => {
+        map[t.name] = t.system_prompt;
+      });
+      setTemplates(map);
+    } catch {
+      toast({ title: 'Erro ao carregar templates', variant: 'destructive' });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function saveTemplate(name: string) {
+    setSaving(name);
+    try {
+      const res = await apiFetch(`/api/n8n/ai/templates/${name}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ system_prompt: templates[name] }),
+      });
+      if (!res.ok) throw new Error();
+      toast({ title: 'Prompt salvo com sucesso!' });
+    } catch {
+      toast({ title: 'Erro ao salvar prompt', variant: 'destructive' });
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  async function seedTemplates() {
+    try {
+      await apiFetch('/api/n8n/ai/seed', { method: 'POST' });
+      await loadTemplates();
+      toast({ title: 'Templates padrão restaurados!' });
+    } catch {
+      toast({ title: 'Erro ao restaurar templates', variant: 'destructive' });
+    }
+  }
+
+  if (loading) return (
+    <div className="flex items-center justify-center h-64">
+      <RefreshCw className="animate-spin text-purple-500" size={24} />
+    </div>
+  );
+
+  return (
+    <div className="p-6 max-w-4xl mx-auto">
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-3">
+          <Bot className="text-purple-500" size={24} />
+          <div>
+            <h1 className="text-xl font-semibold text-white">Agentes ISP</h1>
+            <p className="text-sm text-gray-400">Edite os prompts de cada agente. As mudanças valem imediatamente.</p>
+          </div>
+        </div>
+        <Button variant="outline" size="sm" onClick={seedTemplates}>
+          <RefreshCw size={14} className="mr-2" />
+          Restaurar padrões
+        </Button>
+      </div>
+
+      <Tabs defaultValue={AGENTS[0].name}>
+        <TabsList className="flex flex-wrap gap-1 h-auto mb-6 bg-transparent">
+          {AGENTS.map(agent => (
+            <TabsTrigger
+              key={agent.name}
+              value={agent.name}
+              className="text-xs data-[state=active]:bg-purple-600 data-[state=active]:text-white"
+            >
+              {agent.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+
+        {AGENTS.map(agent => (
+          <TabsContent key={agent.name} value={agent.name}>
+            <div className="rounded-xl border border-white/10 bg-[#1c1830] p-5">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="font-medium text-white">{agent.label}</h2>
+                  <p className="text-xs text-gray-400 mt-0.5">{agent.desc}</p>
+                </div>
+                <Badge variant="outline" className="text-purple-400 border-purple-400/30 text-xs">
+                  {agent.name}
+                </Badge>
+              </div>
+
+              <Textarea
+                value={templates[agent.name] ?? ''}
+                onChange={e => setTemplates(prev => ({ ...prev, [agent.name]: e.target.value }))}
+                placeholder="Escreva o prompt do agente aqui..."
+                className="min-h-[320px] font-mono text-sm bg-[#0f0c1a] border-white/10 text-gray-200 resize-y"
+              />
+
+              <div className="flex justify-end mt-4">
+                <Button
+                  onClick={() => saveTemplate(agent.name)}
+                  disabled={saving === agent.name}
+                  className="bg-purple-600 hover:bg-purple-700 text-white"
+                >
+                  {saving === agent.name ? (
+                    <RefreshCw size={14} className="mr-2 animate-spin" />
+                  ) : (
+                    <Save size={14} className="mr-2" />
+                  )}
+                  Salvar prompt
+                </Button>
+              </div>
+            </div>
+          </TabsContent>
+        ))}
+      </Tabs>
+    </div>
+  );
+}
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PASSO 2 — Registrar a rota no router do frontend
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+No arquivo de rotas do frontend (provavelmente client/src/App.tsx
+ou client/src/router.tsx), adicione:
+
+import ISPPromptsPage from '@/pages/isp-prompts';
+
+// Dentro do router, adicione:
+<Route path="/isp/prompts" element={<ISPPromptsPage />} />
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PASSO 3 — Adicionar link no menu lateral
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+No componente de sidebar/menu lateral, dentro do grupo
+ISP ou CRM ISP, adicione um item:
+
+{ label: 'Agentes ISP', icon: Bot, href: '/isp/prompts' }
+
+Salve e aguarde redeploy.

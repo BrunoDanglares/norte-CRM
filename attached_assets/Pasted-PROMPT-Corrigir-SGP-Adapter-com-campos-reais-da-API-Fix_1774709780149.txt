@@ -1,0 +1,226 @@
+PROMPT — Corrigir SGP Adapter com campos reais da API
+Fix the SGP adapter in server/services/sgp-adapter.ts based on the REAL SGP API response structure documented below.
+
+## SGP API — Real Documentation
+
+### Authentication
+- Method: Token/App via form-data OR Basic Auth
+- Endpoint uses: token + app (application name) sent in request body as form-data
+- OR Basic Auth with username/password in Authorization header (Base64)
+- Recommended for ChatBanana: send token + app as query params or form-data
+
+### Endpoint: Consultar Cliente (URA)
+POST {baseUrl}/api/ura/consultacliente/
+
+Form-data body:
+- token: [your token]
+- app: [your app name]  
+- cpf_cnpj: [cpf or cnpj] (at least one filter required)
+
+Real response structure:
+{
+  "msg": "Contrato(s) Localizado(s)",
+  "contratos": [
+    {
+      "clienteId": 41,
+      "razaoSocial": "NOME DO CLIENTE",
+      "cpfCnpj": "00.111.222/0001-33",
+      "dataNascimento": "1998-07-12",
+      "telefones": ["(55) 94643-1198"],
+      "telefones_cargos": [{ "cargo": null, "contato": "(55) 94643-1198", "nome": null }],
+      "emails": [],
+      "contratoId": 123,
+      "contratoStatus": 3,
+      "contratoStatusDisplay": "Cancelado",
+      "contratoStatusModo": 1,
+      "contratoTitulosAReceber": 2,
+      "contratoValorAberto": 0,
+      "servico_plano": "*400MB FIBRA RURAL",
+      "planointernet": "*400MB FIBRA RURAL",
+      "servico_tipo_conexao": "PPPoE",
+      "servico_grupo": "fibra",
+      "servico_vlan": "None",
+      "servico_mac": "",
+      "servico_wifi_channel": "auto",
+      "servico_wifi_ssid_5": "",
+      "servico_wifi_password_5": "",
+      "endereco_logradouro": "RUA DA LADEIRA",
+      "endereco_numero": null,
+      "endereco_bairro": "LADEIRA",
+      "endereco_uf": "BA",
+      "endereco_complemento": null,
+      "endereco_pontoreferencia": "ESCOLA JOÃO ELVAS",
+      "popNome": "Renascer/RJ",
+      "contratoCentralLogin": "14998963015",
+      "contratoCentralSenha": "centraldoassinante",
+      "link_quitacao": "https://...",
+      "cobPermuta": false,
+      "cobIsento": 0,
+      "tags": [],
+      "dataCadastro": "09/06/2022 16:34:10"
+    }
+  ]
+}
+
+contratoStatus values:
+- 1 = Ativo
+- 2 = Suspenso  
+- 3 = Cancelado
+- 4 = Inadimplente (or similar)
+
+### Endpoint: Consultar Títulos (URA)
+POST {baseUrl}/api/ura/consultartitulos/
+
+Form-data body:
+- token: [your token]
+- app: [your app name]
+- contrato: [contratoId from consultacliente response]
+
+Response structure:
+{
+  "msg": "Título(s) Localizado(s)",
+  "titulos": [
+    {
+      "tituloId": 456,
+      "tituloNossoNumero": "123456",
+      "tituloDataVencimento": "2024-03-15",
+      "tituloValor": "89.90",
+      "tituloStatus": "A",  -- A=Aberto, B=Baixado(pago), C=Cancelado
+      "tituloLinhaDigitavel": "12345.67890 ...",
+      "tituloLinkBoleto": "https://...",
+      "tituloPix": "00020126...",  -- PIX copia e cola
+      "tituloDesconto": "0.00",
+      "tituloJuros": "0.00",
+      "tituloMulta": "0.00"
+    }
+  ]
+}
+
+### Endpoint: Gerar PIX / 2ª Via (URA)
+POST {baseUrl}/api/ura/tituloPix/
+
+Form-data body:
+- token: [your token]
+- app: [your app name]
+- seis: [contratoId] -- ID do contrato para gerar/retornar PIX do título
+
+Response:
+{
+  "status": 1,
+  "razaoSocial": "NOME",
+  "protocolo": "200429143349",
+  "cpfCnpj": "001.891.390-30",
+  "msg": "Fatura enviada por email com sucesso"
+}
+
+### Endpoint: Enviar Fatura (URA)
+POST {baseUrl}/api/ura/enviafatura/
+
+Form-data body:
+- token: [your token]
+- app: [your app name]
+- seis: [contratoId]
+- mensagem: [optional custom message]
+
+### Endpoint: Abrir OS (Suporte)
+POST {baseUrl}/api/suporte/abriros/ (check exact path in SGP docs)
+
+Form-data body:
+- token: [your token]
+- app: [your app name]
+- contrato: [contratoId]
+- assunto: [subject]
+- descricao: [description]
+
+Response:
+{
+  "msg": "OS aberta com sucesso",
+  "osId": 789,
+  "protocolo": "OS-789"
+}
+
+## What to fix in server/services/sgp-adapter.ts
+
+### 1. Fix authentication
+Change from Bearer token header to form-data with token + app:
+```typescript
+// The SGP adapter needs TWO credentials: token AND app name
+// Update ISPCredentials in isp-provider.interface.ts to add:
+// sgpApp?: string  -- the application name registered in SGP
+
+// In sgpFetch, send as form-data:
+const formData = new FormData();
+formData.append('token', credentials.apiToken);
+formData.append('app', credentials.sgpApp || 'ChatBanana');
+// + any additional params
+
+fetch(url, {
+  method: 'POST',
+  body: formData
+  // NO Authorization header needed for Token/App method
+})
+```
+
+### 2. Fix searchCustomerByCPF
+- Change to POST /api/ura/consultacliente/
+- Send CPF as form-data field 'cpf_cnpj'
+- Map response: response.contratos[0]
+- Map fields:
+  - id: String(contrato.clienteId)
+  - nome: contrato.razaoSocial
+  - cpf: contrato.cpfCnpj
+  - telefone: contrato.telefones?.[0] || ''
+  - plano: contrato.servico_plano || contrato.planointernet
+  - dataNascimento: contrato.dataNascimento
+  - status: map contratoStatus (1=ativo, 2=suspenso, 3=cancelado, 4=inadimplente)
+  - endereco: `${contrato.endereco_logradouro}, ${contrato.endereco_numero} - ${contrato.endereco_bairro}`
+  - ALSO store contratoId separately — needed for subsequent calls
+  - Return null if msg indicates not found or contratos array is empty
+
+### 3. Fix getOpenInvoices
+- Change to POST /api/ura/consultartitulos/
+- Send 'contrato' (contratoId, NOT clienteId) as form-data
+- Map response: response.titulos
+- Filter only tituloStatus === 'A' (aberto) or calculate overdue
+- Map fields:
+  - id: String(titulo.tituloId)
+  - numero: titulo.tituloNossoNumero
+  - valor: parseFloat(titulo.tituloValor)
+  - vencimento: titulo.tituloDataVencimento
+  - status: map tituloStatus (A=aberto, B=pago, C=cancelado)
+  - linhaDigitavel: titulo.tituloLinhaDigitavel
+  - linkBoleto: titulo.tituloLinkBoleto
+  - pix: titulo.tituloPix
+
+### 4. Fix generateSecondCopy
+- Change to POST /api/ura/tituloPix/
+- Send 'seis' (contratoId) as form-data
+- Return linhaDigitavel and linkBoleto from the invoice data
+
+### 5. Important: contratoId vs clienteId
+The SGP uses TWO different IDs:
+- clienteId: identifies the person/customer
+- contratoId: identifies the contract/service (needed for invoice queries)
+
+Update ISPCustomer interface to include:
+- contratoId: string (stored alongside id=clienteId)
+
+OR store contratoId in a separate field so getOpenInvoices can use it correctly.
+
+The simplest approach: make customerId in getOpenInvoices accept EITHER clienteId or contratoId,
+and store contratoId in the customer object returned by searchCustomerByCPF.
+
+### 6. Update ISPCredentials
+In isp-provider.interface.ts, add optional field:
+- sgpApp?: string -- the app name registered in SGP token settings
+
+In isp_configs table, add column:
+- sgp_app_name: text not null default 'ChatBanana'
+
+Update isp-provider-factory.ts buildCredentials to include sgpApp.
+Update the ISP config form in frontend to show "Nome do Aplicativo SGP" field.
+
+## After fixing:
+1. Confirm TypeScript compiles
+2. Test GET /api/isp/customer/[CPF_REAL] with real SGP credentials
+3. Report the actual JSON response received

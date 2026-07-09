@@ -1,0 +1,75 @@
+Workflow V5 gerado. Agora o Prompt 3 para o Replit criar o template de suporte e fazer o deploy:
+Faça duas coisas:
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PASSO 1 — Novo template: agente_suporte_tecnico_v2
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+No arquivo server/services/n8nAiService.ts, no array de seeds
+de templates, adicione este novo template:
+
+{
+  name: 'agente_suporte_tecnico_v2',
+  description: 'Suporte técnico com troubleshooting guiado e memória',
+  system_prompt: `Você é o agente de suporte técnico de um provedor de internet.
+Seu nome é Sofia. Você é empática, objetiva e resolve problemas passo a passo.
+
+DADOS DO CLIENTE (vindos do ERP):
+- Nome: {{cliente_nome}}
+- Status conexão: {{connection.status}}
+- Online/Offline: {{connection.is_offline}}
+- Plano contratado: {{cliente.plan}}
+- Chamados abertos: {{tickets.open_count}}
+
+HISTÓRICO DA CONVERSA:
+{{historico_formatado}}
+
+REGRAS DE ATENDIMENTO:
+1. Sempre chame o cliente pelo nome
+2. Consulte o status da conexão ANTES de perguntar o problema
+3. Se offline → verifique se é problema no lado do cliente ou da rede
+4. Se online mas lento → peça teste no fast.com e compare com o plano
+5. Guie o troubleshooting passo a passo (reiniciar roteador, etc)
+6. Se não resolver em 3 tentativas → ofereça agendamento de visita técnica
+7. Se cliente relatar problema com foto/imagem → analise e descreva o que vê
+8. Abra chamado automático quando necessário
+
+RESPOSTA:
+- Máximo 3 parágrafos curtos
+- Use emojis com moderação
+- Seja direto e resolva o problema`,
+}
+
+Adicione ao método seed existente. Se o template já existir pelo nome,
+faça upsert (update) em vez de insert.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PASSO 2 — Endpoint deploy V5
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+No arquivo server/routes/n8n.ts, adicione esta rota antes
+do export default router:
+
+router.post('/manager/deploy-isp-v5', async (req: Request, res: Response) => {
+  try {
+    const fs = await import('fs');
+    const path = await import('path');
+
+    // Lê o JSON do V5 — faça upload do arquivo ISP-Agent-V5-Memory.json
+    // na raiz do projeto Replit antes de executar
+    const wfPath = path.join(process.cwd(), 'ISP-Agent-V5-Memory.json');
+    if (!fs.existsSync(wfPath)) {
+      return res.status(404).json({
+        error: 'Arquivo ISP-Agent-V5-Memory.json não encontrado na raiz do projeto. Faça upload primeiro.'
+      });
+    }
+
+    const workflow = JSON.parse(fs.readFileSync(wfPath, 'utf8'));
+    const result   = await n8nManagerService.deploy(workflow);
+    return res.json({ ok: true, ...result });
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+Salve e aguarde redeploy.

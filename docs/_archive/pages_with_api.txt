@@ -1,0 +1,12 @@
+client/src/pages/agenda.tsx
+client/src/pages/automacoes.tsx
+client/src/pages/conexoes.tsx
+client/src/pages/contatos.tsx
+client/src/pages/dashboard.tsx
+client/src/pages/financeiro.tsx
+client/src/pages/inbox.tsx
+client/src/pages/integracoes.tsx
+client/src/pages/leads.tsx
+client/src/pages/perfil.tsx
+client/src/pages/pipeline.tsx
+client/src/pages/usuarios.tsx

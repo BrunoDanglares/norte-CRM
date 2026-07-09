@@ -1,0 +1,63 @@
+No backend ChatBanana (Node/Express/TypeScript/Drizzle), precisa fechar duas pendências do Block E:
+
+**1. PHONE_LOCK_DISCARD em phoneLock.ts**
+
+Localiza em `server/utils/phoneLock.ts` o trecho onde a mensagem é descartada por lock ativo (onde já existe o `console.log` de descarte). Adiciona logo após:
+
+```typescript
+import { ispMetrics } from '../services/ispMetricsService';
+
+// Logo após o console.log de descarte existente:
+ispMetrics.systemEvent({
+  eventType: 'PHONE_LOCK_DISCARD',
+  label: phone, // ou a chave completa workspaceId:phone — usa o que já está sendo logado
+  metadata: { lockKey: phone },
+});
+```
+
+O import pode já existir — verifica antes de duplicar.
+
+**2. Contadores de chamadas ERP e GPT no schema**
+
+Na tabela `isp_session_metrics` em Drizzle, adiciona as colunas que faltaram:
+
+```typescript
+erpCalls:    integer('erp_calls').default(0),
+erpTimeouts: integer('erp_timeouts').default(0),
+gptCalls:    integer('gpt_calls').default(0),
+gptTimeouts: integer('gpt_timeouts').default(0),
+```
+
+Roda a migração (padrão do projeto — `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` ou runAutoMigrations, conforme já estabelecido).
+
+**3. Incrementa os contadores no ispMetricsService.ts**
+
+Adiciona um método `incrementCounter` (ou usa o `sessionUpdate` já existente com SQL de incremento atômico):
+
+```typescript
+incrementCounter(conversationId: string, field: 'erpCalls' | 'erpTimeouts' | 'gptCalls' | 'gptTimeouts') {
+  safe(async () => {
+    await db.execute(sql`
+      UPDATE isp_session_metrics
+      SET ${sql.raw(field === 'erpCalls' ? 'erp_calls' :
+                    field === 'erpTimeouts' ? 'erp_timeouts' :
+                    field === 'gptCalls' ? 'gpt_calls' : 'gpt_timeouts')} =
+          COALESCE(${sql.raw(field === 'erpCalls' ? 'erp_calls' :
+                             field === 'erpTimeouts' ? 'erp_timeouts' :
+                             field === 'gptCalls' ? 'gpt_calls' : 'gpt_timeouts')}, 0) + 1
+      WHERE conversation_id = ${conversationId}
+    `);
+  });
+}
+```
+
+Depois instrumenta:
+
+- Em `ispErpService.ts`, dentro do `safeCall`, após cada chamada bem-sucedida ao ERP: `ispMetrics.incrementCounter(conversationId, 'erpCalls')` — se `conversationId` estiver disponível no contexto. Se não estiver, pula esta parte e registra isso no relatório.
+- Em `withTimeout.ts`, quando estourar timeout ERP: `ispMetrics.incrementCounter(conversationId, 'erpTimeouts')` — mesma condição.
+- Em `ispAiService.ts`, após chamada GPT bem-sucedida: `ispMetrics.incrementCounter(conversationId, 'gptCalls')`.
+- Em `withTimeout.ts`, quando estourar timeout GPT: `ispMetrics.incrementCounter(conversationId, 'gptTimeouts')`.
+
+**Importante:** se `conversationId` não estiver disponível no contexto de `safeCall` ou `withTimeout`, não força — registra no relatório quais pontos ficaram sem instrumentação. É melhor ter contadores parciais do que quebrar o fluxo tentando passar o ID por toda a stack.
+
+Mostra os arquivos alterados após aplicar e confirma se o `conversationId` estava disponível em cada ponto.

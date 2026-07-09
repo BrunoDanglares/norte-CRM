@@ -1,0 +1,171 @@
+Auditoria Completa — ChatBanana CRM
+Data: 30/03/2026
+Auditor: Engenheiro Sênior
+Stack: Node.js + Express + TypeScript, React 18 + Vite, PostgreSQL + Drizzle ORM, JWT
+
+1. SEGURANÇA & MULTI-TENANCY
+🔴 CRÍTICO — S01: Webhook Meta sem validação de assinatura X-Hub-Signature-256
+Arquivo: server/routes/webhook-meta.ts, linhas 30-44
+Descrição: O endpoint POST /api/webhook/meta aceita qualquer payload sem validar o header X-Hub-Signature-256. Qualquer atacante pode enviar payloads forjados, criar conversas falsas, ou injetar mensagens no sistema.
+Correção recomendada:
+import crypto from "crypto";
+function verifyMetaSignature(req: Request, res: Response, next: NextFunction) {
+  const signature = req.headers["x-hub-signature-256"] as string;
+  if (!signature) return res.sendStatus(403);
+  
+  const expectedSig = "sha256=" + crypto
+    .createHmac("sha256", process.env.WHATSAPP_APP_SECRET!)
+    .update(JSON.stringify(req.body))
+    .digest("hex");
+  
+  if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSig))) {
+    return res.sendStatus(403);
+  }
+  next();
+}
+router.post("/", verifyMetaSignature, (req, res) => { ... });
+🔴 CRÍTICO — S02: Queries globais sem workspace_id no WhatsApp WebJS
+Arquivo: server/services/whatsappWebJS.ts, linhas 179, 199, 535
+Descrição: Busca leads por nome (eq(leads.nome, pushName)) SEM filtrar por workspace_id. Um lead com nome "João" no workspace A pode ser retornado para o workspace B, causando vazamento de dados entre tenants.
+Correção recomendada:
+// Sempre incluir workspaceId na busca
+const existingLeads = await db.select().from(leads).where(
+  and(eq(leads.nome, pushName), eq(leads.workspaceId, workspaceId))
+).limit(1);
+🟡 ALTO — S03: getUsers() sem workspace obrigatório
+Arquivo: server/storage.ts, linha 265-269
+Descrição: getUsers(workspaceId?: string) aceita chamada sem workspace e retorna TODOS os usuários do sistema. Se alguma rota chamar sem o parâmetro, expõe dados de todos os workspaces.
+Correção: Tornar workspaceId obrigatório ou criar método separado getAllUsersAdmin() para contexto admin.
+🟡 ALTO — S04: Token prefix logado no console (Instagram)
+Arquivo: server/services/instagramService.ts, linhas 37, 58-59, 75-76
+Descrição: Console.log exibe prefixos de tokens de acesso: (token: ${tokenPrefix}...). Mesmo truncado, prefixos de tokens em logs de produção facilitam ataques e violam boas práticas de segurança.
+Correção: Remover logging de prefixos de tokens. Usar apenas identificadores opacos (ex: connection ID).
+🟢 MÉDIO — S05: JWT sem expiração explícita no payload
+Arquivo: server/middleware/auth.ts, linhas 12-18
+Descrição: O AuthPayload não inclui campo exp. Se o token for gerado sem expiresIn no jwt.sign(), tokens nunca expiram.
+Correção: Verificar server/routes/auth.ts e garantir que jwt.sign() inclui { expiresIn: '7d' } ou similar.
+🟢 MÉDIO — S06: Rota uploads sem autenticação
+Arquivo: Rota de upload de arquivos (/api/upload)
+Descrição: Se a rota de upload não tiver requireAuth, qualquer pessoa pode fazer upload de arquivos no servidor.
+Correção: Confirmar que todas as rotas de upload usam requireAuth.
+2. PERFORMANCE & BANCO DE DADOS
+🟡 ALTO — P01: Queries sem paginação em tabelas grandes
+Arquivo: server/storage.ts, linhas 308, 455, 493, 544
+Descrição: Os métodos getLeads(), getContacts(), getConversations() e getMessages() retornam TODOS os registros sem limit/offset. Com 10k+ leads ou 100k+ mensagens, isso causa timeout e consumo excessivo de memória.
+Correção recomendada:
+async getLeads(workspaceId: string, filters?: LeadFilters & { limit?: number; offset?: number }) {
+  let query = db.select().from(leads).where(eq(leads.workspaceId, workspaceId));
+  // ... filters ...
+  return query.limit(filters?.limit || 100).offset(filters?.offset || 0);
+}
+🟡 ALTO — P02: getConversations busca tudo para lookup por telefone
+Arquivo: server/services/whatsappWebJS.ts, linha 928
+Descrição: storage.getConversations(workspaceId) carrega TODAS as conversas na memória para depois fazer .find() por telefone. Com milhares de conversas, isso é extremamente ineficiente.
+Correção: Criar método getConversationByPhone(workspaceId, phone) que faz query direta com WHERE telefone = $1.
+🟢 MÉDIO — P03: Índices faltando em tabelas frequentes
+Arquivo: shared/schema.ts
+Descrição: As tabelas teams, permissions, lead_tags, pipelines, pipeline_stages e isp_support_tickets NÃO têm índice em workspace_id. Conforme a base cresce, queries nessas tabelas ficam lentas.
+Correção: Adicionar índices:
+idx_teams_workspace: index("idx_teams_workspace").on(teams.workspaceId),
+idx_pipelines_workspace: index("idx_pipelines_workspace").on(pipelines.workspaceId),
+// ... etc
+🟢 MÉDIO — P04: Pool de conexões sem configuração
+Arquivo: server/db.ts, linhas 9-11
+Descrição: Pool criado sem max, idleTimeoutMillis ou connectionTimeoutMillis. O padrão do pg é 10 conexões max, que pode ser insuficiente sob carga.
+Correção:
+export const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  max: 20,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 5000,
+});
+✅ OK — P05: Campos monetários
+Arquivo: shared/schema.ts
+Descrição: Todos os campos monetários usam numeric(10,2) corretamente. Sem problemas de precisão float.
+🟢 BAIXO — P06: Deleção de pipeline stages em loop
+Arquivo: server/routes/pipeline.ts, linha 51
+Descrição: for (const s of stages) { await storage.deletePipelineStage(s.id, wsId); } — executa N queries de delete em série.
+Correção: Usar db.delete(pipelineStages).where(inArray(pipelineStages.id, stageIds)).
+3. BACKEND & ROTAS
+🟡 ALTO — B01: Cron jobs sem proteção contra execução simultânea
+Arquivo: server/services/isp-schedulers.ts, linhas 33-39
+Descrição: Os crons de billing (08:00) e birthday (09:00) não têm lock. Se o processo reiniciar no meio da execução ou houver múltiplas instâncias, o mesmo job pode rodar em paralelo, enviando mensagens duplicadas.
+Correção: Implementar lock via tabela no banco:
+async function withLock(lockName: string, fn: () => Promise<void>) {
+  const acquired = await db.execute(
+    sql`SELECT pg_try_advisory_lock(hashtext(${lockName}))`
+  );
+  if (!acquired.rows[0].pg_try_advisory_lock) return;
+  try { await fn(); } finally {
+    await db.execute(sql`SELECT pg_advisory_unlock(hashtext(${lockName}))`);
+  }
+}
+🟢 MÉDIO — B02: Console.log excessivo no backend em produção
+Arquivo: Vários (webhook-meta.ts: 11, instagramService.ts: 10, automationEngine.ts: 13)
+Descrição: 76+ console.log/error em produção. Além de poluir logs, alguns logam dados sensíveis (prefixos de token, payloads de webhook).
+Correção: Substituir por logger estruturado (ex: pino) com níveis de log configuráveis e sanitização de dados sensíveis.
+🟢 MÉDIO — B03: Catch vazio suprimindo erros
+Arquivo: server/services/whatsappWebJS.ts, linhas 189, 540
+Descrição: } catch {} — erros silenciados completamente, impossível debugar problemas de resolução de telefone.
+Correção: Pelo menos logar o erro: } catch (err) { console.error("[LID resolve] Error:", err); }
+🟢 BAIXO — B04: Uso de any em tipagens
+Arquivo: server/storage.ts linha 67 (updateApiToken com as any), vários routes
+Descrição: Casts para any perdem a segurança de tipos TypeScript.
+Correção: Criar interfaces adequadas para os updates parciais.
+4. FRONTEND & UX
+🟡 ALTO — F01: Múltiplos fetch() raw sem apiRequest
+Arquivos:
+client/src/pages/perfil.tsx — linhas 188, 242, 453, 756
+client/src/pages/automacoes.tsx — linhas 110, 135, 147
+client/src/components/automacoes/FlowCanvas.tsx — linhas 1238, 1251, 2201, 2266
+client/src/pages/isp-config.tsx — linhas 12, 140
+Descrição: Chamadas raw fetch() com injeção manual de token Bearer. Não usam o apiRequest centralizado, perdendo: tratamento automático de 401, redirect para login em token expirado, tratamento de erros padronizado.
+Correção: Substituir todos os fetch() por apiRequest() ou apiFetch() de @/lib/queryClient.
+🟢 MÉDIO — F02: ISP Config com apiFetch local duplicado
+Arquivo: client/src/pages/isp-config.tsx, linhas 12, 140
+Descrição: Define um apiFetch local ao invés de usar o utilitário global, criando inconsistência.
+Correção: Importar e usar apiRequest de @/lib/queryClient.
+✅ OK — F03: Console.log no frontend
+Descrição: Nenhum console.log de debug encontrado no código fonte do frontend. Limpo.
+✅ OK — F04: WebSocket com cleanup e reconexão
+Arquivo: client/src/hooks/useWebSocket.ts
+Descrição: Implementa cleanup correto no useEffect return, fallback para SSE, e reconexão automática. Funcionando adequadamente.
+5. CANAL WHATSAPP (META CLOUD API)
+🔴 CRÍTICO — W01: Sem validação X-Hub-Signature-256 (= S01)
+Descrito em S01. Risco máximo.
+🟡 ALTO — W02: Janela de 24h não é imposta no backend
+Arquivo: server/services/channel-router.ts, server/services/meta-whatsapp.ts
+Descrição: O sistema tenta enviar mensagens independentemente de a janela de 24h estar aberta ou fechada, confiando que a Meta retorne erro. Isso gera erros silenciosos e falha na entrega sem feedback ao operador.
+Correção: Armazenar last_customer_message_at na conversa e verificar antes de enviar:
+if (differenceInHours(new Date(), conv.lastCustomerMessageAt) > 24) {
+  throw new Error("Janela de 24h fechada. Use um template HSM.");
+}
+🟢 MÉDIO — W03: Sem retry automático para erros transitórios da Meta
+Arquivo: server/services/meta-whatsapp.ts, linhas 62-72
+Descrição: metaFetch tem timeout de 10s mas não implementa retry para erros 429 (rate limit) ou 500 (erro temporário da Meta).
+Correção: Implementar retry com backoff exponencial usando p-retry:
+import pRetry from 'p-retry';
+async function metaFetchWithRetry(url, options) {
+  return pRetry(() => metaFetch(url, options), {
+    retries: 3,
+    minTimeout: 1000,
+    factor: 2,
+    onFailedAttempt: (err) => console.warn(`Meta retry ${err.attemptNumber}/${err.retriesLeft}`),
+  });
+}
+✅ OK — W04: Webhook de verificação GET
+Arquivo: server/routes/webhook-meta.ts, linhas 19-28
+Descrição: Implementado corretamente com hub.mode, hub.verify_token e retorno do hub.challenge.
+6. QUALIDADE GERAL
+🟢 MÉDIO — Q01: Código duplicado de resolução de telefone por LID
+Arquivo: server/services/whatsappWebJS.ts, linhas 170-210 e 525-546
+Descrição: A lógica de buscar lead por pushName para resolver telefone aparece duplicada em duas funções diferentes.
+Correção: Extrair para utilitário resolvePhoneByPushName(pushName, workspaceId).
+🟢 MÉDIO — Q02: Sem diretório de migrations
+Arquivo: Ausência de migrations/
+Descrição: Não há migrations versionadas. O projeto provavelmente usa drizzle-kit push, o que é arriscado em produção pois não há rollback possível nem histórico de mudanças.
+Correção: Gerar migrations com drizzle-kit generate e aplicar com drizzle-kit migrate em produção.
+🟢 BAIXO — Q03: ON DELETE CASCADE consistente
+Descrição: A maioria das foreign keys tem onDelete: "cascade" configurado corretamente. Sem risco de orphan records.
+🟢 BAIXO — Q04: Console.log de debug em produção (backend)
+Descrição: Múltiplos console.log informativos no backend. Não são bugs, mas poluem logs e dificultam debugging real.

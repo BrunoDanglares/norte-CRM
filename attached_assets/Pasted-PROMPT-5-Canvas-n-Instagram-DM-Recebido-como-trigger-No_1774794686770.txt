@@ -1,0 +1,66 @@
+PROMPT 5 — Canvas: nó "Instagram DM Recebido" como trigger
+No canvas de automações, adicione um novo nó de trigger chamado **"Instagram DM"**.
+
+1. No arquivo que define os tipos/nós disponíveis no canvas (provavelmente `client/src/components/automation/NodeTypes.tsx` ou similar), adicione:
+```ts
+{
+  type: 'instagram_dm_trigger',
+  label: 'Instagram DM',
+  category: 'trigger',
+  icon: '📸',
+  color: '#E1306C',
+  description: 'Dispara quando uma DM é recebida no Instagram',
+  fields: [
+    {
+      key: 'keyword',
+      label: 'Palavra-chave (opcional)',
+      type: 'text',
+      placeholder: 'Ex: QUERO, INFO, PREÇO — deixe vazio para qualquer mensagem',
+    },
+    {
+      key: 'matchType',
+      label: 'Tipo de correspondência',
+      type: 'select',
+      options: [
+        { value: 'contains', label: 'Contém a palavra-chave' },
+        { value: 'exact', label: 'Mensagem exata' },
+        { value: 'any', label: 'Qualquer mensagem' },
+      ],
+    },
+  ],
+}
+```
+
+2. No motor de automação backend (`server/services/automationEngine.ts` ou equivalente), no switch/if que verifica o trigger de entrada, adicione:
+```ts
+case 'instagram_dm_received':
+case 'instagram_dm_trigger': {
+  const keyword = node.data?.keyword?.trim();
+  const matchType = node.data?.matchType || 'any';
+  const messageText = (context.message?.content || '').toLowerCase();
+  const kw = (keyword || '').toLowerCase();
+
+  if (matchType === 'any' || !keyword) return true; // dispara para qualquer mensagem
+  if (matchType === 'exact') return messageText === kw;
+  if (matchType === 'contains') return messageText.includes(kw);
+  return false;
+}
+```
+
+3. No nó "Enviar Mensagem" do canvas, quando o contexto da automação tiver `channel: 'instagram'`, a ação de envio deve chamar `sendInstagramDM` em vez de Z-API. No arquivo de execução de nós:
+```ts
+if (context.channel === 'instagram' && context.meta?.igUserId) {
+  await sendInstagramDM(
+    context.meta.accessToken,
+    context.meta.igAccountUserId,
+    context.meta.igUserId,
+    messageText
+  );
+} else {
+  // lógica Z-API existente
+}
+```
+
+Importe `sendInstagramDM` de `../services/instagramService`.
+
+Reporte onde fica o arquivo de execução de nós e se o nó de trigger foi adicionado com sucesso ao canvas visual.

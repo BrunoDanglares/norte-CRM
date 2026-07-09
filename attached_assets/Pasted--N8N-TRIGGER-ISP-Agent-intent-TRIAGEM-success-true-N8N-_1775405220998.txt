@@ -1,0 +1,42 @@
+[N8N_TRIGGER] ISP Agent: intent=TRIAGEM, success=true
+[N8N_TRIGGER] ISP Agent handled message — also notifying N8N for visibility
+[WWEB:81b34c78-a2b2-4c40-9a8f-d0010c27d200] Backfilled 1 WhatsApp avatars
+[N8N_TRIGGER] Webhook https://n8n-n8n.xhtsxx.easypanel.host/webhook/chatbanana-isp-v5 → HTTP 200
+[N8N ERP] workspace_id: aa73eb2b-b80d-4b6a-924f-79117f4fdf7e | action: enrichmentCompleto
+[N8N Identify] workspace=aa73eb2b-b80d-4b6a-924f-79117f4fdf7e, conv=203, cpf=N/A, contrato=N/A
+[SEND DEBUG] message: Olá! Para continuar, preciso confirmar sua identidade.
+
+Por favor, me informe seu *CPF* (somente números): | conv: 203
+[N8N SEND] conv=203, workspace=aa73eb2b-b80d-4b6a-924f-79117f4fdf7e, msgLen=106
+[MetaWebhook] processIncoming: phone=559192424228, conv=203, automacaoId=8771ba08-e6e0-4b06-b386-3dc7a79f1ce3, msgType=text, phoneLocked=false
+[MessageProcessor] Automation check: phone=559192424228, conexaoAutomacaoId=8771ba08-e6e0-4b06-b386-3dc7a79f1ce3, content_len=14, mediaType=text
+[MessageProcessor] debounce decision: firstNode=n8n_trigger, hasN8nOrAi=true, needsDebounce=true
+[MessageProcessor] DEBOUNCE: scheduling automation for conv=203 (10s window)
+[ISP Agent] ▶ conv=203, phone=559192424228, msg="832.953.211-91"
+[ISP Agent] 💾 CPF salvo: 832***
+[Memory] updateSession error: column "cpf" of relation "isp_session_state" does not exist
+[ISP Agent] 🔍 ERP: found=true, suspended=false, invoices=9, offline=false
+[ISP Intent] classifyIntent: text="832.953.211-91", found=true, suspended=false, invoices=9, days_late=0, offline=false, status="inadimplente", prevIntent=menu
+[Memory] updateSession error: column "contrato_id" of relation "isp_session_state" does not exist
+[ISP Intent] → FINANCEIRO (9 faturas abertas, days_late=0)
+[ISP Agent] 🎯 Intent=FINANCEIRO, prompt=agente_financeiro, prev=menu, changed=true
+[ISP Agent] 🎭 Orquestrador: first=false, intentChanged=true, menu→FINANCEIRO
+[N8N AI] Nome resolution: sessao.cliente_nome='undefined', cliente.nome='undefined', contact_name='', resolved='Bruno Danglares'
+[N8N AI] messages table has 5 msgs — NOT first message
+[N8N AI] isFirstMessage=false, historico_len=0
+[N8N AI] Auto-saved user+assistant turns to conversation_turns for conv=203
+[ISP Agent] 🎭 Orquestrador: "Bruno Danglares, não é necessário fornecer dados pessoais como CPF aqui. Você po"
+[N8N AI] Nome resolution: sessao.cliente_nome='undefined', cliente.nome='undefined', contact_name='', resolved='Bruno Danglares'
+[N8N AI] isFirstMessage=false, historico_len=5
+[N8N AI] Auto-saved user+assistant turns to conversation_turns for conv=203
+[ISP Agent] 💬 AI: 262 chars, tokens=808
+[ISP Agent] ✉️ Enviado: parts=2
+[N8N_TRIGGER] ISP Agent: intent=FINANCEIRO, success=true
+[N8N_TRIGGER] ISP Agent handled message — also notifying N8N for visibility
+[N8N_TRIGGER] Webhook https://n8n-n8n.xhtsxx.easypanel.host/webhook/chatbanana-isp-v5 → HTTP 200
+[N8N ERP] workspace_id: aa73eb2b-b80d-4b6a-924f-79117f4fdf7e | action: enrichmentCompleto
+[N8N Identify] workspace=aa73eb2b-b80d-4b6a-924f-79117f4fdf7e, conv=203, cpf=***1191, contrato=N/A
+[SEND DEBUG] message: Identidade confirmada! Olá, *cliente*!
+
+Como posso te ajudar hoje? | conv: 203
+[N8N SEND] conv=203, workspace=aa73eb2b-b80d-4b6a-924f-79117f4fdf7e, msgLen=66

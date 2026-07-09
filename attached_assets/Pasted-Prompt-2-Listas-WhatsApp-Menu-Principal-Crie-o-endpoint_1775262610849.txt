@@ -1,0 +1,252 @@
+Prompt 2 — Listas WhatsApp + Menu Principal
+Crie o endpoint para envio de listas interativas WhatsApp (List Messages)
+e menus com ícones via Meta Cloud API.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PASSO 1 — Adicionar método sendList em server/services/n8nSendService.ts
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+No arquivo server/services/n8nSendService.ts, adicione este método
+na classe existente (ou crie o arquivo se não existir):
+
+  // Envia lista interativa WhatsApp (até 10 itens, com seções)
+  async sendList(params: {
+    conversationId: string;
+    workspaceId:    string;
+    header?:        string;
+    body:           string;
+    footer?:        string;
+    buttonLabel:    string; // texto do botão que abre a lista, ex: "Ver Menu"
+    sections: Array<{
+      title: string;
+      rows: Array<{
+        id:          string;
+        title:       string;
+        description?: string;
+      }>;
+    }>;
+  }): Promise<{ ok: boolean; error?: string }> {
+    try {
+      // Busca conexão WhatsApp do workspace
+      const { db }  = await import('../db');
+      const { conversations, whatsappOfficialConnections } = await import('@shared/schema');
+      const { eq } = await import('drizzle-orm');
+
+      const [conv] = await db.select().from(conversations)
+        .where(eq(conversations.id, params.conversationId)).limit(1);
+      if (!conv) throw new Error('Conversa não encontrada');
+
+      const [conn] = await db.select().from(whatsappOfficialConnections)
+        .where(eq(whatsappOfficialConnections.workspaceId, params.workspaceId)).limit(1);
+      if (!conn) throw new Error('Conexão WhatsApp não encontrada');
+
+      const phone = (conv.telefone ?? '').replace(/\D/g, '');
+      const url   = `https://graph.facebook.com/v18.0/${conn.phoneNumberId}/messages`;
+
+      const payload = {
+        messaging_product: 'whatsapp',
+        recipient_type:    'individual',
+        to:                phone,
+        type:              'interactive',
+        interactive: {
+          type:   'list',
+          header: params.header ? { type: 'text', text: params.header } : undefined,
+          body:   { text: params.body },
+          footer: params.footer ? { text: params.footer } : undefined,
+          action: {
+            button:   params.buttonLabel,
+            sections: params.sections,
+          },
+        },
+      };
+
+      // Remove campos undefined
+      if (!payload.interactive.header) delete payload.interactive.header;
+      if (!payload.interactive.footer) delete payload.interactive.footer;
+
+      const resp = await fetch(url, {
+        method:  'POST',
+        headers: {
+          'Authorization': `Bearer ${conn.accessToken}`,
+          'Content-Type':  'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await resp.json() as any;
+      if (!resp.ok) throw new Error(data?.error?.message ?? 'Erro Meta API');
+
+      // Salva mensagem no banco como enviada
+      const { messages } = await import('@shared/schema');
+      await db.insert(messages).values({
+        conversationId: params.conversationId,
+        workspaceId:    params.workspaceId,
+        content:        `[Menu] ${params.body}`,
+        direction:      'outgoing',
+        status:         'sent',
+        canal:          'WhatsApp',
+        type:           'interactive',
+      }).catch(() => {});
+
+      return { ok: true };
+    } catch (err: any) {
+      console.error('[N8N Send List]', err.message);
+      return { ok: false, error: err.message };
+    }
+  }
+
+  // Envia botões interativos (até 3 botões)
+  async sendButtons(params: {
+    conversationId: string;
+    workspaceId:    string;
+    header?:        string;
+    body:           string;
+    footer?:        string;
+    buttons: Array<{
+      id:    string;
+      title: string;
+    }>;
+  }): Promise<{ ok: boolean; error?: string }> {
+    try {
+      const { db }  = await import('../db');
+      const { conversations, whatsappOfficialConnections } = await import('@shared/schema');
+      const { eq } = await import('drizzle-orm');
+
+      const [conv] = await db.select().from(conversations)
+        .where(eq(conversations.id, params.conversationId)).limit(1);
+      if (!conv) throw new Error('Conversa não encontrada');
+
+      const [conn] = await db.select().from(whatsappOfficialConnections)
+        .where(eq(whatsappOfficialConnections.workspaceId, params.workspaceId)).limit(1);
+      if (!conn) throw new Error('Conexão WhatsApp não encontrada');
+
+      const phone = (conv.telefone ?? '').replace(/\D/g, '');
+      const url   = `https://graph.facebook.com/v18.0/${conn.phoneNumberId}/messages`;
+
+      const payload = {
+        messaging_product: 'whatsapp',
+        recipient_type:    'individual',
+        to:                phone,
+        type:              'interactive',
+        interactive: {
+          type:   'button',
+          header: params.header ? { type: 'text', text: params.header } : undefined,
+          body:   { text: params.body },
+          footer: params.footer ? { text: params.footer } : undefined,
+          action: {
+            buttons: params.buttons.map(b => ({
+              type:  'reply',
+              reply: { id: b.id, title: b.title },
+            })),
+          },
+        },
+      };
+
+      if (!payload.interactive.header) delete payload.interactive.header;
+      if (!payload.interactive.footer) delete payload.interactive.footer;
+
+      const resp = await fetch(url, {
+        method:  'POST',
+        headers: {
+          'Authorization': `Bearer ${conn.accessToken}`,
+          'Content-Type':  'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await resp.json() as any;
+      if (!resp.ok) throw new Error(data?.error?.message ?? 'Erro Meta API');
+
+      return { ok: true };
+    } catch (err: any) {
+      console.error('[N8N Send Buttons]', err.message);
+      return { ok: false, error: err.message };
+    }
+  }
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PASSO 2 — Adicionar rotas em server/routes/n8n.ts
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Adicione estas rotas antes do export default router:
+
+// POST /api/n8n/send/list — envia lista interativa WhatsApp
+router.post('/send/list', async (req: Request, res: Response) => {
+  try {
+    const { n8nSendService } = await import('../services/n8nSendService');
+    const result = await n8nSendService.sendList({
+      conversationId: req.body.conversation_id,
+      workspaceId:    req.body.workspace_id ?? resolveWorkspaceId(req),
+      header:         req.body.header,
+      body:           req.body.body,
+      footer:         req.body.footer,
+      buttonLabel:    req.body.button_label ?? 'Ver Menu',
+      sections:       req.body.sections ?? [],
+    });
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// POST /api/n8n/send/buttons — envia botões interativos (até 3)
+router.post('/send/buttons', async (req: Request, res: Response) => {
+  try {
+    const { n8nSendService } = await import('../services/n8nSendService');
+    const result = await n8nSendService.sendButtons({
+      conversationId: req.body.conversation_id,
+      workspaceId:    req.body.workspace_id ?? resolveWorkspaceId(req),
+      header:         req.body.header,
+      body:           req.body.body,
+      footer:         req.body.footer,
+      buttons:        req.body.buttons ?? [],
+    });
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// POST /api/n8n/memory/save — atalho para salvar turno + atualizar sessão
+router.post('/memory/save', async (req: Request, res: Response) => {
+  try {
+    const {
+      workspace_id, conversation_id, telefone,
+      user_message, assistant_message, intent,
+      session_updates,
+    } = req.body;
+
+    // Salva mensagem do cliente
+    if (user_message) {
+      await n8nMemoryService.saveTurn({
+        workspaceId: workspace_id, conversationId: conversation_id,
+        telefone, role: 'user', content: user_message, intent,
+      });
+    }
+    // Salva resposta do agente
+    if (assistant_message) {
+      await n8nMemoryService.saveTurn({
+        workspaceId: workspace_id, conversationId: conversation_id,
+        telefone, role: 'assistant', content: assistant_message, intent,
+      });
+    }
+    // Atualiza estado da sessão
+    if (session_updates && Object.keys(session_updates).length > 0) {
+      await n8nMemoryService.updateSession(conversation_id, {
+        clienteNome:     session_updates.cliente_nome,
+        clienteIdErp:    session_updates.cliente_id_erp,
+        clienteContrato: session_updates.cliente_contrato,
+        fluxoAtual:      session_updates.fluxo_atual,
+        identificado:    session_updates.identificado,
+        ultimoIntent:    intent,
+        dadosColetados:  session_updates.dados_coletados,
+      });
+    }
+    return res.json({ ok: true });
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+Salve e aguarde redeploy.

@@ -1,0 +1,230 @@
+Criar o Guard Layer do motor ISP. Arquivo novo, não mexe em nada
+que já existe — apenas cria a infraestrutura de validação.
+
+══ CRIAR server/services/agents/guardLayer.ts ══
+
+Implemente o seguinte conteúdo completo:
+
+─── Tipos ───
+
+type AllowResult   = { status: 'allow' };
+type BlockResult   = { status: 'block'; reason: string; feedbackToAI: string };
+type RedirectResult= { status: 'redirect'; toAgent: string; feedbackToAI: string };
+type ValidationResult = AllowResult | BlockResult | RedirectResult;
+
+interface ParsedAction {
+  tag: string;
+  params: Record<string, string>;
+  raw: string;
+}
+
+interface ActionContext {
+  tenant: {
+    allowTrustUnlock: boolean;
+    allowPix: boolean;
+    allowBarcode: boolean;
+    allowAutoOpenTicket: boolean;
+    allowDepartmentSwitch: boolean;
+  };
+  client: {
+    contractId: string | null;
+    status: string | null;
+    activePromises?: number;
+  };
+  workspaceId: string;
+}
+
+interface GuardResult {
+  proceed: boolean;
+  feedbackToAI?: string;
+  blockedAction?: string;
+  redirectTo?: string;
+}
+
+─── Helpers internos ───
+
+function allow(): AllowResult {
+  return { status: 'allow' };
+}
+
+function block(reason: string, feedbackToAI: string): BlockResult {
+  return { status: 'block', reason, feedbackToAI };
+}
+
+function redirect(toAgent: string, feedbackToAI: string): RedirectResult {
+  return { status: 'redirect', toAgent, feedbackToAI };
+}
+
+─── Parser de action tags ───
+
+export function parseActionTags(text: string): ParsedAction[] {
+  const regex = /\[([A-Z_]+)(?::([^\]]*))?\]/g;
+  const actions: ParsedAction[] = [];
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    const tag = match[1];
+    const paramStr = match[2] ?? '';
+    const params: Record<string, string> = {};
+    paramStr.split(':').forEach((part, i) => {
+      if (part.includes('=')) {
+        const [k, v] = part.split('=');
+        if (k) params[k] = v ?? '';
+      } else if (part) {
+        params[`arg${i}`] = part;
+      }
+    });
+    actions.push({ tag, params, raw: match[0] });
+  }
+  return actions;
+}
+
+─── Validators por action tag ───
+
+type Validator = (
+  params: Record<string, string>,
+  ctx: ActionContext
+) => ValidationResult;
+
+const VALIDATORS: Record<string, Validator> = {
+
+  DESBLOQUEAR: (params, ctx) => {
+    if (!ctx.tenant.allowTrustUnlock)
+      return block(
+        'Desbloqueio por confiança desativado para este tenant',
+        'O desbloqueio por confiança não está disponível neste provedor. ' +
+        'Informe o cliente que o pagamento precisa ser confirmado no sistema ' +
+        'antes da reativação e ofereça as formas de pagamento disponíveis.'
+      );
+    if (!ctx.client.contractId)
+      return block(
+        'Contrato não identificado',
+        'Não foi possível identificar o contrato do cliente para executar ' +
+        'o desbloqueio. Solicite que o cliente confirme o número do contrato.'
+      );
+    if ((ctx.client.activePromises ?? 0) >= 2)
+      return block(
+        'Limite de promessas ativas atingido',
+        'O cliente já tem o número máximo de promessas de pagamento ativas ' +
+        'permitidas pelo provedor. Informe isso com clareza e encaminhe ' +
+        'para atendente humano para negociação.'
+      );
+    return allow();
+  },
+
+  SEGUNDA_VIA: (params, ctx) => {
+    const faturaId = params.faturaId ?? params.arg0 ?? params.arg1;
+    if (!faturaId)
+      return block(
+        'ID da fatura ausente no comando',
+        'Não foi possível identificar qual fatura o cliente deseja. ' +
+        'Apresente a lista de faturas em aberto e aguarde o cliente escolher.'
+      );
+    return allow();
+  },
+
+  PAGAR_VIA: (params, ctx) => {
+    const forma = (params.arg0 ?? params.forma ?? '').toUpperCase();
+    if (forma === 'PIX' && !ctx.tenant.allowPix)
+      return block(
+        'PIX não habilitado para este tenant',
+        'PIX não está disponível como forma de pagamento neste provedor. ' +
+        'Ofereça boleto como alternativa.'
+      );
+    if (forma === 'BOLETO' && !ctx.tenant.allowBarcode)
+      return block(
+        'Boleto não habilitado para este tenant',
+        'Boleto não está disponível como forma de pagamento neste provedor. ' +
+        'Ofereça PIX como alternativa.'
+      );
+    return allow();
+  },
+
+  ABRIR_OS: (params, ctx) => {
+    if (!ctx.tenant.allowAutoOpenTicket)
+      return block(
+        'Abertura automática de OS desativada',
+        'A abertura automática de chamado está desativada para este provedor. ' +
+        'Informe o cliente e transfira para suporte humano com o diagnóstico completo.'
+      );
+    if (ctx.client.status === 'INADIMPLENTE')
+      return redirect(
+        'FINANCEIRO',
+        'O cliente está inadimplente. Chamados técnicos só podem ser abertos ' +
+        'após regularização financeira. Informe o cliente e encaminhe para ' +
+        'o setor financeiro.'
+      );
+    return allow();
+  },
+
+  PROMESSA_PAGAMENTO: (params, ctx) => {
+    if (!ctx.client.contractId)
+      return block(
+        'Contrato não identificado para registrar promessa',
+        'Não foi possível identificar o contrato. Solicite confirmação.'
+      );
+    return allow();
+  },
+
+  VERIFICAR_COBERTURA: (params, ctx) => {
+    const rua = params.rua ?? params.arg0;
+    if (!rua)
+      return block(
+        'Endereço incompleto para verificação de cobertura',
+        'Para verificar a cobertura, preciso do endereço completo. ' +
+        'Solicite ao cliente: rua, número, bairro e cidade.'
+      );
+    return allow();
+  },
+
+};
+
+─── Função principal ───
+
+export async function runGuardLayer(
+  aiResponse: string,
+  ctx: ActionContext
+): Promise<GuardResult> {
+  const actions = parseActionTags(aiResponse);
+
+  for (const action of actions) {
+    const validator = VALIDATORS[action.tag];
+    if (!validator) continue;
+
+    const result = validator(action.params, ctx);
+
+    if (result.status === 'block') {
+      console.warn(
+        `[GuardLayer] BLOQUEADO — ${action.tag}: ${result.reason}`
+      );
+      return {
+        proceed: false,
+        feedbackToAI: result.feedbackToAI,
+        blockedAction: action.tag,
+      };
+    }
+
+    if (result.status === 'redirect') {
+      console.warn(
+        `[GuardLayer] REDIRECT — ${action.tag} → ${result.toAgent}`
+      );
+      return {
+        proceed: false,
+        feedbackToAI: result.feedbackToAI,
+        redirectTo: result.toAgent,
+        blockedAction: action.tag,
+      };
+    }
+  }
+
+  return { proceed: true };
+}
+
+─── Exportar tipos necessários ───
+export type { ActionContext, GuardResult, ParsedAction };
+
+══ ADICIONAR ao server/services/agents/index.ts ══
+
+export { runGuardLayer, parseActionTags } from './guardLayer';
+
+Não chame o guardLayer em nenhum lugar ainda — o wiring vem
+no Prompt A4. Por ora só crie e exporte o arquivo.

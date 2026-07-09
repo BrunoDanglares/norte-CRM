@@ -1,0 +1,1434 @@
+{
+  "name": "🍌 ISP Agent V4 — ChatBanana Proxy (ERP + AI + Send)",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "# 📥 SEÇÃO 1 — ENTRADA\n\nRecebe o payload do canvas ChatBanana.\nConfigue chatbanana_url e chatbanana_token.\n\nO N8N NÃO acessa SGP/IXC diretamente.\nTudo vai via ChatBanana API.",
+        "height": 180,
+        "width": 520,
+        "color": 5
+      },
+      "id": "bfc5285f-7a9e-4d33-ac24-52315bd61b5f",
+      "name": "📥 ENTRADA",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -220,
+        -240
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "chatbanana-isp-v4",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "27abf1b2-89ea-40a8-9a53-64c8c6a901b7",
+      "name": "Webhook ChatBanana",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        240,
+        -160
+      ],
+      "webhookId": "8abc1db5-e3f8-42d3-9d3b-26adb1e6edff"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "4ae4ebb2-1694-4602-871e-1931a4444d72",
+              "name": "telefone",
+              "value": "={{ $json.body.telefone ?? $json.body.phone ?? '' }}",
+              "type": "string"
+            },
+            {
+              "id": "12c9844d-e208-41d2-800d-2592dd7bc64d",
+              "name": "mensagem",
+              "value": "={{ $json.body.mensagem ?? $json.body.message ?? '' }}",
+              "type": "string"
+            },
+            {
+              "id": "a2fb04f4-f63d-446f-9d67-6a7986e0ef82",
+              "name": "mensagem_efetiva",
+              "value": "={{ $json.body.media_transcription || $json.body.media_description || $json.body.mensagem || $json.body.message || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "0aba732a-d3ca-4685-b799-d91032b10e45",
+              "name": "conversation_id",
+              "value": "={{ $json.body.conversation_id ?? '' }}",
+              "type": "string"
+            },
+            {
+              "id": "b0210709-d480-4786-9e67-3d078d8facf3",
+              "name": "workspace_id",
+              "value": "={{ $json.body.workspace_id ?? '' }}",
+              "type": "string"
+            },
+            {
+              "id": "d9261c6a-2e9f-4762-b3a4-6416b0707fc2",
+              "name": "contact_name",
+              "value": "={{ $json.body.contact_name ?? 'Cliente' }}",
+              "type": "string"
+            },
+            {
+              "id": "9a8485ff-15b5-4016-90cc-a4666f36f5a1",
+              "name": "chatbanana_url",
+              "value": "https://chatbanana.com.br",
+              "type": "string"
+            },
+            {
+              "id": "1fe175b2-41b9-4b10-9a5c-4532502a7600",
+              "name": "chatbanana_token",
+              "value": "SEU_JWT_TOKEN_AQUI",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "3fe90794-6c4d-4ba1-9ef6-c3d2e89156b0",
+      "name": "Set Entrada",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        240,
+        -20
+      ]
+    },
+    {
+      "parameters": {
+        "content": "# 🔍 SEÇÃO 2 — ERP ENRICHMENT\n\nUMA chamada ao ChatBanana /api/n8n/erp\nretorna todos os dados do cliente normalizados.\n\nChatBanana usa os adapters SGP/IXC já configurados.\nN8N não sabe qual ERP — não precisa saber.",
+        "height": 200,
+        "width": 520,
+        "color": 4
+      },
+      "id": "5e532cf7-46bd-4959-8494-35be7ef95d32",
+      "name": "🔍 ERP PROXY",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -220,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Set Entrada').item.json.chatbanana_url }}/api/n8n/erp",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Set Entrada').item.json.chatbanana_token }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({ action: 'enrichmentCompleto', params: { telefone: $('Set Entrada').item.json.telefone } }) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "45c4ef22-9a29-4189-a965-ba0531b7611b",
+      "name": "POST /api/n8n/erp — Enrichment Completo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        240,
+        140
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "content": "# 🧠 SEÇÃO 3 — CONTEXTO + SCORE\n\nMonta o objeto de contexto completo:\nDados ERP + promessas de pagamento + score de risco.\nAlimenta o SDR e todos os agentes.",
+        "height": 180,
+        "width": 520,
+        "color": 6
+      },
+      "id": "4ac312fa-abdb-43cf-8f3d-e5318730e5bb",
+      "name": "🧠 CONTEXTO",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -220,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "payment_promises",
+        "returnAll": false,
+        "limit": 5,
+        "filterType": "string",
+        "filterString": "=client_phone=eq.{{ $('Set Entrada').item.json.telefone.replace('@s.whatsapp.net','') }}&order=created_at.desc"
+      },
+      "id": "e7fc0adf-1b65-4cc6-a5e9-94f1c7a2db1c",
+      "name": "Supabase: Promessas",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        240,
+        360
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const entrada = $('Set Entrada').item.json;\nconst erpRaw  = $('POST /api/n8n/erp — Enrichment Completo').item.json;\nconst erp     = erpRaw.result ?? erpRaw; // normaliza resposta {ok, result}\n\nconst pItems  = (() => { try { return $('Supabase: Promessas').all(); } catch(e){ return []; }})();\nconst allP    = pItems.map(i=>i.json).filter(p=>p&&p.id);\nconst ago30   = new Date(Date.now()-30*24*60*60*1000);\nconst recentP = allP.filter(p=>new Date(p.created_at)>ago30&&['pending','expired'].includes(p.status)).length;\nconst lastFul = allP[0]?allP[0].status==='paid':true;\n\nconst F = erp.financial ?? {};\nconst elig = recentP<2 && (F.days_late??0)<=60 && (F.amount_due??0)<=300 && lastFul!==false;\n\nlet risk=0;\nif((F.days_late??0)>60)risk+=50; else if((F.days_late??0)>30)risk+=30; else if((F.days_late??0)>15)risk+=15;\nif(recentP>=2)risk+=35; else if(recentP===1)risk+=15;\nif(!lastFul)risk+=25;\nif((erp.tickets?.recent??0)>3)risk+=10;\n\nconst ctx = {\n  ...erp,\n  mensagem:        entrada.mensagem_efetiva || entrada.mensagem,\n  contact_name:    entrada.contact_name,\n  conversation_id: entrada.conversation_id,\n  workspace_id:    entrada.workspace_id,\n  promises: {\n    this_month:     recentP,\n    last_fulfilled: lastFul,\n    eligible:       elig,\n  },\n  score: {\n    risk:             risk>60?'ALTO':risk>30?'MEDIO':'BAIXO',\n    risk_val:         risk,\n    loyalty:          (erp.cliente?.months??0)>24?'FIEL':(erp.cliente?.months??0)>6?'REGULAR':'NOVO',\n    promise_eligible: elig,\n  },\n};\nreturn [{json: ctx}];"
+      },
+      "id": "f77c330b-0d6b-4519-a140-d959b466269a",
+      "name": "Code: Monta Contexto",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "content": "# 🎯 SEÇÃO 4 — SDR + ROTEAMENTO\n\nClassificação por regras puras (sem API call).\nInstantâneo e determinístico.\nOverride: suspenso → sempre FINANCEIRO.",
+        "height": 180,
+        "width": 520,
+        "color": 3
+      },
+      "id": "7c8ef459-52d1-4594-9bb3-c49d848035ba",
+      "name": "🎯 SDR",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -220,
+        660
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $('Code: Monta Contexto').item.json;\nconst msg = (ctx.mensagem??'').toLowerCase();\nconst F=ctx.financial??{}, O=ctx.connection??{}, N=ctx.network??{};\n\n// Regras críticas (sem keywords)\nlet intent;\nif(F.is_suspended)                            intent='FINANCEIRO';\nelse if(O.is_offline&&N.clients_offline>5)    intent='INCIDENTE_REGIONAL';\nelse if(O.is_offline)                         intent='SUPORTE_OFFLINE';\nelse if(O.status==='online')                  intent='SUPORTE_ONLINE';\nelse                                          intent='GERAL';\n\n// Override por keywords\nconst kCan = ['cancelar','quero cancelar','desistir','quero sair','encerrar contrato'];\nconst kFin = ['segunda via','fatura','boleto','pagar','pix','pagamento','devo','cobrança','débito'];\nconst kSal = ['contratar','quanto custa','novo plano','assinar','instalar internet','planos disponíveis'];\n\nif(kCan.some(w=>msg.includes(w)))                         intent='CANCELAMENTO';\nelse if(kSal.some(w=>msg.includes(w))&&!F.is_suspended)   intent='VENDAS';\nelse if(kFin.some(w=>msg.includes(w))&&!F.is_suspended)   intent='FINANCEIRO';\n\nreturn [{json:{...ctx, intent}}];"
+      },
+      "id": "26b98560-45fd-4ba4-a12b-98f406dd12f1",
+      "name": "Code: SDR Classificação",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        720
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "id": "841d9026-791b-4b37-9597-a8cc390729ff",
+                    "leftValue": "={{ $json.intent }}",
+                    "rightValue": "FINANCEIRO",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "id": "190c92e6-1a97-40e6-a9c2-c9b6d67b2241",
+                    "leftValue": "={{ $json.intent }}",
+                    "rightValue": "SUPORTE_ONLINE",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "id": "29b49e4e-55fb-442b-ac77-910c580bbabf",
+                    "leftValue": "={{ $json.intent }}",
+                    "rightValue": "SUPORTE_OFFLINE",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "id": "7005fa3f-3a59-42cb-809a-217e42e60546",
+                    "leftValue": "={{ $json.intent }}",
+                    "rightValue": "INCIDENTE_REGIONAL",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "id": "2ded4def-1721-4918-ae53-918c39c3062a",
+                    "leftValue": "={{ $json.intent }}",
+                    "rightValue": "CANCELAMENTO",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": 5
+        }
+      },
+      "id": "465610ed-0244-4bff-bfd6-928fcf6bb4da",
+      "name": "Switch: Routing ISP",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        240,
+        860
+      ]
+    },
+    {
+      "parameters": {
+        "content": "# 🤖 SEÇÃO 5 — 6 AGENTES ISP\n\nCada agente = 1 HTTP POST para /api/n8n/ai\nChatBanana usa OpenAI + prompt template editável.\nContexto ERP completo é injetado automaticamente.\n\nPara editar prompts: PUT /api/n8n/ai/templates/:name",
+        "height": 200,
+        "width": 540,
+        "color": 6
+      },
+      "id": "c4864f37-90ec-4e6c-b5aa-8571d67770a3",
+      "name": "🤖 AGENTES",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        800,
+        660
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Set Entrada').item.json.chatbanana_url }}/api/n8n/ai",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Set Entrada').item.json.chatbanana_token }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({  prompt_name: 'agente_financeiro',  mensagem: $('Code: SDR Classificação').item.json.mensagem,  context: $('Code: SDR Classificação').item.json,  historico: []}) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "a23ea19e-da99-4c5b-bb1b-2933bf2a9281",
+      "name": "Agente Financeiro",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1000,
+        860
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Set Entrada').item.json.chatbanana_url }}/api/n8n/ai",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Set Entrada').item.json.chatbanana_token }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({  prompt_name: 'agente_suporte_online',  mensagem: $('Code: SDR Classificação').item.json.mensagem,  context: $('Code: SDR Classificação').item.json,  historico: []}) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "efec97f1-ac3c-4374-83d6-1e5ade2ef12f",
+      "name": "Agente Suporte Online",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1000,
+        1020
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Set Entrada').item.json.chatbanana_url }}/api/n8n/ai",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Set Entrada').item.json.chatbanana_token }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({  prompt_name: 'agente_suporte_offline',  mensagem: $('Code: SDR Classificação').item.json.mensagem,  context: $('Code: SDR Classificação').item.json,  historico: []}) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "48cebdb4-c7d6-42a5-82fa-27dd7d5ba7ad",
+      "name": "Agente Suporte Offline",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1000,
+        1180
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Set Entrada').item.json.chatbanana_url }}/api/n8n/ai",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Set Entrada').item.json.chatbanana_token }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({  prompt_name: 'agente_incidente_regional',  mensagem: $('Code: SDR Classificação').item.json.mensagem,  context: $('Code: SDR Classificação').item.json,  historico: []}) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "f18108af-7f69-45e0-89c8-8346cadbe6e2",
+      "name": "Agente Incidente Regional",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1000,
+        1340
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Set Entrada').item.json.chatbanana_url }}/api/n8n/ai",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Set Entrada').item.json.chatbanana_token }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({  prompt_name: 'agente_cancelamento',  mensagem: $('Code: SDR Classificação').item.json.mensagem,  context: $('Code: SDR Classificação').item.json,  historico: []}) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "1685cd20-92c2-4197-b9b5-cbf2c62b2661",
+      "name": "Agente Cancelamento",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1000,
+        1500
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Set Entrada').item.json.chatbanana_url }}/api/n8n/ai",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Set Entrada').item.json.chatbanana_token }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({  prompt_name: 'agente_vendas',  mensagem: $('Code: SDR Classificação').item.json.mensagem,  context: $('Code: SDR Classificação').item.json,  historico: []}) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "d594f991-864b-43b9-b9ad-48e6bd4af994",
+      "name": "Agente Vendas",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1000,
+        1660
+      ]
+    },
+    {
+      "parameters": {
+        "content": "# 💬 SEÇÃO 6 — ENVIO + HUMANIZAÇÃO\n\nChatBanana divide a resposta em blocos naturais\ncom delay proporcional entre eles.\nSalva no banco e envia via Meta Cloud API.",
+        "height": 180,
+        "width": 500,
+        "color": 2
+      },
+      "id": "dd60d07b-e8b8-4002-8530-b2d6281cc47f",
+      "name": "💬 ENVIO",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1600,
+        660
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Set Entrada').item.json.chatbanana_url }}/api/n8n/send",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Set Entrada').item.json.chatbanana_token }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({  conversation_id: $('Set Entrada').item.json.conversation_id,  message: $json.result?.response ?? $json.response ?? '',  humanize: true}) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "ffb9af13-4d88-4f1a-a4b9-77631843ffd6",
+      "name": "POST /api/n8n/send — Envia Resposta",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1800,
+        860
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ok:true,intent:$('Code: SDR Classificação').item.json.intent??'ok',conversation_id:$('Set Entrada').item.json.conversation_id}) }}",
+        "options": {}
+      },
+      "id": "f98624cd-b4b1-4ad6-a829-547909d14ae2",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1800,
+        1020
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Normaliza a resposta independente do formato retornado pelo /api/n8n/ai\nconst raw = $json;\nconst response = raw.result?.response ?? raw.response ?? raw.output ?? '';\nreturn [{json:{\n  response,\n  prompt_name:  raw.prompt_name ?? raw.result?.prompt_name ?? '',\n  tokens_used:  raw.tokens_used ?? raw.result?.tokens_used ?? 0,\n  conversation_id: $('Set Entrada').item.json.conversation_id,\n  intent: $('Code: SDR Classificação').item.json.intent ?? '',\n}}];"
+      },
+      "id": "d0467be7-76cd-45d1-b882-298a66e15be8",
+      "name": "Code: Prepara Envio",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1500,
+        860
+      ]
+    },
+    {
+      "parameters": {
+        "content": "# ⚡ SEÇÃO 7 — AÇÕES ERP\n\nDispare manualmente ou conecte ao agente:\nliberarCliente, suspenderCliente, abrirChamado.\nTambém salva promessas de pagamento no Supabase.",
+        "height": 180,
+        "width": 520,
+        "color": 4
+      },
+      "id": "d48468fe-d77c-4601-835d-37bc1bffee1c",
+      "name": "⚡ AÇÕES ERP",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        800,
+        1800
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Set Entrada').item.json.chatbanana_url }}/api/n8n/erp",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Set Entrada').item.json.chatbanana_token }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({ action: 'liberarCliente', params: { id_cliente: $('Code: SDR Classificação').item.json.cliente?.id, id_contrato: $('Code: SDR Classificação').item.json.cliente?.contract } }) }}",
+        "options": {
+          "timeout": 12000
+        }
+      },
+      "id": "3384befc-4a42-4004-bd79-e6d9f0186e05",
+      "name": "POST /api/n8n/erp — Liberar Cliente",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1000,
+        1920
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Set Entrada').item.json.chatbanana_url }}/api/n8n/erp",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Set Entrada').item.json.chatbanana_token }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({ action: 'abrirChamado', params: { id_cliente: $('Code: SDR Classificação').item.json.cliente?.id, titulo: 'Chamado via Agente ISP', descricao: $('Code: SDR Classificação').item.json.mensagem, prioridade: $('Code: SDR Classificação').item.json.tickets?.recurrent ? 'alta' : 'normal' } }) }}",
+        "options": {
+          "timeout": 12000
+        }
+      },
+      "id": "1643d465-0d3f-4570-8274-7af75b2dd92d",
+      "name": "POST /api/n8n/erp — Abrir Chamado",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1300,
+        1920
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "tableId": "payment_promises",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "workspace_id",
+              "fieldValue": "={{ $('Set Entrada').item.json.workspace_id }}"
+            },
+            {
+              "fieldId": "client_phone",
+              "fieldValue": "={{ $('Set Entrada').item.json.telefone.replace('@s.whatsapp.net','') }}"
+            },
+            {
+              "fieldId": "client_id_erp",
+              "fieldValue": "={{ $('Code: SDR Classificação').item.json.cliente?.id ?? '' }}"
+            },
+            {
+              "fieldId": "contract_id",
+              "fieldValue": "={{ $('Code: SDR Classificação').item.json.cliente?.contract ?? '' }}"
+            },
+            {
+              "fieldId": "erp_sistema",
+              "fieldValue": "={{ $('Code: SDR Classificação').item.json.sistema ?? 'sgp' }}"
+            },
+            {
+              "fieldId": "amount_due",
+              "fieldValue": "={{ $('Code: SDR Classificação').item.json.financial?.amount_due ?? 0 }}"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "pending"
+            },
+            {
+              "fieldId": "released_at",
+              "fieldValue": "={{ $now.toISO() }}"
+            },
+            {
+              "fieldId": "expires_at",
+              "fieldValue": "={{ $now.plus({hours:48}).toISO() }}"
+            }
+          ]
+        }
+      },
+      "id": "1411576a-2cd6-4d64-a7a9-f0ccf136b64b",
+      "name": "Supabase: Salva Promessa",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1600,
+        1920
+      ]
+    },
+    {
+      "parameters": {
+        "content": "# ⏰ SEÇÃO 8 — CRON 48H\n\nRoda a cada hora. Verifica promessas vencidas.\nChama /api/n8n/erp consultarPagamento.\nSuspende via ERP + notifica via /api/n8n/send.",
+        "height": 180,
+        "width": 520,
+        "color": 4
+      },
+      "id": "ad51519d-6266-4f28-8795-e431bfde44ab",
+      "name": "⏰ CRON 48H",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        800,
+        2200
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 1
+            }
+          ]
+        }
+      },
+      "id": "69bd5c39-5f13-4b1a-8039-5788084977cf",
+      "name": "Cron: Verifica Promessas",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        1000,
+        2380
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "payment_promises",
+        "returnAll": false,
+        "limit": 50,
+        "filterType": "string",
+        "filterString": "=status=eq.pending&expires_at=lt.{{ $now.toISO() }}"
+      },
+      "id": "63282689-d78a-47de-b557-ed57a7f2ec65",
+      "name": "Supabase: Promessas Vencidas",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1000,
+        2540
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "batchSize": "1",
+        "options": {}
+      },
+      "id": "ce6424b2-0452-4a05-8b40-8e9dd7e035ae",
+      "name": "Loop: Cada Promessa",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        1000,
+        2700
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Set Entrada').item.json.chatbanana_url }}/api/n8n/erp",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Set Entrada').item.json.chatbanana_token }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({ action: 'consultarPagamento', params: { id_cliente: $json.client_id_erp, id_contrato: $json.contract_id } }) }}",
+        "options": {
+          "timeout": 12000
+        }
+      },
+      "id": "b0e6eb13-fd3c-4fa9-b427-d6cd294edac6",
+      "name": "POST /api/n8n/erp — Consultar Pagamento",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1300,
+        2700
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "3dc527d4-43bb-4cfb-b706-054757e77413",
+              "leftValue": "={{ $json.result?.paid ?? false }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "2eb601f1-f8d3-4142-8609-86464c379cfb",
+      "name": "IF: Pagou?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1600,
+        2700
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "payment_promises",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $json.id }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "paid"
+            },
+            {
+              "fieldId": "paid_at",
+              "fieldValue": "={{ $now.toISO() }}"
+            }
+          ]
+        }
+      },
+      "id": "f8063164-59d1-48b0-b623-ecfe0c8620a5",
+      "name": "Supabase: Marca Pago",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1400,
+        2900
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Set Entrada').item.json.chatbanana_url }}/api/n8n/send",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Set Entrada').item.json.chatbanana_token }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({ conversation_id: $json.conversation_id ?? '', message: 'Pagamento identificado ✅\\n\\nSua conexão foi regularizada com sucesso! Qualquer dúvida, estamos por aqui 🙌', humanize: true }) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "45ba1f7b-c38a-4255-b9e4-2050b72bc2cb",
+      "name": "POST /api/n8n/send — Notifica Regularizado",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1400,
+        3060
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Set Entrada').item.json.chatbanana_url }}/api/n8n/erp",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Set Entrada').item.json.chatbanana_token }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({ action: 'suspenderCliente', params: { id_cliente: $json.client_id_erp, id_contrato: $json.contract_id } }) }}",
+        "options": {
+          "timeout": 12000
+        }
+      },
+      "id": "3944fe3f-e7cb-4595-92a8-ccd73394ed1e",
+      "name": "POST /api/n8n/erp — Suspender Cliente",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1900,
+        2900
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "payment_promises",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $json.id }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "expired"
+            }
+          ]
+        }
+      },
+      "id": "b3673938-95ea-4a83-9495-d67598606a44",
+      "name": "Supabase: Marca Expirado",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1900,
+        3060
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Set Entrada').item.json.chatbanana_url }}/api/n8n/send",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Set Entrada').item.json.chatbanana_token }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({ conversation_id: $json.conversation_id ?? '', message: 'Seu prazo de liberação expirou e não identificamos o pagamento 😕\\n\\nSua conexão foi suspensa novamente.\\n\\nPosso te enviar a fatura para regularização agora?', humanize: true }) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "29fb3009-f5d8-4938-832f-d5b21257dc98",
+      "name": "POST /api/n8n/send — Notifica Suspenso",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1900,
+        3220
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook ChatBanana": {
+      "main": [
+        [
+          {
+            "node": "Set Entrada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Entrada": {
+      "main": [
+        [
+          {
+            "node": "POST /api/n8n/erp — Enrichment Completo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST /api/n8n/erp — Enrichment Completo": {
+      "main": [
+        [
+          {
+            "node": "Supabase: Promessas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase: Promessas": {
+      "main": [
+        [
+          {
+            "node": "Code: Monta Contexto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code: Monta Contexto": {
+      "main": [
+        [
+          {
+            "node": "Code: SDR Classificação",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code: SDR Classificação": {
+      "main": [
+        [
+          {
+            "node": "Switch: Routing ISP",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch: Routing ISP": {
+      "main": [
+        [
+          {
+            "node": "Agente Financeiro",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Agente Suporte Online",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Agente Suporte Offline",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Agente Incidente Regional",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Agente Cancelamento",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Agente Vendas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agente Financeiro": {
+      "main": [
+        [
+          {
+            "node": "Code: Prepara Envio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agente Suporte Online": {
+      "main": [
+        [
+          {
+            "node": "Code: Prepara Envio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agente Suporte Offline": {
+      "main": [
+        [
+          {
+            "node": "Code: Prepara Envio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agente Incidente Regional": {
+      "main": [
+        [
+          {
+            "node": "Code: Prepara Envio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agente Cancelamento": {
+      "main": [
+        [
+          {
+            "node": "Code: Prepara Envio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agente Vendas": {
+      "main": [
+        [
+          {
+            "node": "Code: Prepara Envio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code: Prepara Envio": {
+      "main": [
+        [
+          {
+            "node": "POST /api/n8n/send — Envia Resposta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST /api/n8n/send — Envia Resposta": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cron: Verifica Promessas": {
+      "main": [
+        [
+          {
+            "node": "Supabase: Promessas Vencidas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase: Promessas Vencidas": {
+      "main": [
+        [
+          {
+            "node": "Loop: Cada Promessa",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop: Cada Promessa": {
+      "main": [
+        [],
+        [
+          {
+            "node": "POST /api/n8n/erp — Consultar Pagamento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST /api/n8n/erp — Consultar Pagamento": {
+      "main": [
+        [
+          {
+            "node": "IF: Pagou?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF: Pagou?": {
+      "main": [
+        [
+          {
+            "node": "Supabase: Marca Pago",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "POST /api/n8n/erp — Suspender Cliente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase: Marca Pago": {
+      "main": [
+        [
+          {
+            "node": "POST /api/n8n/send — Notifica Regularizado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST /api/n8n/send — Notifica Regularizado": {
+      "main": [
+        [
+          {
+            "node": "Loop: Cada Promessa",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST /api/n8n/erp — Suspender Cliente": {
+      "main": [
+        [
+          {
+            "node": "Supabase: Marca Expirado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase: Marca Expirado": {
+      "main": [
+        [
+          {
+            "node": "POST /api/n8n/send — Notifica Suspenso",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST /api/n8n/send — Notifica Suspenso": {
+      "main": [
+        [
+          {
+            "node": "Loop: Cada Promessa",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  },
+  "active": false,
+  "versionId": "78855292-13f4-46bb-8ad6-05ed5f24c15b",
+  "meta": {
+    "instanceId": "chatbanana-isp-v4"
+  },
+  "id": "ISP-AGENT-V4",
+  "tags": [
+    {
+      "name": "ISP"
+    },
+    {
+      "name": "ChatBanana"
+    },
+    {
+      "name": "V4"
+    },
+    {
+      "name": "Proxy"
+    }
+  ]
+}

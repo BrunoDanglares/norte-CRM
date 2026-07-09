@@ -1,0 +1,539 @@
+Refactor the ISP module to support multiple ERP providers (SGP and IXC) in parallel.
+
+## Context
+- SGP adapter already exists at server/services/sgp-adapter.ts
+- IXC Provedor is another Brazilian ISP management system with a different REST API
+- The goal is a provider-agnostic interface so routes/schedulers never need to know which ERP is active
+- Each workspace chooses their ERP in isp_configs table
+
+## Step 1: Update isp_configs table
+
+Add a new column via Drizzle migration:
+- erp_type: text not null default 'sgp' (enum: 'sgp' | 'ixc')
+
+Also rename existing columns for clarity (only if migration is safe — otherwise just add erp_type):
+- sgp_base_url → keep as is (used for both SGP and IXC base URL)
+- sgp_api_token → keep as is (used for both)
+
+Run migration after adding erp_type column.
+
+## Step 2: Create provider interface
+
+File to create: server/services/isp-provider.interface.ts
+```typescript
+export interface ISPCredentials {
+  baseUrl: string;
+  apiToken: string;
+  erpType: 'sgp' | 'ixc';
+}
+
+export interface ISPCustomer {
+  id: string;
+  nome: string;
+  cpf: string;
+  telefone: string;
+  email: string;
+  plano: string;
+  dataNascimento: string | null;
+  status: 'ativo' | 'suspenso' | 'cancelado' | 'inadimplente';
+  endereco: string;
+}
+
+export interface ISPInvoice {
+  id: string;
+  customerId: string;
+  numero: string;
+  valor: number;
+  vencimento: string;
+  status: 'aberto' | 'pago' | 'vencido' | 'cancelado';
+  linhaDigitavel: string | null;
+  linkBoleto: string | null;
+  pix: string | null;
+  diasAtraso: number;
+}
+
+export interface ISPTicket {
+  id: string;
+  customerId: string;
+  tipo: string;
+  descricao: string;
+  status: 'aberto' | 'em_andamento' | 'resolvido';
+  criadoEm: string;
+  protocolo: string;
+}
+
+export interface ISPSecondCopy {
+  linhaDigitavel: string;
+  linkBoleto: string;
+  pix: string | null;
+  vencimento: string;
+  valor: number;
+}
+
+export interface ISPProvider {
+  searchCustomerByCPF(credentials: ISPCredentials, cpf: string): Promise<ISPCustomer | null>;
+  getOpenInvoices(credentials: ISPCredentials, customerId: string): Promise<ISPInvoice[]>;
+  generateSecondCopy(credentials: ISPCredentials, invoiceId: string): Promise<ISPSecondCopy>;
+  createSupportTicket(credentials: ISPCredentials, params: { customerId: string; tipo: string; descricao: string }): Promise<ISPTicket>;
+  getTicketStatus(credentials: ISPCredentials, ticketId: string): Promise<ISPTicket>;
+  getOverdueCustomers(credentials: ISPCredentials, daysOverdue: number): Promise<Array<{ customer: ISPCustomer; invoices: ISPInvoice[] }>>;
+  getInvoicesDueSoon(credentials: ISPCredentials, daysUntilDue: number): Promise<Array<{ customer: ISPCustomer; invoice: ISPInvoice }>>;
+  getCustomerByPhone(credentials: ISPCredentials, phone: string): Promise<ISPCustomer | null>;
+}
+
+export class ISPError extends Error {
+  statusCode: number;
+  erpType: string;
+  constructor(message: string, statusCode: number, erpType: string) {
+    super(message);
+    this.name = 'ISPError';
+    this.statusCode = statusCode;
+    this.erpType = erpType;
+  }
+}
+```
+
+## Step 3: Refactor SGP adapter to implement ISPProvider
+
+Update server/services/sgp-adapter.ts:
+
+- Import ISPProvider, ISPCredentials, ISPCustomer, ISPInvoice, ISPTicket, ISPSecondCopy, ISPError from './isp-provider.interface'
+- Remove the old SGPError class (replace with ISPError)
+- Remove old SGPCredentials, SGPCustomer etc. interfaces (now use ISP* interfaces)
+- Make all functions match the ISPProvider interface signatures exactly
+- Export a singleton: export const sgpProvider: ISPProvider = { searchCustomerByCPF, getOpenInvoices, ... }
+- Keep all existing function logic intact — only change signatures and error class
+
+## Step 4: Create IXC adapter
+
+File to create: server/services/ixc-adapter.ts
+
+IXC API characteristics:
+- Base URL example: https://provedor.ixcsoft.com.br/webservice/v1
+- Authentication: Basic Auth (base64 of "token:") OR Bearer token depending on version
+- IXC uses numeric IDs, not strings
+- Main endpoints differ from SGP
+```typescript
+import { ISPProvider, ISPCredentials, ISPCustomer, ISPInvoice, ISPTicket, ISPSecondCopy, ISPError } from './isp-provider.interface';
+
+// IXC internal response types
+interface IXCResponse<T> {
+  type: 'success' | 'error';
+  message: string;
+  registros: T[];
+  total: string;
+}
+
+// Helper: IXC uses Basic Auth with token as username, empty password
+function getIXCHeaders(apiToken: string): HeadersInit {
+  const encoded = Buffer.from(`${apiToken}:`).toString('base64');
+  return {
+    'Authorization': `Basic ${encoded}`,
+    'Content-Type': 'application/json',
+    'ixcsoft': 'listar' // IXC requires this header for list operations
+  };
+}
+
+// Helper: fetch with timeout
+async function ixcFetch(url: string, options: RequestInit = {}): Promise<any> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+  
+  try {
+    console.log('[IXC]', options.method || 'GET', url);
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      throw new ISPError(
+        body.message || `IXC API error: ${response.status}`,
+        response.status,
+        'ixc'
+      );
+    }
+    
+    return await response.json();
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+// Helper: map IXC status to standard
+function mapIXCStatus(status: string): ISPCustomer['status'] {
+  const map: Record<string, ISPCustomer['status']> = {
+    'A': 'ativo',
+    'I': 'cancelado',
+    'B': 'suspenso',
+    'I': 'inadimplente'
+  };
+  return map[status] || 'ativo';
+}
+
+// Helper: map IXC invoice status
+function mapIXCInvoiceStatus(status: string): ISPInvoice['status'] {
+  const map: Record<string, ISPInvoice['status']> = {
+    'A': 'aberto',
+    'B': 'pago',
+    'C': 'cancelado',
+    'D': 'vencido'
+  };
+  return map[status] || 'aberto';
+}
+
+// Helper: calculate days overdue
+function calcDiasAtraso(vencimento: string): number {
+  const due = new Date(vencimento);
+  const today = new Date();
+  today.setHours(0,0,0,0);
+  const diffMs = today.getTime() - due.getTime();
+  return Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
+}
+
+// ─── ISPProvider implementation for IXC ──────────────────────────────────────
+
+async function searchCustomerByCPF(credentials: ISPCredentials, cpf: string): Promise<ISPCustomer | null> {
+  const cleanCPF = cpf.replace(/\D/g, '');
+  const url = `${credentials.baseUrl}/cliente?cpf_cnpj=${cleanCPF}&ativo=S`;
+  
+  const response: IXCResponse<any> = await ixcFetch(url, {
+    headers: getIXCHeaders(credentials.apiToken)
+  });
+  
+  if (!response.registros?.length) return null;
+  
+  const c = response.registros[0];
+  return {
+    id: String(c.id),
+    nome: c.razao || c.fantasia || '',
+    cpf: c.cpf_cnpj || '',
+    telefone: c.telefone_celular || c.fone || '',
+    email: c.email || '',
+    plano: c.nome_plano || '',
+    dataNascimento: c.data_nascimento || null,
+    status: mapIXCStatus(c.ativo),
+    endereco: `${c.endereco || ''}, ${c.numero || ''} - ${c.cidade || ''}`
+  };
+}
+
+async function getOpenInvoices(credentials: ISPCredentials, customerId: string): Promise<ISPInvoice[]> {
+  const url = `${credentials.baseUrl}/fn_areceber?id_cliente=${customerId}&status=A,D&em_aberto=S`;
+  
+  const response: IXCResponse<any> = await ixcFetch(url, {
+    headers: getIXCHeaders(credentials.apiToken)
+  });
+  
+  if (!response.registros?.length) return [];
+  
+  return response.registros.map((inv: any): ISPInvoice => ({
+    id: String(inv.id),
+    customerId: String(inv.id_cliente),
+    numero: inv.parcela || String(inv.id),
+    valor: parseFloat(inv.valor) || 0,
+    vencimento: inv.data_vencimento,
+    status: mapIXCInvoiceStatus(inv.status),
+    linhaDigitavel: inv.linha_digitavel || null,
+    linkBoleto: inv.url_boleto || inv.link_boleto || null,
+    pix: inv.pix_copia_cola || null,
+    diasAtraso: calcDiasAtraso(inv.data_vencimento)
+  })).sort((a: ISPInvoice, b: ISPInvoice) => 
+    new Date(a.vencimento).getTime() - new Date(b.vencimento).getTime()
+  );
+}
+
+async function generateSecondCopy(credentials: ISPCredentials, invoiceId: string): Promise<ISPSecondCopy> {
+  // IXC: POST to generate second copy / refresh boleto
+  const url = `${credentials.baseUrl}/fn_areceber/${invoiceId}/boleto`;
+  
+  const response = await ixcFetch(url, {
+    method: 'POST',
+    headers: { ...getIXCHeaders(credentials.apiToken), 'ixcsoft': 'inserir' }
+  });
+  
+  if (!response || response.type === 'error') {
+    throw new ISPError(response?.message || 'Erro ao gerar 2ª via', 400, 'ixc');
+  }
+  
+  // After generating, fetch the updated invoice
+  const invoiceUrl = `${credentials.baseUrl}/fn_areceber/${invoiceId}`;
+  const invoiceResponse = await ixcFetch(invoiceUrl, {
+    headers: getIXCHeaders(credentials.apiToken)
+  });
+  
+  const inv = invoiceResponse.registros?.[0];
+  if (!inv) throw new ISPError('Fatura não encontrada após gerar 2ª via', 404, 'ixc');
+  
+  return {
+    linhaDigitavel: inv.linha_digitavel || '',
+    linkBoleto: inv.url_boleto || inv.link_boleto || '',
+    pix: inv.pix_copia_cola || null,
+    vencimento: inv.data_vencimento,
+    valor: parseFloat(inv.valor) || 0
+  };
+}
+
+async function createSupportTicket(credentials: ISPCredentials, params: { customerId: string; tipo: string; descricao: string }): Promise<ISPTicket> {
+  const url = `${credentials.baseUrl}/su_oss_chamado`;
+  
+  // Map ChatBanana ticket types to IXC ticket types
+  const tipoMap: Record<string, string> = {
+    'sem_sinal': 'Sem sinal',
+    'lentidao': 'Lentidão',
+    'sem_wifi': 'Sem WiFi',
+    'financeiro': 'Financeiro',
+    'outros': 'Outros'
+  };
+  
+  const body = {
+    id_cliente: params.customerId,
+    assunto: tipoMap[params.tipo] || params.tipo,
+    mensagem: params.descricao,
+    tipo: 'C', // C = Client ticket
+    status: 'A' // A = Aberto
+  };
+  
+  const response = await ixcFetch(url, {
+    method: 'POST',
+    headers: { ...getIXCHeaders(credentials.apiToken), 'ixcsoft': 'inserir' },
+    body: JSON.stringify(body)
+  });
+  
+  if (!response || response.type === 'error') {
+    throw new ISPError(response?.message || 'Erro ao abrir chamado', 400, 'ixc');
+  }
+  
+  return {
+    id: String(response.id || response.registros?.[0]?.id || ''),
+    customerId: params.customerId,
+    tipo: params.tipo,
+    descricao: params.descricao,
+    status: 'aberto',
+    criadoEm: new Date().toISOString(),
+    protocolo: String(response.id || response.registros?.[0]?.id || '')
+  };
+}
+
+async function getTicketStatus(credentials: ISPCredentials, ticketId: string): Promise<ISPTicket> {
+  const url = `${credentials.baseUrl}/su_oss_chamado/${ticketId}`;
+  
+  const response: IXCResponse<any> = await ixcFetch(url, {
+    headers: getIXCHeaders(credentials.apiToken)
+  });
+  
+  const t = response.registros?.[0];
+  if (!t) throw new ISPError('Chamado não encontrado', 404, 'ixc');
+  
+  const statusMap: Record<string, ISPTicket['status']> = {
+    'A': 'aberto',
+    'E': 'em_andamento',
+    'F': 'resolvido',
+    'C': 'resolvido'
+  };
+  
+  return {
+    id: String(t.id),
+    customerId: String(t.id_cliente),
+    tipo: t.assunto || '',
+    descricao: t.mensagem || '',
+    status: statusMap[t.status] || 'aberto',
+    criadoEm: t.data_abertura || new Date().toISOString(),
+    protocolo: String(t.id)
+  };
+}
+
+async function getOverdueCustomers(credentials: ISPCredentials, daysOverdue: number): Promise<Array<{ customer: ISPCustomer; invoices: ISPInvoice[] }>> {
+  const targetDate = new Date();
+  targetDate.setDate(targetDate.getDate() - daysOverdue);
+  const dateStr = targetDate.toISOString().split('T')[0];
+  
+  const url = `${credentials.baseUrl}/fn_areceber?status=A&data_vencimento=${dateStr}&em_aberto=S`;
+  
+  const response: IXCResponse<any> = await ixcFetch(url, {
+    headers: getIXCHeaders(credentials.apiToken)
+  });
+  
+  if (!response.registros?.length) return [];
+  
+  // Group by customer
+  const byCustomer = new Map<string, any[]>();
+  for (const inv of response.registros) {
+    const cid = String(inv.id_cliente);
+    if (!byCustomer.has(cid)) byCustomer.set(cid, []);
+    byCustomer.get(cid)!.push(inv);
+  }
+  
+  const results: Array<{ customer: ISPCustomer; invoices: ISPInvoice[] }> = [];
+  
+  for (const [customerId, invoices] of byCustomer) {
+    const customer = await searchCustomerByCPF(credentials, customerId).catch(() => null);
+    if (!customer) continue;
+    
+    results.push({
+      customer,
+      invoices: invoices.map((inv: any): ISPInvoice => ({
+        id: String(inv.id),
+        customerId,
+        numero: inv.parcela || String(inv.id),
+        valor: parseFloat(inv.valor) || 0,
+        vencimento: inv.data_vencimento,
+        status: 'vencido',
+        linhaDigitavel: inv.linha_digitavel || null,
+        linkBoleto: inv.url_boleto || null,
+        pix: inv.pix_copia_cola || null,
+        diasAtraso: calcDiasAtraso(inv.data_vencimento)
+      }))
+    });
+  }
+  
+  return results;
+}
+
+async function getInvoicesDueSoon(credentials: ISPCredentials, daysUntilDue: number): Promise<Array<{ customer: ISPCustomer; invoice: ISPInvoice }>> {
+  const targetDate = new Date();
+  targetDate.setDate(targetDate.getDate() + daysUntilDue);
+  const dateStr = targetDate.toISOString().split('T')[0];
+  
+  const url = `${credentials.baseUrl}/fn_areceber?status=A&data_vencimento=${dateStr}&em_aberto=S`;
+  
+  const response: IXCResponse<any> = await ixcFetch(url, {
+    headers: getIXCHeaders(credentials.apiToken)
+  });
+  
+  if (!response.registros?.length) return [];
+  
+  const results: Array<{ customer: ISPCustomer; invoice: ISPInvoice }> = [];
+  
+  for (const inv of response.registros) {
+    const customer = await searchCustomerByCPF(credentials, String(inv.id_cliente)).catch(() => null);
+    if (!customer) continue;
+    
+    results.push({
+      customer,
+      invoice: {
+        id: String(inv.id),
+        customerId: String(inv.id_cliente),
+        numero: inv.parcela || String(inv.id),
+        valor: parseFloat(inv.valor) || 0,
+        vencimento: inv.data_vencimento,
+        status: 'aberto',
+        linhaDigitavel: inv.linha_digitavel || null,
+        linkBoleto: inv.url_boleto || null,
+        pix: inv.pix_copia_cola || null,
+        diasAtraso: 0
+      }
+    });
+    
+    await new Promise(r => setTimeout(r, 300)); // rate limit between customer lookups
+  }
+  
+  return results;
+}
+
+async function getCustomerByPhone(credentials: ISPCredentials, phone: string): Promise<ISPCustomer | null> {
+  const cleanPhone = phone.replace(/\D/g, '').replace(/^55/, '');
+  const url = `${credentials.baseUrl}/cliente?telefone_celular=${cleanPhone}&ativo=S`;
+  
+  const response: IXCResponse<any> = await ixcFetch(url, {
+    headers: getIXCHeaders(credentials.apiToken)
+  });
+  
+  if (!response.registros?.length) return null;
+  
+  const c = response.registros[0];
+  return {
+    id: String(c.id),
+    nome: c.razao || c.fantasia || '',
+    cpf: c.cpf_cnpj || '',
+    telefone: c.telefone_celular || c.fone || '',
+    email: c.email || '',
+    plano: c.nome_plano || '',
+    dataNascimento: c.data_nascimento || null,
+    status: mapIXCStatus(c.ativo),
+    endereco: `${c.endereco || ''}, ${c.numero || ''} - ${c.cidade || ''}`
+  };
+}
+
+export const ixcProvider: ISPProvider = {
+  searchCustomerByCPF,
+  getOpenInvoices,
+  generateSecondCopy,
+  createSupportTicket,
+  getTicketStatus,
+  getOverdueCustomers,
+  getInvoicesDueSoon,
+  getCustomerByPhone
+};
+```
+
+## Step 5: Create provider factory
+
+File to create: server/services/isp-provider-factory.ts
+```typescript
+import { ISPProvider, ISPCredentials } from './isp-provider.interface';
+import { sgpProvider } from './sgp-adapter';
+import { ixcProvider } from './ixc-adapter';
+
+export function getISPProvider(erpType: 'sgp' | 'ixc'): ISPProvider {
+  switch (erpType) {
+    case 'ixc': return ixcProvider;
+    case 'sgp':
+    default: return sgpProvider;
+  }
+}
+
+export function buildCredentials(config: any): ISPCredentials {
+  return {
+    baseUrl: config.sgp_base_url,
+    apiToken: config.sgp_api_token,
+    erpType: config.erp_type || 'sgp'
+  };
+}
+
+// Convenience: get provider + credentials from a config row
+export function getProviderFromConfig(config: any): { provider: ISPProvider; credentials: ISPCredentials } {
+  const credentials = buildCredentials(config);
+  const provider = getISPProvider(credentials.erpType);
+  return { provider, credentials };
+}
+```
+
+## Step 6: Update all existing ISP files to use factory
+
+In these files, replace direct sgpAdapter.* calls with the factory pattern:
+
+### server/routes/isp.ts
+Replace:
+```typescript
+import * as sgpAdapter from '../services/sgp-adapter';
+// and calls like: sgpAdapter.searchCustomerByCPF(credentials, cpf)
+```
+With:
+```typescript
+import { getProviderFromConfig } from '../services/isp-provider-factory';
+// and calls like:
+const { provider, credentials } = getProviderFromConfig(config);
+const customer = await provider.searchCustomerByCPF(credentials, cpf);
+```
+
+### server/services/isp-schedulers.ts
+Replace all sgpAdapter.* calls with provider factory pattern.
+Load erp_type from config and use getProviderFromConfig(config).
+
+### server/services/isp-onboarding.ts
+No direct ERP calls here — no change needed.
+
+### server/services/automation-engine.ts (isp_action node)
+Replace sgpAdapter.* calls with:
+```typescript
+import { getProviderFromConfig } from './isp-provider-factory';
+const { provider, credentials } = getProviderFromConfig(ispConfig);
+// then: provider.searchCustomerByCPF(credentials, cpf)
+```
+
+## After implementing
+1. Confirm TypeScript compiles without errors
+2. Confirm 3 new files created:
+   - server/services/isp-provider.interface.ts
+   - server/services/ixc-adapter.ts
+   - server/services/isp-provider-factory.ts
+3. Confirm migration ran (erp_type column added to isp_configs)
+4. Test: GET /api/isp/config still returns correctly

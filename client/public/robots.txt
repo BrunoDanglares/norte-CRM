@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /super-admin
+Disallow: /aceitar-convite
+
+Sitemap: https://chatbanana.com.br/sitemap.xml

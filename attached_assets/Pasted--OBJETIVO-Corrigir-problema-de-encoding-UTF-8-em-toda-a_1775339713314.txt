@@ -1,0 +1,62 @@
+## OBJETIVO
+Corrigir problema de encoding UTF-8 em toda a aplicação.
+Caracteres especiais portugueses (ã, ç, é, ó, á, etc.) aparecem
+como interrogação (?) ou caracteres estranhos no N8N e no WhatsApp.
+
+## DIAGNÓSTICO — verificar cada camada:
+
+### CAMADA 1 — Express (servidor)
+Verificar se todas as rotas retornam header:
+Content-Type: application/json; charset=utf-8
+
+Em server/index.ts ou app.ts, adicionar se não existir:
+app.use((req, res, next) => {
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  next();
+});
+
+### CAMADA 2 — Banco de dados (PostgreSQL)
+Verificar a connection string no .env ou config:
+- Deve conter: ?client_encoding=UTF8
+- Exemplo: postgresql://user:pass@host:5432/db?client_encoding=UTF8
+
+Verificar se o Drizzle ORM está configurado com encoding correto.
+
+### CAMADA 3 — Envio de mensagens WhatsApp (Meta Cloud API)
+Em todos os arquivos que fazem fetch/axios para a API da Meta,
+verificar se o body está sendo stringificado corretamente:
+- JSON.stringify() deve preservar UTF-8 naturalmente
+- Verificar se não há Buffer.toString('ascii') ou similar em algum lugar
+- Verificar se o header 'Content-Type': 'application/json; charset=utf-8'
+  está presente nas chamadas para a Meta API
+
+### CAMADA 4 — N8N responses
+Verificar server/routes/n8n.ts:
+- Todas as res.json() estão corretas (Express serializa UTF-8 por padrão)
+- Verificar se há algum res.send() com string sem encoding explícito
+- Verificar se prompts salvos no banco têm os caracteres corretos
+  (pode ter sido salvo já corrompido)
+
+### CAMADA 5 — Arquivos de código fonte
+Verificar se os arquivos .ts têm caracteres hardcoded em português:
+- Buscar por strings com caracteres especiais em todos os services
+- Confirmar que os arquivos estão salvos como UTF-8 (não Latin-1)
+
+## CORREÇÃO
+
+1. Aplicar fix do Express globalmente (camada 1)
+2. Corrigir connection string do banco se necessário (camada 2)
+3. Auditar os arquivos de envio WhatsApp (camada 3)
+4. Buscar todos os lugares com Buffer, toString, encoding explícito
+   e corrigir para UTF-8
+
+## VERIFICAÇÃO FINAL
+Após as correções, testar enviando uma mensagem com:
+"Olá! Conexão está ótima? Verificação concluída com atenção às configurações."
+Se aparecer corretamente no WhatsApp e no N8N, o problema foi resolvido.
+
+## REGRAS
+- Não alterar prompts dos agentes
+- Não alterar lógica de negócio
+- Apenas corrigir encoding
+- Reportar cada camada: problema encontrado + correção aplicada

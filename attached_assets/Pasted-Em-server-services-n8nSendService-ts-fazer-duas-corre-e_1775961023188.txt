@@ -1,0 +1,60 @@
+Em server/services/n8nSendService.ts, fazer duas correções:
+
+─────────────────────────────────────────
+CORREÇÃO 1 — sendList() deve enviar lista real, não converter para botões
+─────────────────────────────────────────
+
+Problema atual (linha ~535): sendList() redireciona para sendButtons() 
+truncando em 3 opções. Isso perde itens quando a lista tem >3 rows.
+
+Nova lógica para sendList() no canal Meta Cloud API (whatsapp_official):
+
+const payload = {
+  messaging_product: 'whatsapp',
+  recipient_type: 'individual',
+  to: telefone,
+  type: 'interactive',
+  interactive: {
+    type: 'list',
+    header: header ? { type: 'text', text: header } : undefined,
+    body: { text: body },
+    footer: footer ? { text: footer } : undefined,
+    action: {
+      button: buttonLabel || 'Ver opções',
+      sections: sections.map(section => ({
+        title: section.title || '',
+        rows: section.rows.map(row => ({
+          id: row.id,
+          title: row.title.substring(0, 24),      // limite Meta: 24 chars
+          description: row.description?.substring(0, 72) || undefined
+        })).slice(0, 10)  // limite Meta: 10 rows por section
+      })).slice(0, 10)    // limite Meta: 10 sections
+    }
+  }
+};
+
+Para canal Baileys (whatsapp): manter comportamento atual (já usa sendListMessage).
+
+REGRA: sendList() → sempre lista real (não converter para botões).
+sendButtons() → sempre botões (≤3 reply buttons, ou list se >3 como já está).
+
+─────────────────────────────────────────
+CORREÇÃO 2 — Atualizar versão da API Meta
+─────────────────────────────────────────
+
+Buscar todas as ocorrências de graph.facebook.com/v18.0 no codebase.
+Substituir por graph.facebook.com/v21.0
+
+Se existir uma constante ou env var GRAPH_API_VERSION, atualizar lá.
+Se estiver hardcoded em múltiplos lugares, extrair para constante no topo do arquivo:
+const GRAPH_API_VERSION = process.env.GRAPH_API_VERSION || 'v21.0';
+
+─────────────────────────────────────────
+VALIDAÇÃO após implementar:
+─────────────────────────────────────────
+
+Buscar no codebase todas as chamadas a sendList() — confirmar quantas existem 
+e que nenhuma vai ter opções truncadas silenciosamente.
+
+Listar: quantas chamadas a sendList() existem em ispAgentEngine.ts?
+Qual o número máximo de rows que alguma delas passa?

@@ -1,0 +1,108 @@
+Create the complete ISP (Internet Service Provider) module database schema for ChatBanana.
+
+## Context
+- Stack: PostgreSQL + Drizzle ORM, multi-tenant via workspace_id (UUID)
+- Follow exact same patterns as existing tables in the schema
+- All tables need workspace_id as foreign key to workspaces(id) on delete cascade
+- Do NOT modify any existing tables
+
+## Tables to create
+
+### 1. isp_configs
+Main ISP configuration per workspace — one row per workspace.
+
+Columns:
+- id: serial primary key
+- workspace_id: uuid not null references workspaces(id) on delete cascade — UNIQUE
+- company_name: text not null
+- sgp_base_url: text not null (e.g. "https://provedor.sgp.net.br/api/v2")
+- sgp_api_token: text not null
+- is_active: boolean not null default true
+
+-- Billing automation
+- billing_enabled: boolean not null default true
+- billing_days_before: integer not null default 3
+- billing_days_after: integer[] not null default [1, 3, 7]
+- billing_message_before: text
+- billing_message_after: text
+
+-- Onboarding
+- onboarding_enabled: boolean not null default true
+- onboarding_message: text
+- onboarding_delay_minutes: integer not null default 5
+
+-- Birthday
+- birthday_enabled: boolean not null default true
+- birthday_message: text
+- birthday_time: text not null default '09:00'
+
+-- Support
+- support_message_template: text
+- support_phone: text
+
+- created_at: timestamp default now()
+- updated_at: timestamp default now()
+
+### 2. isp_billing_logs
+Tracks every billing message sent — prevents duplicates.
+
+Columns:
+- id: serial primary key
+- workspace_id: uuid not null references workspaces(id) on delete cascade
+- sgp_customer_id: text not null
+- sgp_invoice_id: text not null
+- customer_phone: text not null
+- customer_name: text not null
+- invoice_due_date: date not null
+- invoice_amount: numeric(10,2) not null
+- message_type: text not null (enum: 'pre_due' | 'overdue_1' | 'overdue_3' | 'overdue_7' | 'custom')
+- days_offset: integer not null
+- whatsapp_sent: boolean not null default false
+- sent_at: timestamp
+- error_message: text
+- created_at: timestamp default now()
+
+Unique constraint: (workspace_id, sgp_invoice_id, message_type)
+
+### 3. isp_support_tickets
+Local record of support tickets opened via WhatsApp bot.
+
+Columns:
+- id: serial primary key
+- workspace_id: uuid not null references workspaces(id) on delete cascade
+- sgp_ticket_id: text
+- sgp_customer_id: text not null
+- customer_phone: text not null
+- customer_name: text not null
+- customer_cpf: text not null
+- ticket_type: text not null (enum: 'sem_sinal' | 'lentidao' | 'sem_wifi' | 'financeiro' | 'outros')
+- description: text not null
+- status: text not null default 'aberto' (enum: 'aberto' | 'em_andamento' | 'resolvido' | 'cancelado')
+- opened_at: timestamp default now()
+- resolved_at: timestamp
+- last_status_check: timestamp
+- created_at: timestamp default now()
+- updated_at: timestamp default now()
+
+### 4. isp_automation_logs
+Tracks ALL automated messages sent by ISP module (billing, onboarding, birthday) for reporting.
+
+Columns:
+- id: serial primary key
+- workspace_id: uuid not null references workspaces(id) on delete cascade
+- automation_type: text not null (enum: 'billing_pre_due' | 'billing_overdue' | 'onboarding' | 'birthday' | 'maintenance')
+- customer_phone: text not null
+- customer_name: text not null
+- message_preview: text (first 100 chars of message sent)
+- channel: text not null default 'whatsapp' (whatsapp | meta)
+- success: boolean not null default false
+- error_message: text
+- sent_at: timestamp default now()
+- workspace_id index for fast queries
+
+## Instructions
+1. Add all 4 tables to the existing Drizzle schema file
+2. Export TypeScript types for all tables following existing pattern
+3. Run migration with npm run db:push or equivalent
+4. Confirm all 4 tables created successfully
+5. Show the column names of the existing leads table (especially: name/nome field, phone/telefone field, status field, birthday/data_nascimento field) — this is needed for Prompts 4 and 5

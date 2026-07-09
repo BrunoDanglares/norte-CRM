@@ -1,0 +1,422 @@
+PROMPT 3 — Backend: Fluxo 3 (Story Mention reativação)
+Crie o arquivo `server/services/instagramStoryHandler.ts`:
+```ts
+import { db } from '../db';
+import { leads, instagramConnections } from '../../shared/schema';
+import { eq, and } from 'drizzle-orm';
+import { sendInstagramDM, upsertInstagramLead } from './instagramService';
+
+export async function processStoryMention(params: {
+  workspaceId: string;
+  connectionId: string;
+  accessToken: string;
+  igAccountUserId: string;
+  fromIgUserId: string;
+  fromIgUsername: string;
+  storyId: string;
+}) {
+  const { workspaceId, accessToken, igAccountUserId,
+    fromIgUserId, fromIgUsername } = params;
+
+  // Buscar ou criar lead
+  const lead = await upsertInstagramLead(workspaceId, fromIgUserId, fromIgUsername);
+
+  // Verificar se é ex-cliente (status cancelado no CRM)
+  const existingLead = await db
+    .select()
+    .from(leads as any)
+    .where(and(
+      eq((leads as any).workspaceId, workspaceId),
+      eq((leads as any).instagramId, fromIgUserId)
+    ))
+    .limit(1);
+
+  const isCancelledClient = existingLead[0]?.status === 'cancelado'
+    || existingLead[0]?.status === 'churned';
+
+  if (isCancelledClient) {
+    // Fluxo 3 — Reativação de ex-cliente
+    await sendInstagramDM(accessToken, igAccountUserId, fromIgUserId,
+      `Oi ${fromIgUsername}! Que saudade! 😄\n\n` +
+      `Vimos que você marcou a gente nos Stories e ficamos felizes!\n\n` +
+      `Temos planos novos bem melhores desde a última vez que você era nosso cliente. ` +
+      `Quer que eu te mostre as novidades? 🚀`
+    );
+
+    // Atualizar status para reengajando
+    await db.update(leads as any)
+      .set({
+        reengajando: true,
+        source: 'instagram_story',
+        status: 'reengajando',
+      })
+      .where(eq((leads as any).id, lead.id));
+
+  } else {
+    // Novo visitante — DM de boas-vindas
+    await sendInstagramDM(accessToken, igAccountUserId, fromIgUserId,
+      `Oi ${fromIgUsername}! Obrigado por marcar a gente nos Stories! 🙌\n\n` +
+      `Posso te ajudar com alguma coisa? ` +
+      `Se quiser saber sobre nossos planos de internet fibra, é só falar! 😊`
+    );
+
+    await db.update(leads as any)
+      .set({ source: 'instagram_story' })
+      .where(eq((leads as any).id, lead.id));
+  }
+
+  console.log(`[Story Mention] ${fromIgUsername} — ex-cliente: ${isCancelledClient}`);
+}
+```
+
+Agora no arquivo `server/routes/instagram.ts`, dentro do handler POST do webhook, adicione o processamento de story mentions. Procure o trecho que trata `entry.changes` e adicione após o bloco de comentários:
+```ts
+// Story mentions
+if (change.field === 'mention' && change.value) {
+  const { value } = change;
+  await processStoryMention({
+    workspaceId: conn.workspaceId,
+    connectionId: conn.id,
+    accessToken: conn.accessToken,
+    igAccountUserId: igUserId,
+    fromIgUserId: value.sender_id || value.from?.id || '',
+    fromIgUsername: value.from?.username || '',
+    storyId: value.media_id || '',
+  });
+}
+```
+
+Adicione o import no topo:
+```ts
+import { processStoryMention } from '../services/instagramStoryHandler';
+```
+
+Reporte se implementou com sucesso e se o campo `status` da tabela `leads` aceita os valores 'cancelado' e 'reengajando'.
+
+PROMPT 4 — Backend: cron job pós-instalação + lista de espera
+No arquivo de jobs agendados do projeto (onde ficam os node-cron jobs — provavelmente `server/jobs/` ou `server/schedulers/`), adicione dois novos jobs:
+
+**Job 1 — Processar disparos pós-instalação Instagram:**
+```ts
+import cron from 'node-cron';
+import { db } from '../db';
+import { disparosProgramados } from '../../shared/schema';
+import { eq, and, lte } from 'drizzle-orm';
+import { sendInstagramDM } from '../services/instagramService';
+
+// Roda a cada 5 minutos
+cron.schedule('*/5 * * * *', async () => {
+  const now = new Date();
+
+  const pendingDisparos = await db
+    .select()
+    .from(disparosProgramados as any)
+    .where(and(
+      eq((disparosProgramados as any).canal, 'instagram'),
+      eq((disparosProgramados as any).status, 'pendente'),
+      lte((disparosProgramados as any).agendadoPara, now)
+    ));
+
+  for (const disparo of pendingDisparos) {
+    try {
+      const meta = disparo.metadata as any;
+      if (!meta?.igUserId || !meta?.accessToken || !meta?.igAccountUserId) continue;
+
+      await sendInstagramDM(
+        meta.accessToken,
+        meta.igAccountUserId,
+        meta.igUserId,
+        disparo.mensagem
+      );
+
+      await db.update(disparosProgramados as any)
+        .set({ status: 'enviado', enviadoEm: new Date() })
+        .where(eq((disparosProgramados as any).id, disparo.id));
+
+      console.log(`[Pós-instalação IG] Enviado para ${meta.igUserId}`);
+    } catch (err) {
+      console.error('[Pós-instalação IG] Erro:', err);
+      await db.update(disparosProgramados as any)
+        .set({ status: 'erro' })
+        .where(eq((disparosProgramados as any).id, disparo.id));
+    }
+  }
+});
+```
+
+**Job 2 — Notificar lista de espera quando cobertura expandir:**
+```ts
+import { instagramWaitlist, leads } from '../../shared/schema';
+
+// Roda 1x por dia às 9h
+cron.schedule('0 9 * * *', async () => {
+  const { checkCoverageISP } = await import('../services/ispInstagramFlows');
+
+  // Buscar todos os leads em lista de espera ainda não notificados
+  const waiting = await db
+    .select()
+    .from(instagramWaitlist)
+    .where(eq(instagramWaitlist.notificado, false));
+
+  for (const entry of waiting) {
+    try {
+      const coverage = await checkCoverageISP(entry.workspaceId, entry.endereco);
+
+      if (coverage.hasCoverage) {
+        // Buscar conexão Instagram do workspace
+        const { getActiveInstagramConnection } = await import('../services/instagramService');
+        const conn = await getActiveInstagramConnection(entry.workspaceId);
+        if (!conn || !entry.igUserId) continue;
+
+        await sendInstagramDM(
+          conn.accessToken,
+          conn.igUserId,
+          entry.igUserId!,
+          `🎉 ${entry.igUsername ? `Oi ${entry.igUsername}! ` : ''}Novidade!\n\n` +
+          `Chegamos no seu bairro! Agora temos cobertura no seu endereço.\n` +
+          `Quer ver os planos disponíveis? Me chama aqui! 🚀`
+        );
+
+        await db.update(instagramWaitlist)
+          .set({ notificado: true })
+          .where(eq(instagramWaitlist.id, entry.id));
+
+        await db.update(leads as any)
+          .set({ coberturaStatus: 'disponivel', status: 'reengajando' })
+          .where(eq((leads as any).id, entry.leadId));
+
+        console.log(`[Lista de Espera] Notificado: ${entry.igUsername} — ${entry.endereco}`);
+      }
+    } catch (err) {
+      console.error('[Lista de Espera] Erro:', err);
+    }
+  }
+});
+```
+
+Adicione os imports necessários e registre os dois jobs no arquivo de inicialização do servidor.
+
+Reporte onde ficam os jobs existentes no projeto e se os imports de `disparosProgramados` e `instagramWaitlist` resolveram corretamente.
+
+PROMPT 5 — Frontend: templates de prospecção ISP no canvas
+Na tela de criação/seleção de automações (onde ficam os templates prontos), adicione a categoria "📱 Instagram ISP" com os 5 fluxos prontos para uso.
+
+Localize o array de templates (provavelmente em `client/src/components/automation/templates.ts` ou similar) e adicione:
+```ts
+// ── CATEGORIA: Instagram ISP ──────────────────────────────────────────────
+
+{
+  id: 'isp_comment_to_dm',
+  name: '💬 ISP — Post Promoção → Cobertura',
+  description: 'Lead comenta "QUERO" no post → recebe DM com consulta de cobertura automática',
+  category: 'Instagram ISP',
+  channel: 'instagram',
+  nodes: [
+    {
+      id: 'n1', type: 'instagram_comment_trigger',
+      data: {
+        keyword: 'QUERO',
+        matchType: 'contains',
+        publicReply: 'Oi {{username}}! Te mandei uma DM com as informações 📩',
+        dmMessage: 'Oi {{username}}! 👋 Vi seu interesse nos nossos planos de fibra!\n\nPara verificar cobertura, me diz: qual é a sua rua e bairro? 📍',
+      },
+      position: { x: 100, y: 50 },
+    },
+    {
+      id: 'n2', type: 'resposta_ia',
+      data: {
+        systemPrompt: 'Você é um consultor de vendas de provedor de internet. Seu objetivo é coletar o endereço completo (rua, número, bairro) do cliente para verificar cobertura de fibra óptica. Seja simpático, objetivo e profissional. Quando tiver o endereço, responda apenas: ENDERECO_COLETADO: [endereço completo]',
+      },
+      position: { x: 100, y: 200 },
+    },
+    {
+      id: 'n3', type: 'webhook',
+      data: {
+        url: '{{isp_coverage_webhook}}',
+        method: 'POST',
+        label: 'Consultar cobertura no ERP',
+      },
+      position: { x: 100, y: 350 },
+    },
+    {
+      id: 'n4', type: 'condicao',
+      data: {
+        field: 'coberturaStatus',
+        operator: 'equals',
+        value: 'disponivel',
+        label: 'Tem cobertura?',
+      },
+      position: { x: 100, y: 500 },
+    },
+    {
+      id: 'n5', type: 'enviar_mensagem',
+      data: { message: '✅ Temos cobertura no seu endereço!\n\nUm consultor vai entrar em contato agora para apresentar os planos disponíveis! 🚀' },
+      position: { x: -100, y: 650 },
+    },
+    {
+      id: 'n6', type: 'atribuir_agente',
+      data: { strategy: 'disponivel' },
+      position: { x: -100, y: 800 },
+    },
+    {
+      id: 'n7', type: 'enviar_mensagem',
+      data: { message: '😕 Ainda não chegamos na sua rua, mas você entrou para nossa lista de expansão!\n\nAssim que chegarmos no seu bairro, você é o primeiro a saber! 📍' },
+      position: { x: 300, y: 650 },
+    },
+    {
+      id: 'n8', type: 'marcar_lead',
+      data: { tags: ['sem_cobertura', 'lista_espera', 'instagram'] },
+      position: { x: 300, y: 800 },
+    },
+  ],
+  edges: [
+    { source: 'n1', target: 'n2' },
+    { source: 'n2', target: 'n3' },
+    { source: 'n3', target: 'n4' },
+    { source: 'n4', target: 'n5', label: 'Sim' },
+    { source: 'n4', target: 'n7', label: 'Não' },
+    { source: 'n5', target: 'n6' },
+    { source: 'n7', target: 'n8' },
+  ],
+},
+
+{
+  id: 'isp_indicacao_instagram',
+  name: '🤝 ISP — Campanha de Indicação',
+  description: 'Cliente indica amigo nos comentários → ambos recebem DM + lead criado com referral',
+  category: 'Instagram ISP',
+  channel: 'instagram',
+  nodes: [
+    {
+      id: 'n1', type: 'instagram_comment_trigger',
+      data: {
+        keyword: '',
+        matchType: 'any',
+        publicReply: 'Que boa indicação {{username}}! 🎁 Mandei uma surpresa na DM pra vocês!',
+        dmMessage: 'Oi {{username}}! Sua indicação foi registrada! 🎉\n\nSe seu amigo assinar um plano, você ganha 1 mês grátis na fatura! Vamos te avisar quando confirmar 😊',
+      },
+      position: { x: 100, y: 50 },
+    },
+    {
+      id: 'n2', type: 'marcar_lead',
+      data: { tags: ['indicador', 'instagram', 'campanha_indicacao'] },
+      position: { x: 100, y: 200 },
+    },
+    {
+      id: 'n3', type: 'atualizar_lead',
+      data: { fields: { source: 'indicacao_instagram', status: 'cliente_ativo' } },
+      position: { x: 100, y: 350 },
+    },
+  ],
+  edges: [
+    { source: 'n1', target: 'n2' },
+    { source: 'n2', target: 'n3' },
+  ],
+},
+
+{
+  id: 'isp_pos_instalacao',
+  name: '⭐ ISP — Pós-Instalação + Upsell',
+  description: 'Após instalação: coleta avaliação, detecta insatisfação e oferece upgrade de plano',
+  category: 'Instagram ISP',
+  channel: 'instagram',
+  nodes: [
+    {
+      id: 'n1', type: 'aguardar',
+      data: { delay: 3, unit: 'days', label: 'Aguardar 3 dias após instalação' },
+      position: { x: 100, y: 50 },
+    },
+    {
+      id: 'n2', type: 'enviar_mensagem',
+      data: { message: 'Oi! 😊 Como está a internet? Ficou tudo certo com a instalação?\n\nResposta rápida: 👍 Ótimo ou 👎 Tive problemas' },
+      position: { x: 100, y: 200 },
+    },
+    {
+      id: 'n3', type: 'condicao',
+      data: {
+        field: 'lastMessage',
+        operator: 'contains',
+        value: '👍',
+        label: 'Cliente satisfeito?',
+      },
+      position: { x: 100, y: 350 },
+    },
+    {
+      id: 'n4', type: 'enviar_mensagem',
+      data: { message: 'Que ótimo! 🚀 Sabia que você pode turbinar sua conexão?\n\nNosso plano 1GB está com condição especial pra quem já é cliente. Quer saber mais?' },
+      position: { x: -100, y: 500 },
+    },
+    {
+      id: 'n5', type: 'marcar_lead',
+      data: { tags: ['satisfeito', 'upsell_candidato'] },
+      position: { x: -100, y: 650 },
+    },
+    {
+      id: 'n6', type: 'atribuir_agente',
+      data: { strategy: 'disponivel', label: 'Suporte urgente' },
+      position: { x: 300, y: 500 },
+    },
+    {
+      id: 'n7', type: 'marcar_lead',
+      data: { tags: ['insatisfeito', 'suporte_urgente'] },
+      position: { x: 300, y: 650 },
+    },
+  ],
+  edges: [
+    { source: 'n1', target: 'n2' },
+    { source: 'n2', target: 'n3' },
+    { source: 'n3', target: 'n4', label: '👍 Satisfeito' },
+    { source: 'n3', target: 'n6', label: '👎 Problemas' },
+    { source: 'n4', target: 'n5' },
+    { source: 'n6', target: 'n7' },
+  ],
+},
+
+{
+  id: 'isp_story_reativacao',
+  name: '🔄 ISP — Reativação via Story Mention',
+  description: 'Ex-cliente marca nos Stories → recebe DM personalizada de reativação',
+  category: 'Instagram ISP',
+  channel: 'instagram',
+  nodes: [
+    {
+      id: 'n1', type: 'instagram_story_trigger',
+      data: { label: 'Story Mention recebido' },
+      position: { x: 100, y: 50 },
+    },
+    {
+      id: 'n2', type: 'condicao',
+      data: {
+        field: 'status',
+        operator: 'equals',
+        value: 'cancelado',
+        label: 'É ex-cliente?',
+      },
+      position: { x: 100, y: 200 },
+    },
+    {
+      id: 'n3', type: 'enviar_mensagem',
+      data: { message: 'Oi! Que saudade! 😄\n\nVimos que você marcou a gente e ficamos felizes!\n\nTemos planos muito melhores desde a última vez. Quer dar uma olhada nas novidades? 🚀' },
+      position: { x: -100, y: 350 },
+    },
+    {
+      id: 'n4', type: 'atualizar_lead',
+      data: { fields: { status: 'reengajando', reengajando: true } },
+      position: { x: -100, y: 500 },
+    },
+    {
+      id: 'n5', type: 'enviar_mensagem',
+      data: { message: 'Oi! Obrigado por marcar a gente nos Stories! 🙌\n\nSe quiser saber sobre nossos planos de fibra óptica, é só falar! Estou aqui pra ajudar 😊' },
+      position: { x: 300, y: 350 },
+    },
+  ],
+  edges: [
+    { source: 'n1', target: 'n2' },
+    { source: 'n2', target: 'n3', label: 'Sim — ex-cliente' },
+    { source: 'n2', target: 'n5', label: 'Não — novo visitante' },
+    { source: 'n3', target: 'n4' },
+  ],
+},
+```
+
+Reporte onde ficam os templates existentes no projeto e se a categoria "Instagram ISP" apareceu corretamente na tela de criação de automações.

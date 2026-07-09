@@ -1,0 +1,74 @@
+PROMPT 3 — Frontend (Integrar UI existente)Preciso integrar o componente conexoes.tsx (que já existe com
+1101 linhas de UI visual) com a API real do backend.
+
+NÃO altere o layout, estilos ou estrutura visual existente.
+Faça APENAS as integrações com a API, substituindo os dados mock.
+
+---
+
+1. CARREGAR CONEXÕES AO MONTAR
+
+Substitua os dados mock iniciais por uma chamada real:
+- GET /api/conexoes ao montar o componente
+- Popule o estado local com os dados retornados
+- Mostre loading enquanto carrega
+- Se falhar, use os dados mock como fallback
+
+2. EXIBIR STATUS REAL
+
+Localize onde o status é exibido (connected/disconnected/etc).
+Para a conexão WhatsApp selecionada, chame periodicamente
+GET /api/conexoes/:id/status a cada 10 segundos para atualizar.
+Pare o polling quando o status for 'connected'.
+
+3. FLUXO DO QR CODE
+
+Localize o wizard/modal de configuração do WhatsApp com QR Code.
+Quando o usuário selecionar o método "QR Code" e clicar para conectar:
+
+a. Mude o status visual para "Aguardando QR Code..."
+b. Chame GET /api/conexoes/:id/qrcode
+c. Exiba a imagem do QR Code retornada (base64) na UI
+   Use: <img src={`data:image/png;base64,${qrcode}`} />
+d. Mostre contador regressivo de 60 segundos
+e. Inicie polling a cada 3 segundos em GET /api/conexoes/:id/status
+f. Quando status retornar 'connected':
+   - Pare o polling
+   - Feche o modal/wizard
+   - Mostre notificação de sucesso: "✅ WhatsApp conectado com sucesso!"
+   - Atualize o card da conexão com status verde e número conectado
+g. Se o contador zerar sem conectar, mostre botão "Gerar novo QR Code"
+
+4. ENVIAR MENSAGEM DE TESTE
+
+Se existir um campo/botão para testar o envio na UI:
+- Chame POST /api/conexoes/:id/send com { phone, message }
+- Mostre resultado de sucesso ou erro
+
+5. DESCONECTAR
+
+Localize o botão de desconectar na UI.
+Quando clicado, após confirmação:
+- Chame POST /api/conexoes/:id/disconnect
+- Atualize o status visual para 'disconnected'
+- Limpe o número exibido
+
+6. CRIAR NOVA CONEXÃO
+
+Localize onde o usuário pode adicionar nova conexão.
+Quando confirmar:
+- Chame POST /api/conexoes com { nome, tipo: 'whatsapp', provider: 'zapi' }
+- Adicione a nova conexão na lista
+
+7. LIMITE DO PLANO
+
+Após carregar as conexões, verifique o limite:
+- Plano Starter/Professional: máximo 1 conexão WhatsApp
+- Plano Business: máximo 2 conexões WhatsApp
+- Se atingiu o limite, desabilite o botão de adicionar nova conexão
+- Mostre badge: "1/1 conexões usadas" ou "2/2 conexões usadas"
+
+---
+
+Use apiFetch (ou o método de chamada já configurado no projeto)
+para todas as requisições — garante que o token JWT vai no header.

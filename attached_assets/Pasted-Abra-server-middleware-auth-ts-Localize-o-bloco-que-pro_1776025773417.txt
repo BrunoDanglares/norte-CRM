@@ -1,0 +1,57 @@
+Abra server/middleware/auth.ts.
+
+Localize o bloco que processa o service token (x-n8n-token ou x-service-token).
+Deve ter uma estrutura assim:
+
+  const serviceToken = req.headers['x-n8n-token'] || req.headers['x-service-token'];
+  if (serviceToken && serviceToken === process.env.N8N_SERVICE_TOKEN) {
+    const workspaceId = req.body?.workspace_id || req.query?.workspace_id;
+    (req as any).user = { id: 0, role: 'service', workspaceId };
+    return next();
+  }
+
+CORREÇÃO — validar que o workspace_id enviado existe no banco:
+
+Substitua o bloco pelo código abaixo:
+
+  const serviceToken = req.headers['x-n8n-token'] || req.headers['x-service-token'];
+  if (serviceToken && serviceToken === process.env.N8N_SERVICE_TOKEN) {
+    const workspaceId = req.body?.workspace_id || req.query?.workspace_id;
+
+    if (!workspaceId) {
+      return res.status(400).json({ error: 'workspace_id obrigatório para service token' });
+    }
+
+    // Valida que o workspace existe no banco
+    const workspace = await db
+      .select({ id: workspaces.id })
+      .from(workspaces)
+      .where(eq(workspaces.id, workspaceId))
+      .limit(1);
+
+    if (!workspace.length) {
+      console.warn('[auth] service token com workspace_id inválido:', workspaceId);
+      return res.status(401).json({ error: 'workspace_id inválido' });
+    }
+
+    (req as any).user = {
+      id: 0,
+      role: 'service',
+      workspaceId,
+      nome: 'Service Token',
+    };
+    return next();
+  }
+
+ATENÇÃO:
+- A função do middleware precisa ser async se ainda não for — adicione async
+- Importe db, workspaces e eq do Drizzle se ainda não estiverem importados
+  no arquivo (use os mesmos imports já existentes no projeto)
+- Não altere nenhum outro bloco do middleware — só o bloco do service token
+
+Confirme:
+1. Middleware agora é async
+2. workspace_id ausente retorna 400
+3. workspace_id inexistente no banco retorna 401 com log de warning
+4. workspace válido segue normalmente
+5. Servidor sem erros de TypeScript

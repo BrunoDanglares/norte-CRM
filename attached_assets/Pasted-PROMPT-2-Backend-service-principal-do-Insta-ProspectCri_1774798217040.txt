@@ -1,0 +1,234 @@
+PROMPT 2 — Backend: service principal do Insta ProspectCrie o arquivo `server/services/instaProspectService.ts`:
+```tsimport { db } from '../db';
+import { instaProspectFlows, instaProspectSessions, leads } from '../../shared/schema';
+import { eq, and } from 'drizzle-orm';
+import { sendInstagramDM, replyInstagramComment, upsertInstagramLead } from './instagramService';const OPENAI_API_KEY = process.env.OPENAI_API_KEY;// ─── Chamar GPT-4o-mini com histórico da conversa ────────────────────────────
+async function callAI(systemPrompt: string, history: any[], newMessage: string): Promise<string> {
+const messages = [
+{ role: 'system', content: systemPrompt },
+...history.map((h: any) => ({ role: h.role, content: h.content })),
+{ role: 'user', content: newMessage },
+];const res = await fetch('https://api.openai.com/v1/chat/completions', {
+method: 'POST',
+headers: {
+'Content-Type': 'application/json',
+Authorization: Bearer ${OPENAI_API_KEY},
+},
+body: JSON.stringify({
+model: 'gpt-4o-mini',
+messages,
+max_tokens: 300,
+temperature: 0.7,
+}),
+});const data = await res.json();
+return data.choices?.[0]?.message?.content?.trim() || 'Desculpe, tente novamente em instantes.';
+}// ─── Processar DM recebida (roteador principal) ──────────────────────────────
+export async function handleInstaProspectDM(params: {
+workspaceId: string;
+connectionId: string;
+accessToken: string;
+igAccountUserId: string;
+senderIgUserId: string;
+senderIgUsername: string;
+messageText: string;
+}) {
+const { workspaceId, accessToken, igAccountUserId,
+senderIgUserId, senderIgUsername, messageText } = params;// Verificar se já existe sessão ativa para este usuário
+const [existingSession] = await db
+.select()
+.from(instaProspectSessions)
+.where(and(
+eq(instaProspectSessions.workspaceId, workspaceId),
+eq(instaProspectSessions.igUserId, senderIgUserId),
+eq(instaProspectSessions.status, 'em_andamento')
+))
+.limit(1);if (existingSession) {
+// Continuar conversa existente com IA
+await continueAIConversation({
+session: existingSession,
+accessToken,
+igAccountUserId,
+newMessage: messageText,
+});
+return;
+}// Buscar fluxo ativo do tipo dm_received que corresponde à mensagem
+const activeFlows = await db
+.select()
+.from(instaProspectFlows)
+.where(and(
+eq(instaProspectFlows.workspaceId, workspaceId),
+eq(instaProspectFlows.ativo, true),
+eq(instaProspectFlows.tipo, 'dm_received')
+));const matchedFlow = activeFlows.find(flow => {
+if (!flow.keyword || flow.keywordMatchType === 'any') return true;
+const text = messageText.toLowerCase();
+const kw = flow.keyword.toLowerCase();
+if (flow.keywordMatchType === 'exact') return text === kw;
+return text.includes(kw);
+});if (!matchedFlow) return;// Criar/atualizar lead
+const lead = await upsertInstagramLead(workspaceId, senderIgUserId, senderIgUsername);// Criar sessão
+const [session] = await db.insert(instaProspectSessions).values({
+workspaceId,
+flowId: matchedFlow.id,
+leadId: lead.id,
+igUserId: senderIgUserId,
+igUsername: senderIgUsername,
+status: 'em_andamento',
+triggerType: 'dm',
+triggerContent: messageText,
+conversationHistory: [],
+}).returning();// Enviar primeira mensagem configurada (se houver)
+if (matchedFlow.firstMessage) {
+const firstMsg = matchedFlow.firstMessage
+.replace('{{username}}', senderIgUsername || 'você');
+await sendInstagramDM(accessToken, igAccountUserId, senderIgUserId, firstMsg);
+}// IA responde logo em seguida
+await continueAIConversation({
+session,
+accessToken,
+igAccountUserId,
+newMessage: messageText,
+flow: matchedFlow,
+});// Atualizar stats do fluxo
+await db.update(instaProspectFlows)
+.set({ totalTriggers: (matchedFlow.totalTriggers || 0) + 1 })
+.where(eq(instaProspectFlows.id, matchedFlow.id));
+}// ─── Continuar conversa com IA ───────────────────────────────────────────────
+async function continueAIConversation(params: {
+session: typeof instaProspectSessions.$inferSelect;
+accessToken: string;
+igAccountUserId: string;
+newMessage: string;
+flow?: typeof instaProspectFlows.$inferSelect;
+}) {
+const { session, accessToken, igAccountUserId, newMessage } = params;// Buscar fluxo se não veio no parâmetro
+const flow = params.flow || await db.query.instaProspectFlows?.findFirst({
+where: (t, { eq }) => eq(t.id, session.flowId),
+});if (!flow) return;const history = (session.conversationHistory as any[]) || [];// Chamar IA
+const aiResponse = await callAI(flow.aiSystemPrompt, history, newMessage);// Enviar resposta ao usuário
+await sendInstagramDM(accessToken, igAccountUserId, session.igUserId, aiResponse);// Atualizar histórico na sessão
+const updatedHistory = [
+...history,
+{ role: 'user', content: newMessage, timestamp: new Date().toISOString() },
+{ role: 'assistant', content: aiResponse, timestamp: new Date().toISOString() },
+];// Verificar se a IA sinalizou qualificação concluída
+const isQualified = aiResponse.includes('LEAD_QUALIFICADO:') || updatedHistory.length >= 10;await db.update(instaProspectSessions)
+.set({
+conversationHistory: updatedHistory,
+status: isQualified ? 'qualificado' : 'em_andamento',
+updatedAt: new Date(),
+})
+.where(eq(instaProspectSessions.id, session.id));// Se qualificado: executar ação final
+if (isQualified && flow.finalAction === 'atribuir_agente') {
+await handleQualifiedLead({ session, flow, accessToken, igAccountUserId });
+}
+}// ─── Ação final após qualificação ───────────────────────────────────────────
+async function handleQualifiedLead(params: {
+session: typeof instaProspectSessions.$inferSelect;
+flow: typeof instaProspectFlows.$inferSelect;
+accessToken: string;
+igAccountUserId: string;
+}) {
+const { session, flow, accessToken, igAccountUserId } = params;// Aplicar tags automáticas no lead
+if (session.leadId && flow.autoTags && (flow.autoTags as string[]).length > 0) {
+const { leads: leadsTable, tags } = await import('../../shared/schema');
+// Inserir tags via lógica existente do projeto
+}// Avisar o usuário que um humano vai continuar
+await sendInstagramDM(accessToken, igAccountUserId, session.igUserId,
+'✅ Perfeito! Registrei tudo aqui. Um dos nossos consultores vai continuar o atendimento em breve. Obrigado! 😊'
+);// Atualizar stats
+await db.update(instaProspectFlows)
+.set({ totalLeads: (flow.totalLeads || 0) + 1 })
+.where(eq(instaProspectFlows.id, flow.id));
+}// ─── Iniciar fluxo via comentário ────────────────────────────────────────────
+export async function handleInstaProspectComment(params: {
+workspaceId: string;
+connectionId: string;
+accessToken: string;
+igAccountUserId: string;
+commentId: string;
+postId: string;
+fromIgUserId: string;
+fromIgUsername: string;
+commentText: string;
+}) {
+const { workspaceId, accessToken, igAccountUserId,
+commentId, postId, fromIgUserId, fromIgUsername, commentText } = params;// Buscar fluxo comment_to_dm ativo que bate com o comentário
+const activeFlows = await db
+.select()
+.from(instaProspectFlows)
+.where(and(
+eq(instaProspectFlows.workspaceId, workspaceId),
+eq(instaProspectFlows.ativo, true),
+eq(instaProspectFlows.tipo, 'comment_to_dm')
+));const matchedFlow = activeFlows.find(flow => {
+if (flow.postId && flow.postId !== postId) return false;
+if (!flow.keyword || flow.keywordMatchType === 'any') return true;
+const text = commentText.toLowerCase();
+const kw = (flow.keyword || '').toLowerCase();
+if (flow.keywordMatchType === 'exact') return text === kw;
+return text.includes(kw);
+});if (!matchedFlow) return;// Responder publicamente no comentário
+if (matchedFlow.publicReply) {
+const reply = matchedFlow.publicReply.replace('{{username}}', @${fromIgUsername});
+await replyInstagramComment(accessToken, commentId, reply);
+}// Criar lead e abrir sessão de DM
+const lead = await upsertInstagramLead(workspaceId, fromIgUserId, fromIgUsername);const [session] = await db.insert(instaProspectSessions).values({
+workspaceId,
+flowId: matchedFlow.id,
+leadId: lead.id,
+igUserId: fromIgUserId,
+igUsername: fromIgUsername,
+status: 'em_andamento',
+triggerType: 'comment',
+triggerContent: commentText,
+conversationHistory: [],
+}).returning();// Enviar primeira DM
+const firstMsg = (matchedFlow.firstMessage || 'Oi {{username}}! Vi seu comentário 😊 Pode me contar mais sobre o que você precisa?')
+.replace('{{username}}', fromIgUsername);await sendInstagramDM(accessToken, igAccountUserId, fromIgUserId, firstMsg);// IA entra em seguida com contexto do comentário
+await continueAIConversation({
+session,
+accessToken,
+igAccountUserId,
+newMessage: [Contexto: usuário comentou "${commentText}" em um post],
+flow: matchedFlow,
+});await db.update(instaProspectFlows)
+.set({ totalTriggers: (matchedFlow.totalTriggers || 0) + 1 })
+.where(eq(instaProspectFlows.id, matchedFlow.id));
+}// ─── Story mention ────────────────────────────────────────────────────────────
+export async function handleInstaProspectStory(params: {
+workspaceId: string;
+accessToken: string;
+igAccountUserId: string;
+fromIgUserId: string;
+fromIgUsername: string;
+}) {
+const { workspaceId, accessToken, igAccountUserId, fromIgUserId, fromIgUsername } = params;const [flow] = await db
+.select()
+.from(instaProspectFlows)
+.where(and(
+eq(instaProspectFlows.workspaceId, workspaceId),
+eq(instaProspectFlows.ativo, true),
+eq(instaProspectFlows.tipo, 'story_mention')
+))
+.limit(1);if (!flow) return;const lead = await upsertInstagramLead(workspaceId, fromIgUserId, fromIgUsername);const [session] = await db.insert(instaProspectSessions).values({
+workspaceId,
+flowId: flow.id,
+leadId: lead.id,
+igUserId: fromIgUserId,
+igUsername: fromIgUsername,
+status: 'em_andamento',
+triggerType: 'story',
+triggerContent: 'story_mention',
+conversationHistory: [],
+}).returning();const firstMsg = (flow.firstMessage || 'Oi {{username}}! Obrigado por marcar a gente nos Stories 🙌 Posso te ajudar com alguma coisa?')
+.replace('{{username}}', fromIgUsername);await sendInstagramDM(accessToken, igAccountUserId, fromIgUserId, firstMsg);await continueAIConversation({
+session,
+accessToken,
+igAccountUserId,
+newMessage: '[Contexto: usuário mencionou o perfil nos Stories]',
+flow,
+});
+}
+
+Reporte se os imports de `instagramService` resolveram corretamente — especialmente `upsertInstagramLead` e `replyInstagramComment`.

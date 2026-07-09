@@ -1,0 +1,120 @@
+PROMPT 2 — Backend (Z-API + Rotas)Preciso criar as rotas da API para o módulo de Conexões
+integrando com a Z-API (API não oficial do WhatsApp).
+
+CREDENCIAIS — leia das variáveis de ambiente:
+- ZAPI_INSTANCE_ID = process.env.ZAPI_INSTANCE_ID
+- ZAPI_TOKEN = process.env.ZAPI_TOKEN
+- ZAPI_BASE_URL = process.env.ZAPI_BASE_URL || "https://api.z-api.io"
+
+A URL base de todas as chamadas Z-API é:
+https://api.z-api.io/instances/{INSTANCE_ID}/token/{TOKEN}
+
+---
+
+CRIE um helper zapiFetch para chamadas à Z-API:
+
+async function zapiFetch(path: string, options: any = {}) {
+  const instanceId = process.env.ZAPI_INSTANCE_ID;
+  const token = process.env.ZAPI_TOKEN;
+  const base = process.env.ZAPI_BASE_URL || "https://api.z-api.io";
+  const url = `${base}/instances/${instanceId}/token/${token}${path}`;
+  const res = await fetch(url, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      "Client-Token": token,
+      ...options.headers,
+    },
+  });
+  return res.json();
+}
+
+---
+
+ROTAS A CRIAR — todas protegidas com middleware requireAuth,
+exceto o webhook que é público:
+
+GET /api/conexoes
+- Lista todas as conexões do banco
+- Para cada conexão com status 'connected', faz GET /status na Z-API
+  e atualiza o campo status no banco se mudou
+- Resposta: { ok: true, data: [...] }
+
+POST /api/conexoes
+- Cria nova conexão no banco
+- Body: { nome, tipo, provider }
+- Verifica limite do plano (1 conexão para Starter e Professional,
+  2 para Business) — se atingiu retorna erro 403
+- Resposta: { ok: true, data: conexaoCreated }
+
+GET /api/conexoes/:id/status
+- Chama Z-API: GET /status
+- Atualiza campo status no banco com resultado
+- Retorna: { ok: true, data: { status, numero, connected, battery } }
+
+GET /api/conexoes/:id/qrcode
+- Chama Z-API: GET /qr-code/image
+- Salva o QR code base64 no campo qr_code do banco
+- Salva qr_expires_at = NOW() + 60 segundos
+- Retorna: { ok: true, data: { qrcode: "base64string", expires_at } }
+- Se a instância já estiver conectada, retorna:
+  { ok: false, error: "Número já está conectado" }
+
+POST /api/conexoes/:id/disconnect
+- Chama Z-API: POST /disconnect
+- Atualiza status no banco para 'disconnected'
+- Limpa qr_code e numero
+- Retorna: { ok: true, message: "Desconectado com sucesso" }
+
+POST /api/conexoes/:id/send
+- Envia mensagem via Z-API
+- Body: { phone, message }
+- Formata phone: remove tudo que não for número,
+  se não começar com 55 adiciona 55 na frente
+- Chama Z-API: POST /send-text com body:
+  { phone: numeroFormatado, message }
+- Salva na tabela mensagens_log com direction 'outbound'
+- Retorna: { ok: true, data: { messageId, status: 'sent' } }
+
+DELETE /api/conexoes/:id
+- Remove a conexão do banco
+- Tenta desconectar na Z-API antes
+- Retorna: { ok: true, message: "Conexão removida" }
+
+---
+
+ROTA DE WEBHOOK — pública, sem JWT:
+
+POST /api/webhook/zapi
+- Recebe eventos da Z-API em tempo real
+- Lê o body do request (payload JSON)
+- Identifica o tipo de evento pelo campo `type` ou `event`:
+  - Se type === 'ReceivedCallback' ou similar (mensagem recebida):
+    1. Extrai: phone (remetente), message (texto), messageId
+    2. Formata phone removendo @s.whatsapp.net se existir
+    3. Busca se existe conversa ativa para esse phone no banco
+    4. Se não existir conversa:
+       a. Verifica se existe lead com esse telefone
+       b. Se não existir lead: CRIA um novo lead com:
+          { nome: phone, telefone: phone, canal: 'whatsapp',
+            status: 'NOVO', origem: 'whatsapp_inbound' }
+       c. Cria nova conversa associada ao lead
+    5. Salva a mensagem na tabela de messages/conversations
+    6. Salva na tabela mensagens_log com direction 'inbound'
+  
+  - Se type === 'DeliveryCallback' (confirmação de entrega):
+    Atualiza status da mensagem para 'delivered'
+  
+  - Se type === 'ReadCallback' (mensagem lida):
+    Atualiza status da mensagem para 'read'
+
+- Sempre retorna status 200 com { received: true }
+  (Z-API precisa de 200 para não reenviar)
+
+---
+
+Registre os routers:
+- /api/conexoes
+- /api/webhook/zapi (público, sem auth)
+
+Confirme ao final todas as rotas criadas e funcionando.

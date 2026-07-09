@@ -1,0 +1,57 @@
+PROMPT 5 — Validação Final
+Faça a validação completa de toda a integração N8n implementada.
+
+1. WEBHOOKS BIDIRECIONAIS:
+   [ ] POST /api/webhooks cria endpoint no banco
+   [ ] Criar um lead dispara dispatchWebhook("lead.created", ...)
+   [ ] webhook_logs registra o disparo com sucesso ou erro
+   [ ] POST /api/webhooks/:id/testar faz chamada HTTP real para a URL
+   [ ] GET /api/webhooks/:id/logs retorna logs corretamente
+   [ ] DELETE /api/webhooks/:id/logs limpa os logs
+
+2. API TOKENS:
+   [ ] POST /api/tokens gera token de 64 chars e retorna apenas uma vez
+   [ ] token_hash é salvo no banco (não o token puro)
+   [ ] token_preview mostra só os primeiros 8 chars
+   [ ] Header X-FlowCRM-Token: [token] autentica corretamente
+   [ ] Token expirado retorna 401
+   [ ] Token revogado retorna 401
+
+3. ENDPOINTS N8N:
+   [ ] POST /api/n8n/lead cria lead no banco e dispara webhook
+   [ ] POST /api/n8n/mensagem tenta enviar via WhatsApp
+   [ ] POST /api/n8n/lead/:id/mover atualiza status no banco
+   [ ] GET /api/n8n/leads retorna lista com filtros funcionando
+   [ ] Todas as rotas /api/n8n retornam 401 sem X-FlowCRM-Token
+
+4. PROMPTS DE IA:
+   [ ] GET /api/ia/prompts retorna os 3 prompts padrão criados
+   [ ] GET /api/ia/prompts/atendimento retorna o prompt correto
+   [ ] PUT /api/ia/prompts/:id salva o novo prompt no banco
+   [ ] PUT cria entrada em ia_prompt_historico antes de atualizar
+   [ ] PUT incrementa campo versao
+   [ ] GET /api/ia/prompts/:id/historico retorna versões anteriores
+   [ ] GET /api/ia/prompts/atendimento com X-FlowCRM-Token funciona
+     (rota que o N8n usa — deve aceitar token além de JWT)
+
+5. FRONTEND:
+   [ ] Modal N8n na página de Integrações abre corretamente
+   [ ] Aba Conexão salva a URL do webhook via API
+   [ ] Aba Eventos salva eventos selecionados via API
+   [ ] Aba API Tokens lista, gera e revoga tokens
+   [ ] Token gerado exibe modal de alerta com token completo
+   [ ] Botão copiar funciona no modal do token
+   [ ] Aba Logs exibe disparos recentes
+   [ ] Página/seção de Prompts de IA carrega os 3 prompts padrão
+   [ ] Editar prompt salva via PUT e mostra notificação de versão
+   [ ] Histórico de versões lista e permite restaurar
+
+6. FLUXO COMPLETO PONTA A PONTA:
+   [ ] Simule o fluxo real do N8n:
+       a. N8n faz GET /api/ia/prompts/atendimento com o token
+       b. Retorna o prompt atual do banco
+       c. Altere o prompt pelo CRM (PUT /api/ia/prompts/:id)
+       d. N8n faz GET novamente → confirme que retorna o novo prompt
+       e. Isso valida que mudanças no CRM chegam ao N8n sem tocar no fluxo
+
+Relate cada item verificado e o que foi corrigido.

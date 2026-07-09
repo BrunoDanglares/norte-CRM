@@ -1,0 +1,148 @@
+Crie a página completa de Protocolos no frontend do ChatBanana.
+
+--- ARQUIVO 1: client/src/pages/protocolos.tsx ---
+
+Crie a página seguindo exatamente o padrão visual do projeto:
+- Background: #0f0c1a, cards: #1c1830, accent: #8b5cf6
+- Usar apiFetch para todas as chamadas (já existente no projeto)
+- Usar os componentes shadcn/ui já instalados (Card, Badge, Button, Input, Select)
+
+A página deve ter:
+
+1. HEADER com título "Protocolos de Atendimento" e botão "+ Novo Protocolo"
+   que abre um modal de criação (ver abaixo)
+
+2. CARDS DE ESTATÍSTICAS (4 cards em grid):
+   Buscar de GET /api/protocols/stats
+   - Total abertos (cor: #8b5cf6)
+   - SLA em risco/violado (cor: #EF9F27)
+   - Tempo médio resolução (cor: #5DCAA5) — mostrar "–" se não houver dados
+   - CSAT médio (cor: #8b5cf6) — mostrar "–" se não houver dados
+
+3. FILTROS em linha horizontal:
+   - Input de busca (placeholder: "Buscar por número, título ou contato...")
+   - Select de Status: Todos | Aberto | Em andamento | Aguardando cliente | Resolvido | Fechado
+   - Select de Categoria: Todas | Suporte técnico | Financeiro | Comercial | Geral
+   - Select de Prioridade: Todas | Urgente | Alta | Média | Baixa
+   - Chip toggle "Apenas SLA violado"
+
+4. TABELA de protocolos com colunas:
+   Número | Contato | Título | Categoria | Status | Prioridade | SLA | Agente | Aberto há
+
+   Para cada linha:
+   - Número: texto roxo (#8b5cf6), fonte mono, ex: "202603310001"
+   - Status: Badge colorido:
+     * aberto → azul (#4CB8F0, bg #1a2f4a)
+     * em_andamento → roxo (#8b5cf6, bg #2d2050)
+     * aguardando_cliente → amarelo (#EF9F27, bg #3a2e10)
+     * resolvido → verde (#5DCAA5, bg #0f2e23)
+     * fechado → cinza (#7c6fa0, bg #261f3a)
+   - Prioridade: ponto colorido + label
+     * urgente → #E24B4A
+     * alta → #EF9F27
+     * media → #5DCAA5
+     * baixa → #7c6fa0
+   - SLA: barra de progresso horizontal (60px wide, 4px height)
+     * Verde se < 60% do prazo usado
+     * Amarelo se 60-85%
+     * Vermelho se > 85% ou violado
+     * Se resolvido/fechado: barra verde completa
+   - Agente: avatar circular com iniciais (22px) + nome
+   - "Aberto há": calcular a partir de createdAt (ex: "2h", "1 dia", "3 dias")
+   - Clicar na linha abre o modal de detalhes (ver Prompt 6)
+
+5. PAGINAÇÃO simples no rodapé: "Mostrando X de Y protocolos" + botões Anterior/Próximo
+
+6. MODAL DE CRIAÇÃO (estado local, sem arquivo separado):
+   Campos:
+   - Título (input text, obrigatório)
+   - Categoria (select: suporte_tecnico, financeiro, comercial, geral)
+   - Prioridade (select: urgente, alta, media, baixa) — default: media
+   - Descrição (textarea, opcional)
+   - Conversa vinculada (input de busca por número de telefone — opcional)
+   - Contato vinculado (input de busca por nome — opcional)
+   
+   Botão "Criar Protocolo" → POST /api/protocols com os dados
+   Após criar: fechar modal, recarregar lista, mostrar toast de sucesso com o número gerado
+
+--- ARQUIVO 2: Atualização do router ---
+
+No arquivo client/src/App.tsx (ou onde estão as rotas do React Router),
+adicione a rota:
+<Route path="/protocolos" element={<ProtocolosPage />} />
+
+Importe: import ProtocolosPage from "@/pages/protocolos"
+
+--- ARQUIVO 3: Atualização do Sidebar ---
+
+No componente de sidebar (provavelmente client/src/components/Sidebar.tsx 
+ou similar), adicione o item de menu para Protocolos.
+
+Procure onde estão os outros itens de menu (Inbox, Leads, Pipeline, etc.)
+e adicione:
+{
+  icon: ClipboardList,  // import de lucide-react
+  label: "Protocolos",
+  path: "/protocolos",
+}
+
+Na posição após "Inbox" ou "Atendimento" — faz sentido contextualmente.
+
+--- HOOKS E ESTADO ---
+
+Use useState e useEffect para:
+- protocols: lista de protocolos
+- stats: objeto de estatísticas
+- loading: boolean
+- filtros: objeto com todos os filtros ativos
+- paginação: página atual (default 1), total
+
+Use useCallback para a função fetchProtocols que monta a query string
+com os filtros ativos e chama GET /api/protocols.
+
+Chamar fetchProtocols sempre que os filtros mudarem (useEffect com deps).
+
+--- TEMPO RELATIVO ---
+
+Implemente a função local timeAgo(date: string): string que:
+- < 60 min: "Xmin"
+- < 24h: "Xh"
+- < 7 dias: "X dias"
+- >= 7 dias: formatar como "DD/MM"
+
+--- TIPAGEM ---
+
+Defina as interfaces locais no topo do arquivo:
+interface Protocol {
+  id: string
+  numero: string
+  titulo: string
+  descricao?: string
+  categoria: string
+  status: string
+  prioridade: string
+  agenteId?: number
+  agenteNome?: string  // enriquecido pela rota se possível
+  slaPrazo?: string
+  slaViolado: boolean
+  csatNota?: number
+  conversationId?: number
+  contactId?: number
+  tags: string[]
+  createdAt: string
+  updatedAt: string
+}
+
+interface ProtocolStats {
+  total: number
+  abertos: number
+  emAndamento: number
+  aguardando: number
+  resolvidos: number
+  fechados: number
+  slaViolados: number
+  csatMedia: number | null
+}
+
+Confirme quando a página estiver criada e funcionando, listando os arquivos
+criados/modificados.

@@ -1,0 +1,51 @@
+Audit the current WhatsApp channel implementation in ChatBanana.
+Do NOT change anything. Only report findings.
+
+Map the complete implementation of all three WhatsApp channels:
+
+## 1. WhatsApp Web.js
+- Where is it initialized? (file and line)
+- How is the QR code generated and served to the frontend?
+- Where are incoming messages received? (event handler)
+- Where are outgoing messages sent? (send function)
+- How is the Web.js instance stored per workspace?
+- How is it referenced in the webhook/message processor?
+- Does it pass through channel-router or call Web.js directly?
+- What happens when the connection drops? Is there reconnect logic?
+- List all files that import or reference whatsapp-web.js or wweb
+
+## 2. Z-API
+- Where are outgoing messages sent via Z-API? (file and line)
+- Where does the Z-API webhook receive incoming messages?
+- How are Z-API credentials stored per workspace?
+- Does it pass through channel-router?
+- List all files that reference Z-API
+
+## 3. Meta Cloud API
+- Where are outgoing messages sent? (meta-whatsapp.ts sendTextMessage etc.)
+- Where does the Meta webhook receive messages? (webhook-meta.ts)
+- How are Meta credentials stored? (whatsapp_official_connections table)
+- Does it pass through channel-router?
+
+## 4. Channel Router (server/services/channel-router.ts)
+- Show the full routing logic: which channel takes priority?
+- Does it currently handle Web.js? Or only Meta + Z-API?
+- What is the fallback chain? (Meta → Z-API → Web.js? or different order?)
+
+## 5. Message Processor (server/services/message-processor.ts)
+- Does processIncomingMessageForAutomation handle all 3 channels?
+- Is there channel-specific logic for Web.js vs Z-API vs Meta?
+- How is the 'channel' field set when saving messages from each source?
+
+## 6. Database
+- In the conexoes table, what is the 'provider' or 'type' field values 
+  used to distinguish Web.js vs Z-API connections?
+- Show the conexoes table schema relevant columns
+
+## 7. Frontend (Conexoes page)
+- In the UI (screenshot shows Web.js and Z-API options), 
+  what component handles connection creation?
+- Is Meta Cloud API shown separately or in the same page?
+
+Report findings in a structured way. Include file names and line numbers.
+Then answer: if Z-API were removed tomorrow, what would break?

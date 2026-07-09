@@ -1,0 +1,112 @@
+Preciso criar todas as tabelas necessárias para suportar
+a integração completa com N8n no FlowCRM, incluindo
+webhooks bidirecionais, API tokens e gerenciamento de
+prompts de IA diretamente pelo CRM.
+
+---
+
+1. CRIAR tabela `webhook_endpoints`:
+- id: UUID, primary key, gerado automaticamente
+- nome: TEXT, obrigatório — ex: "N8n Produção"
+- url: TEXT, obrigatório — URL destino que receberá os eventos
+- secret: TEXT, opcional — chave para assinar payload com HMAC
+- provider: TEXT, default 'n8n' — valores: 'n8n', 'zapier', 'custom'
+- ativo: BOOLEAN, default true
+- eventos: JSONB, default '[]'
+  valores possíveis no array:
+  ["lead.created", "lead.updated", "lead.won", "lead.lost",
+   "message.received", "message.sent", "deal.moved", "contact.created"]
+- ultimo_disparo: TIMESTAMP, opcional
+- total_disparos: INTEGER, default 0
+- total_erros: INTEGER, default 0
+- workspace_id: UUID, opcional
+- created_at: TIMESTAMP, default NOW()
+- updated_at: TIMESTAMP, default NOW()
+
+2. CRIAR tabela `webhook_logs`:
+- id: UUID, primary key, gerado automaticamente
+- endpoint_id: UUID, referencia webhook_endpoints.id ON DELETE CASCADE
+- evento: TEXT — ex: "lead.created"
+- payload: JSONB — dados enviados
+- response_status: INTEGER, opcional
+- response_body: TEXT, opcional
+- sucesso: BOOLEAN, default false
+- tentativas: INTEGER, default 1
+- created_at: TIMESTAMP, default NOW()
+
+3. CRIAR tabela `api_tokens`:
+- id: UUID, primary key, gerado automaticamente
+- nome: TEXT, obrigatório — ex: "N8n Integration"
+- token_hash: TEXT, único — SHA256 do token real
+- token_preview: TEXT — primeiros 8 chars do token (para exibição)
+- permissoes: JSONB, default '[]'
+  valores: ["leads:read", "leads:write", "messages:send",
+            "contacts:read", "contacts:write", "prompts:read"]
+- ativo: BOOLEAN, default true
+- ultimo_uso: TIMESTAMP, opcional
+- workspace_id: UUID, opcional
+- created_by: UUID, referencia users.id
+- expires_at: TIMESTAMP, opcional — null = sem expiração
+- created_at: TIMESTAMP, default NOW()
+
+4. CRIAR tabela `ia_prompts`:
+- id: UUID, primary key, gerado automaticamente
+- slug: TEXT, único — ex: 'atendimento', 'qualificacao', 'followup'
+- nome: TEXT, obrigatório — ex: "Atendimento WhatsApp"
+- descricao: TEXT, opcional
+- prompt: TEXT, obrigatório — o system prompt completo
+- modelo: TEXT, default 'gpt-4o-mini'
+  valores: 'gpt-4o-mini', 'gpt-4o', 'claude-3-haiku', 'claude-3-sonnet'
+- temperatura: DECIMAL(3,2), default 0.70
+- max_tokens: INTEGER, default 1000
+- ativo: BOOLEAN, default true
+- versao: INTEGER, default 1
+- updated_by: UUID, referencia users.id, opcional
+- workspace_id: UUID, opcional
+- created_at: TIMESTAMP, default NOW()
+- updated_at: TIMESTAMP, default NOW()
+
+5. CRIAR tabela `ia_prompt_historico`:
+- id: UUID, primary key, gerado automaticamente
+- prompt_id: UUID, referencia ia_prompts.id ON DELETE CASCADE
+- prompt_anterior: TEXT — conteúdo antes da edição
+- editado_por: UUID, referencia users.id
+- versao: INTEGER
+- created_at: TIMESTAMP, default NOW()
+
+6. POPULAR tabela `ia_prompts` com 3 prompts padrão:
+
+Prompt 1:
+- slug: 'atendimento'
+- nome: 'Atendimento WhatsApp'
+- descricao: 'Usado no fluxo de atendimento inicial do WhatsApp'
+- prompt: 'Você é um assistente de atendimento da empresa. Seja sempre cordial, objetivo e prestativo. Responda em português brasileiro. Quando não souber a resposta, diga que vai verificar e transferir para um humano. Nunca invente informações.'
+- modelo: 'gpt-4o-mini'
+- temperatura: 0.70
+
+Prompt 2:
+- slug: 'qualificacao'
+- nome: 'Qualificação de Leads'
+- descricao: 'Classifica leads recebidos no pipeline'
+- prompt: 'Você é um especialista em qualificação de leads B2B. Analise as informações do lead e responda APENAS uma das três palavras: HOT (lead com alto potencial, demonstrou interesse claro e tem perfil ideal), WARM (lead com médio potencial, algum interesse mas precisa de nutrição) ou COLD (lead frio, pouco interesse ou fora do perfil). Responda somente a palavra, sem explicações.'
+- modelo: 'gpt-4o-mini'
+- temperatura: 0.20
+
+Prompt 3:
+- slug: 'followup'
+- nome: 'Follow-up Automático'
+- descricao: 'Gera mensagens de follow-up personalizadas'
+- prompt: 'Você é um especialista em vendas consultivas. Gere uma mensagem de follow-up personalizada, amigável e não invasiva para o lead informado. A mensagem deve ter no máximo 3 linhas, usar o primeiro nome do lead, ser em português brasileiro e terminar com uma pergunta aberta que incentive a resposta. Não use emojis em excesso.'
+- modelo: 'gpt-4o-mini'
+- temperatura: 0.80
+
+7. CRIAR índices:
+- webhook_endpoints(ativo), webhook_endpoints(workspace_id)
+- webhook_logs(endpoint_id), webhook_logs(created_at)
+- api_tokens(token_hash), api_tokens(ativo)
+- ia_prompts(slug), ia_prompts(ativo)
+- ia_prompt_historico(prompt_id)
+
+Se usar Prisma, atualize schema.prisma e rode migration.
+Se usar SQL puro, execute diretamente.
+Confirme ao final todas as tabelas criadas e os 3 prompts inseridos.

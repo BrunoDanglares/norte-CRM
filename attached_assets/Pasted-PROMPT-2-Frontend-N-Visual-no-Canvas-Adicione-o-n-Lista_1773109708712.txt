@@ -1,0 +1,79 @@
+PROMPT 2 — Frontend: Nó Visual no Canvas
+Adicione o nó "Lista de Opções" ao canvas de automações do FlowCRM.
+
+---
+
+## PARTE 1: Painel esquerdo (lista de nós arrastáveis)
+
+Adicione o novo nó na lista de componentes arrastáveis:
+- Ícone: List (lucide-react) — cor roxa (#8B5CF6)
+- Label: "Lista de Opções"
+- Descrição: "Envia menu interativo e aguarda escolha"
+- Tipo interno: "lista_opcoes"
+
+---
+
+## PARTE 2: Componente visual do nó no canvas
+
+Crie o componente ListaOpcoesNode com:
+
+Cabeçalho:
+- Ícone List roxo + label "Lista de Opções"
+- Badge "⏸ Aguarda resposta" em roxo claro
+
+Corpo (visualização resumida no canvas):
+- Mostra título configurado ou "Sem título"
+- Lista as opções adicionadas (até 3 visíveis + "+ N mais")
+
+Saídas (handles de conexão na direita):
+- Uma saída por opção: handle id = option.id, label = option.label
+- Uma saída fixa no final: handle id = "text_input", label = "Texto livre", cor cinza/tracejada
+
+---
+
+## PARTE 3: Painel de configuração (ao clicar no nó)
+
+Abra um painel lateral ou modal com os campos:
+
+Campo 1: Título da lista
+- Input text, placeholder "Como posso te ajudar?"
+
+Campo 2: Texto do botão
+- Input text, placeholder "Ver opções" (máx 20 caracteres — limitação Z-API)
+
+Campo 3: Rodapé (opcional)
+- Input text, placeholder "Escolha uma das opções abaixo"
+
+Campo 4: Opções (mínimo 1, máximo 10)
+- Lista editável de opções, cada uma com:
+  * ID automático (gerado como "opt_1", "opt_2"...)
+  * Label (obrigatório, máx 24 chars — limitação Z-API)
+  * Descrição (opcional, máx 72 chars)
+- Botão "+ Adicionar opção"
+- Botão de remover por opção (lixeira)
+- Ao adicionar/remover opção, atualize automaticamente os handles de saída do nó
+
+Campo 5: Timeout
+- Input number, label "Expirar após (minutos)", default 30
+
+---
+
+## PARTE 4: Handles de saída dinâmicos
+
+Quando o usuário adicionar ou remover uma opção no painel de configuração:
+1. Atualize o nodeData com as opções atuais
+2. Re-renderize os handles de saída do nó no canvas
+3. Conexões de opções removidas devem ser deletadas do fluxo (edges)
+4. A saída "text_input" é sempre fixa e não pode ser removida
+
+---
+
+## PARTE 5: Validação antes de salvar o fluxo
+
+Antes de chamar POST /api/automacoes/:id (salvar fluxo), valide:
+- Nó lista_opcoes deve ter ao menos 1 opção
+- Cada opção deve ter label preenchido
+- button_label não pode estar vazio
+- Mostre erros inline no painel de configuração do nó
+
+Mantenha o estilo visual consistente com os nós existentes (Enviar Mensagem, Condição, etc.)

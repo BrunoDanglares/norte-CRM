@@ -1,0 +1,294 @@
+Preciso implementar todo o backend da integração N8n no FlowCRM:
+sistema de webhooks bidirecionais, API tokens, endpoints de entrada
+para o N8n acionar o CRM, e gerenciamento de prompts de IA.
+
+---
+
+PARTE 1 — Helper: Disparador de Webhooks
+
+Crie o arquivo server/services/webhookDispatcher.ts:
+
+import crypto from "crypto";
+
+export async function dispatchWebhook(evento: string, payload: object) {
+  try {
+    const endpoints = await db.query(
+      `SELECT * FROM webhook_endpoints
+       WHERE ativo = true AND eventos @> $1::jsonb`,
+      [JSON.stringify([evento])]
+    );
+
+    for (const endpoint of endpoints.rows) {
+      const body = JSON.stringify({
+        evento,
+        timestamp: new Date().toISOString(),
+        flowcrm_version: "1.0",
+        data: payload,
+      });
+
+      const headers: any = {
+        "Content-Type": "application/json",
+        "X-FlowCRM-Event": evento,
+      };
+
+      if (endpoint.secret) {
+        const sig = crypto
+          .createHmac("sha256", endpoint.secret)
+          .update(body)
+          .digest("hex");
+        headers["X-FlowCRM-Signature"] = `sha256=${sig}`;
+      }
+
+      try {
+        const res = await fetch(endpoint.url, {
+          method: "POST",
+          headers,
+          body,
+          signal: AbortSignal.timeout(10000),
+        });
+
+        await db.query(
+          `INSERT INTO webhook_logs
+           (endpoint_id, evento, payload, response_status, sucesso)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [endpoint.id, evento, payload, res.status, res.ok]
+        );
+
+        await db.query(
+          `UPDATE webhook_endpoints SET
+           ultimo_disparo = NOW(),
+           total_disparos = total_disparos + 1,
+           total_erros = total_erros + $1
+           WHERE id = $2`,
+          [res.ok ? 0 : 1, endpoint.id]
+        );
+      } catch (err) {
+        await db.query(
+          `INSERT INTO webhook_logs
+           (endpoint_id, evento, payload, sucesso, response_body)
+           VALUES ($1, $2, $3, false, $4)`,
+          [endpoint.id, evento, payload, String(err)]
+        );
+      }
+    }
+  } catch (err) {
+    console.error("[webhookDispatcher] Erro:", err);
+  }
+}
+
+---
+
+PARTE 2 — Disparar eventos nos pontos certos do código existente
+
+Importe dispatchWebhook e adicione nos endpoints já existentes:
+
+Em /api/leads:
+- POST (criar lead) → dispatchWebhook("lead.created", lead)
+- PUT /:id (atualizar) → dispatchWebhook("lead.updated", lead)
+- Quando status muda para GANHO → dispatchWebhook("lead.won", lead)
+- Quando status muda para PERDIDO → dispatchWebhook("lead.lost", lead)
+- Quando stage/coluna muda no pipeline → dispatchWebhook("deal.moved", { lead, de, para })
+
+Em mensagens/conversas:
+- Nova mensagem recebida → dispatchWebhook("message.received", { conversa, mensagem })
+- Nova mensagem enviada → dispatchWebhook("message.sent", { conversa, mensagem })
+
+Em /api/contatos:
+- POST (criar contato) → dispatchWebhook("contact.created", contato)
+
+---
+
+PARTE 3 — Rotas de Gerenciamento de Webhooks
+
+Todas protegidas com requireAuth:
+
+GET /api/webhooks
+- Lista todos os endpoints configurados com stats
+- Resposta: { ok: true, data: [...] }
+
+POST /api/webhooks
+- Body: { nome, url, provider, eventos, secret (opcional) }
+- Valida que url é URL válida (começa com http/https)
+- Valida que eventos contém apenas valores permitidos
+- Resposta: { ok: true, data: endpointCreated }
+
+PUT /api/webhooks/:id
+- Atualiza: nome, url, eventos, secret, ativo
+- Resposta: { ok: true, data: endpointUpdated }
+
+DELETE /api/webhooks/:id
+- Remove endpoint e logs associados
+- Resposta: { ok: true, message: "Webhook removido" }
+
+POST /api/webhooks/:id/testar
+- Envia payload de teste para a URL sem salvar em logs
+- Body de teste: { evento: "test", timestamp: now, data: { mensagem: "Teste FlowCRM" } }
+- Timeout de 5 segundos
+- Resposta: { ok: true, data: { status: 200, respondeu: true, tempo_ms: N } }
+
+GET /api/webhooks/:id/logs
+- Últimos 50 logs do endpoint ordenados por created_at DESC
+- Resposta: { ok: true, data: [...] }
+
+DELETE /api/webhooks/:id/logs
+- Apaga todos os logs do endpoint
+- Resposta: { ok: true, message: "Logs apagados" }
+
+---
+
+PARTE 4 — Rotas de API Tokens
+
+Todas protegidas com requireAuth:
+
+GET /api/tokens
+- Lista tokens (sem expor token_hash)
+- Mostra: id, nome, token_preview, permissoes, ativo, ultimo_uso, expires_at, created_at
+- Resposta: { ok: true, data: [...] }
+
+POST /api/tokens
+- Body: { nome, permissoes, expires_at (opcional) }
+- Gera token aleatório de 64 chars:
+  const token = crypto.randomBytes(32).toString("hex");
+- Salva token_hash = SHA256 do token
+- Salva token_preview = primeiros 8 chars do token
+- Retorna o token COMPLETO apenas desta vez
+- Resposta: {
+    ok: true,
+    data: { id, nome, token_completo: token, permissoes },
+    aviso: "Guarde este token — ele não será exibido novamente"
+  }
+
+DELETE /api/tokens/:id
+- Marca token como ativo = false (não exclui, mantém histórico)
+- Resposta: { ok: true, message: "Token revogado" }
+
+---
+
+PARTE 5 — Middleware para Autenticação via API Token
+
+Crie middleware requireApiToken:
+- Lê header X-FlowCRM-Token
+- Faz hash SHA256 do token recebido
+- Busca no banco por token_hash onde ativo = true
+- Verifica se não expirou (expires_at null ou > NOW())
+- Se válido: req.apiToken = { id, permissoes }, next()
+- Se inválido: status 401, { error: "Token inválido ou expirado" }
+- Atualiza ultimo_uso = NOW()
+
+Crie middleware requireAuthOrToken que aceita JWT ou API Token:
+function requireAuthOrToken(req, res, next) {
+  if (req.headers["x-flowcrm-token"]) {
+    return requireApiToken(req, res, next);
+  }
+  return requireAuth(req, res, next);
+}
+
+Aplique requireAuthOrToken (em vez de requireAuth) nas rotas:
+GET/POST/PUT/DELETE /api/leads
+GET/POST/PUT/DELETE /api/contatos
+GET /api/conversas
+POST /api/conexoes/:id/send
+
+---
+
+PARTE 6 — Endpoints de Entrada para o N8n acionar o CRM
+
+Rota base: /api/n8n
+Autenticação: requireApiToken (X-FlowCRM-Token)
+
+POST /api/n8n/lead
+- N8n cria lead no CRM
+- Body: { nome, email, telefone, empresa, valor, canal, status, origem }
+- Todos opcionais exceto nome
+- status default: 'NOVO'
+- Dispara dispatchWebhook("lead.created", lead) após criar
+- Resposta: { ok: true, data: leadCreated }
+
+POST /api/n8n/mensagem
+- N8n envia mensagem WhatsApp pelo CRM
+- Body: { telefone, mensagem, conexao_id (opcional) }
+- Se conexao_id não informado, usa primeira conexão ativa
+- Formata telefone (remove não-numéricos, adiciona 55 se necessário)
+- Chama a lógica de envio Z-API já existente
+- Resposta: { ok: true, data: { enviado: true, messageId } }
+
+POST /api/n8n/lead/:id/mover
+- N8n move lead de estágio
+- Body: { status }
+- Atualiza lead no banco
+- Dispara dispatchWebhook("deal.moved", ...)
+- Resposta: { ok: true, data: leadUpdated }
+
+PATCH /api/n8n/lead/:id
+- N8n atualiza qualquer campo do lead
+- Body: campos a atualizar
+- Dispara dispatchWebhook("lead.updated", lead)
+- Resposta: { ok: true, data: leadUpdated }
+
+GET /api/n8n/leads
+- N8n lista leads com filtros
+- Query params: status, canal, limit (default 50), offset (default 0)
+- Resposta: { ok: true, data: leads, total: N }
+
+GET /api/n8n/lead/:id
+- N8n busca lead específico
+- Resposta: { ok: true, data: lead }
+
+---
+
+PARTE 7 — Rotas de Gerenciamento de Prompts de IA
+
+Todas protegidas com requireAuth para escrita,
+requireAuthOrToken para leitura (N8n lê os prompts):
+
+GET /api/ia/prompts
+- Lista todos os prompts ativos
+- Resposta: { ok: true, data: [...] }
+
+GET /api/ia/prompts/:slug
+- Busca prompt pelo slug (ex: /api/ia/prompts/atendimento)
+- ESTA é a rota que o N8n chama antes de chamar o GPT
+- Resposta: {
+    ok: true,
+    data: {
+      slug, nome, prompt, modelo, temperatura, max_tokens, versao, updated_at
+    }
+  }
+
+POST /api/ia/prompts
+- Cria novo prompt
+- Body: { slug, nome, descricao, prompt, modelo, temperatura, max_tokens }
+- Valida que slug é único e só tem letras, números e hífens
+- Resposta: { ok: true, data: promptCreated }
+
+PUT /api/ia/prompts/:id
+- Atualiza prompt existente
+- Body: { nome, descricao, prompt, modelo, temperatura, max_tokens, ativo }
+- ANTES de atualizar: salva versão atual em ia_prompt_historico
+- Incrementa campo versao em +1
+- Salva updated_by = req.user.id
+- Resposta: { ok: true, data: promptUpdated }
+
+GET /api/ia/prompts/:id/historico
+- Lista histórico de versões do prompt
+- Resposta: { ok: true, data: [...] }
+
+POST /api/ia/prompts/:id/restaurar/:versao
+- Restaura uma versão anterior do histórico
+- Cria nova entrada no histórico com a versão atual antes de restaurar
+- Resposta: { ok: true, data: promptRestaurado }
+
+DELETE /api/ia/prompts/:id
+- Só permite deletar prompts que não sejam os 3 padrão
+  (slugs: 'atendimento', 'qualificacao', 'followup' são protegidos)
+- Resposta: { ok: true, message: "Prompt removido" }
+
+---
+
+Registre todos os routers no arquivo principal:
+- /api/webhooks (requireAuth)
+- /api/tokens (requireAuth)
+- /api/n8n (requireApiToken)
+- /api/ia (requireAuthOrToken)
+
+Confirme todas as rotas criadas ao final.

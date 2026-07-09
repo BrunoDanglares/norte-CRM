@@ -1,0 +1,89 @@
+Adicionar agent_capabilities ao schema de tenant_settings.
+Bloco A já adicionou agent_priorities e fluid_routing_threshold
+— este prompt só adiciona o que está faltando.
+
+══ PASSO 1 — Definir tipos em shared/schema.ts ══
+
+Localize onde BusinessRules (ou TenantSettingsJson) é definido.
+Adicione os seguintes tipos logo antes da interface principal:
+
+  interface AgentCapability {
+    enabled: boolean;
+    situations: string[];
+    escalate_to_human_if_disabled: boolean;
+  }
+
+  interface AgentCapabilities {
+    FINANCEIRO:     AgentCapability;
+    SUPORTE_TECNICO: AgentCapability;
+    VENDAS:         AgentCapability;
+    CANCELAMENTO:   AgentCapability;
+  }
+
+Adicione à interface BusinessRules (ou equivalente):
+  agent_capabilities?: AgentCapabilities;
+
+══ PASSO 2 — Defaults em tenantSettingsService.ts ══
+
+Localize a função que retorna os defaults de businessRules
+(getDefaultBusinessRules, DEFAULT_BUSINESS_RULES ou equivalente).
+
+Adicione ao objeto de defaults:
+
+  agent_capabilities: {
+    FINANCEIRO: {
+      enabled: true,
+      situations: [
+        'F1','F2','F3','F4','F5','F6','F7','F8','F9','F10'
+      ],
+      escalate_to_human_if_disabled: true,
+    },
+    SUPORTE_TECNICO: {
+      enabled: true,
+      situations: [
+        'S1','S2','S3','S4','S5','S6','S7',
+        'S8','S9','S10','S11','S12','S13'
+      ],
+      escalate_to_human_if_disabled: true,
+    },
+    VENDAS: {
+      enabled: true,
+      situations: [
+        'C1','C2','C3','C4','C5','C6','C7','C8','C9','C10'
+      ],
+      escalate_to_human_if_disabled: false,
+    },
+    CANCELAMENTO: {
+      enabled: true,
+      situations: [],
+      escalate_to_human_if_disabled: true,
+    },
+  }
+
+══ PASSO 3 — Helper de leitura ══
+
+No mesmo tenantSettingsService.ts, exporte duas funções:
+
+  export function isAgentEnabled(
+    capabilities: AgentCapabilities | undefined,
+    agent: string
+  ): boolean {
+    if (!capabilities) return true;
+    const cap = capabilities[agent as keyof AgentCapabilities];
+    return cap?.enabled ?? true;
+  }
+
+  export function isSituationEnabled(
+    capabilities: AgentCapabilities | undefined,
+    agent: string,
+    situationCode: string
+  ): boolean {
+    if (!capabilities) return true;
+    const cap = capabilities[agent as keyof AgentCapabilities];
+    if (!cap?.enabled) return false;
+    if (!cap.situations || cap.situations.length === 0) return true;
+    return cap.situations.includes(situationCode);
+  }
+
+Sem migration necessária — agent_capabilities é campo JSONB
+dentro das configurações existentes.

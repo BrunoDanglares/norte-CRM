@@ -1,0 +1,103 @@
+São 2 correções independentes.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CORREÇÃO 1 — Schema Zod no PATCH /api/conversations/:id
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Abra server/routes/conversations.ts.
+
+Localize o handler PATCH /api/conversations/:id.
+Deve ter algo como:
+  const data = req.body;
+  await storage.updateConversation(id, data);
+sem nenhuma validação do body.
+
+PASSO 1 — Adicione o schema Zod logo antes do handler
+(ou no bloco de schemas no topo do arquivo se já existir um):
+
+import { z } from 'zod';
+
+const patchConversationSchema = z.object({
+  status: z.enum(['open', 'pending', 'resolved']).optional(),
+  prioridade: z.enum(['alta', 'media', 'baixa']).optional(),
+  pipeline: z.string().max(100).optional(),
+  pipeline_etapa: z.string().max(100).optional(),
+  assigned_user_id: z.number().nullable().optional(),
+  assigned_user_name: z.string().max(100).nullable().optional(),
+  assigned_team_id: z.string().uuid().nullable().optional(),
+  pendente: z.boolean().optional(),
+  tags: z.array(z.string().max(50)).max(20).optional(),
+  ai_paused: z.boolean().optional(),
+  agente: z.string().max(100).nullable().optional(),
+}).strict(); // .strict() rejeita campos não listados
+
+PASSO 2 — No handler, substitua o uso direto de req.body por:
+
+  const parsed = patchConversationSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      error: 'Dados inválidos',
+      details: parsed.error.flatten().fieldErrors,
+    });
+  }
+  const data = parsed.data;
+  await storage.updateConversation(id, data);
+
+ATENÇÃO: Se o schema precisar de campos adicionais que já existem
+no PATCH (ex: nome, telefone), adicione-os — leia o storage.updateConversation
+para ver quais campos ele aceita e inclua todos no schema.
+Não use .strict() se isso quebrar chamadas existentes — nesse caso
+use .strip() (padrão do Zod) que ignora campos extras silenciosamente.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CORREÇÃO 2 — paginação real no getLeads (remoção do limit: 10000)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Abra server/routes/usuarios.ts (ou onde estiver a rota que chama
+storage.getLeads com limit: 10000 para enriquecer contagem por usuário).
+
+Localize o trecho:
+  const leads = await storage.getLeads(wsId, { limit: 10000 });
+  // usado para contar leads por usuário
+
+SUBSTITUIÇÃO — em vez de buscar todos os leads e contar em memória,
+faça uma query de agregação direta:
+
+  // Conta leads por assigned_user_id diretamente no banco
+  const leadCounts = await db
+    .select({
+      userId: leads.assignedUserId,
+      count: sql<number>`count(*)::int`,
+    })
+    .from(leads)
+    .where(
+      and(
+        eq(leads.workspaceId, workspaceId),
+        isNotNull(leads.assignedUserId)
+      )
+    )
+    .groupBy(leads.assignedUserId);
+
+  // Transforma em Map para lookup O(1)
+  const leadCountMap = new Map(
+    leadCounts.map(r => [r.userId, r.count])
+  );
+
+  // Ao montar a resposta de cada usuário:
+  // leadsCount: leadCountMap.get(user.id) ?? 0
+
+Importe isNotNull do drizzle-orm se não estiver importado.
+Adapte os nomes de coluna (assignedUserId pode ser owner_id ou
+user_id dependendo do schema real — leia antes de editar).
+
+Se o getLeads com limit: 10000 for usado para outro propósito além
+da contagem, mantenha apenas a contagem por agregação e preserve
+o restante.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Confirme:
+1. PATCH /conversations/:id valida body com Zod antes de salvar
+2. Campos inválidos ou não permitidos retornam 400 com detalhes
+3. getLeads com limit: 10000 substituído por query de agregação
+4. Servidor sem erros de TypeScript

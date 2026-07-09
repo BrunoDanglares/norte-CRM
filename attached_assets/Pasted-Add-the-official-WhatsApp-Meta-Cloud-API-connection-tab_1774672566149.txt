@@ -1,0 +1,85 @@
+Add the official WhatsApp (Meta Cloud API) connection tables to the ChatBanana database.
+
+## Context
+- Stack: PostgreSQL + Drizzle ORM, multi-tenant via workspace_id (UUID)
+- ChatBanana currently uses Z-API for WhatsApp. The new tables add Meta Cloud API support IN PARALLEL — do not remove or alter any Z-API related tables or columns.
+- Follow the exact same schema patterns as existing tables.
+
+## Tables to create
+
+### 1. whatsapp_official_connections
+Stores Meta Cloud API credentials obtained via Embedded Signup, one per workspace.
+
+Columns:
+- id: serial primary key
+- workspace_id: uuid not null references workspaces(id) on delete cascade — UNIQUE (one official connection per workspace)
+- waba_id: text not null (WhatsApp Business Account ID from Meta)
+- phone_number_id: text not null (Phone Number ID from Meta Graph API)
+- display_phone_number: text not null (human-readable, e.g. "+55 91 99999-9999")
+- business_name: text not null (business display name registered on Meta)
+- access_token: text not null (long-lived System User token or User token — encrypted at rest if possible)
+- token_type: text not null default 'user' (enum: 'user' | 'system_user')
+- token_expires_at: timestamp (null = never expires, for system user tokens)
+- webhook_verified: boolean not null default false
+- messaging_limit_tier: text default 'TIER_1K' (TIER_1K | TIER_10K | TIER_100K | TIER_UNLIMITED)
+- quality_rating: text default 'GREEN' (GREEN | YELLOW | RED)
+- status: text not null default 'active' (enum: 'active' | 'suspended' | 'pending_verification' | 'disconnected')
+- meta_business_id: text (parent Business Portfolio ID)
+- connected_at: timestamp default now()
+- last_used_at: timestamp
+- created_at: timestamp default now()
+- updated_at: timestamp default now()
+
+### 2. whatsapp_message_templates
+HSM templates registered on Meta for this workspace (required for initiating conversations after 24h window).
+
+Columns:
+- id: serial primary key
+- workspace_id: uuid not null references workspaces(id) on delete cascade
+- connection_id: integer not null references whatsapp_official_connections(id) on delete cascade
+- template_name: text not null (e.g. "boleto_vencimento")
+- template_id: text (Meta's template ID, returned after approval)
+- category: text not null (enum: 'MARKETING' | 'UTILITY' | 'AUTHENTICATION')
+- language: text not null default 'pt_BR'
+- status: text not null default 'PENDING' (PENDING | APPROVED | REJECTED | DISABLED)
+- header_type: text (TEXT | IMAGE | VIDEO | DOCUMENT | null)
+- header_content: text
+- body_text: text not null (template body with {{1}}, {{2}} placeholders)
+- footer_text: text
+- buttons: jsonb (array of button configs)
+- variables_count: integer not null default 0
+- rejection_reason: text
+- submitted_at: timestamp
+- approved_at: timestamp
+- created_at: timestamp default now()
+- updated_at: timestamp default now()
+
+Unique constraint: (workspace_id, template_name, language)
+
+### 3. whatsapp_webhook_events
+Raw webhook events from Meta, stored for debugging and replay.
+
+Columns:
+- id: serial primary key
+- workspace_id: uuid (nullable — resolved after lookup)
+- phone_number_id: text not null (used to resolve workspace)
+- waba_id: text
+- event_type: text not null (enum: 'message' | 'status' | 'template_status' | 'account_update' | 'unknown')
+- message_id: text (wamid — WhatsApp message ID)
+- from_number: text
+- raw_payload: jsonb not null (full webhook body)
+- processed: boolean not null default false
+- processed_at: timestamp
+- error: text
+- received_at: timestamp default now()
+
+Index on: (phone_number_id, received_at)
+Index on: (message_id) for deduplication
+
+## Instructions
+1. Add all three tables to the existing Drizzle schema file
+2. Run migration with npm run db:push or equivalent
+3. Export TypeScript types: InsertWhatsappOfficialConnection, SelectWhatsappOfficialConnection, InsertWhatsappMessageTemplate, SelectWhatsappMessageTemplate
+4. Create an index map in the schema: phoneNumberIdToWorkspace concept will be handled at runtime — just ensure the schema supports fast lookup by phone_number_id in webhook_events
+5. Do NOT modify any existing tables
+6. Confirm all 3 tables were created successfully

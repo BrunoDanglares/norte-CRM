@@ -1,0 +1,90 @@
+Isso é uma regra de negócio crítica para ISP. A maioria dos "sem internet" é inadimplência, não problema técnico. Sem essa verificação, o suporte perde tempo e o financeiro não recebe o cliente certo.
+Prompt para o Replit:
+## OBJETIVO
+Implementar roteamento inteligente pré-intent: quando cliente reporta
+problema de conexão, verificar status financeiro no ERP antes de
+classificar como SUPORTE ou FINANCEIRO.
+
+## REGRA DE NEGÓCIO
+Quando intent classificado = SUPORTE_TECNICO:
+1. Verificar no ERP se cliente está inadimplente/suspenso
+2. Se inadimplente → reclassificar para FINANCEIRO
+3. Se em dia → manter SUPORTE_TECNICO
+
+Isso evita que cliente sem internet por falta de pagamento
+seja atendido pelo suporte técnico sem necessidade.
+
+## PASSO 1 — IDENTIFICAR ONDE OS DADOS DO ERP CHEGAM
+Em server/services/ispAgentEngine.ts, verificar:
+- Onde os dados do cliente são buscados no ERP (SGP/IXC)
+- Quais campos retornam status financeiro/suspensão
+- Nomes dos campos: status_contrato, inadimplente, suspenso,
+  bloqueado, situacao, connection.status ou similar
+- Reportar os campos exatos antes de continuar
+
+## PASSO 2 — IMPLEMENTAR VERIFICAÇÃO PÓS-CLASSIFICAÇÃO
+Após o intent ser classificado como SUPORTE_TECNICO,
+adicionar verificação em ispAgentEngine.ts:
+```typescript
+// Após classificar intent
+if (intent === 'SUPORTE_TECNICO') {
+  const clienteData = session.erpData || {};
+  
+  const inadimplente =
+    clienteData.status_contrato === 'SUSPENSO' ||
+    clienteData.status_contrato === 'BLOQUEADO' ||
+    clienteData.inadimplente === true ||
+    clienteData.situacao === 'BLOQUEADO' ||
+    clienteData.bloqueado === true ||
+    clienteData.connection?.status === 'SUSPENDED';
+  
+  if (inadimplente) {
+    // Reclassifica para financeiro
+    intent = 'FINANCEIRO';
+    
+    // Salva contexto para o agente financeiro saber a origem
+    session.contexto_anterior = 'suporte_redirecionado';
+    session.motivo_redirecionamento = 'cliente_inadimplente';
+    
+    // Log para auditoria
+    console.log(`[ISP Engine] Cliente ${session.cpf} redirecionado: 
+      SUPORTE → FINANCEIRO (inadimplente)`);
+  }
+}
+```
+
+## PASSO 3 — INJETAR CONTEXTO NO AGENTE FINANCEIRO
+Quando financeiro for chamado com contexto_anterior = 'suporte_redirecionado',
+injetar instrução adicional no prompt:
+
+"O cliente entrou em contato relatando problema de internet,
+mas identificamos que o serviço está suspenso por inadimplência.
+Informe com empatia que a conexão está suspensa e ofereça
+as opções de pagamento. Não mencione problema técnico."
+
+## PASSO 4 — VERIFICAR CAMPOS REAIS DO SGP E IXC
+Para SGP, verificar na resposta da API quais campos indicam suspensão.
+Para IXC, verificar os campos equivalentes.
+Adaptar a condição do Passo 2 com os campos reais de cada ERP.
+
+Buscar em:
+- server/services/ispProviders/sgpProvider.ts
+- server/services/ispProviders/ixcProvider.ts
+Os campos que já são mapeados/retornados para a engine.
+
+## PASSO 5 — KEYWORDS QUE DISPARAM ESSA VERIFICAÇÃO
+A verificação só roda quando o cliente reporta problema de conexão.
+Garantir que as seguintes mensagens classificam como SUPORTE_TECNICO
+antes da verificação financeira rodar:
+- "sem internet", "sem conexão", "caiu a internet"
+- "internet não funciona", "não consigo acessar"
+- "roteador offline", "luz vermelha no roteador"
+- "lentidão", "internet lenta", "travando"
+
+## REGRAS
+- A reclassificação é silenciosa — cliente não sabe que foi redirecionado
+- O agente financeiro deve ser empático sobre a suspensão, nunca abrupto
+- Se o ERP não retornar status financeiro, manter SUPORTE_TECNICO
+  (fail safe: na dúvida, vai para suporte)
+- Reportar os campos reais encontrados no SGP e IXC antes de modificar
+- Listar todos os arquivos modificados

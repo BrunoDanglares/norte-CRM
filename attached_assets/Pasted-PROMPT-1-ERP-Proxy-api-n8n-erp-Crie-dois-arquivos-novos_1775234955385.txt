@@ -1,0 +1,575 @@
+PROMPT 1 — ERP Proxy /api/n8n/erp
+Crie dois arquivos novos e modifique um existente no projeto ChatBanana.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ARQUIVO 1: server/services/n8nErpService.ts
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+import { db } from '../db';
+import { isp_configs } from '../../shared/schema';
+import { eq } from 'drizzle-orm';
+
+// ── Tipos do schema normalizado ──────────────────────────────────────────────
+
+export interface ERPCliente {
+  id: string;
+  name: string;
+  phone: string;
+  email: string;
+  address: string;
+  plan: string;
+  speed: string;
+  price: number;
+  contract: string;
+  months: number;
+}
+
+export interface ERPFinanceiro {
+  status: string;
+  is_suspended: boolean;
+  reason: string | null;
+  amount_due: number;
+  open_invoices: number;
+  days_late: number;
+  last_payment: string | null;
+}
+
+export interface ERPConexao {
+  status: 'online' | 'offline' | 'unknown';
+  is_offline: boolean;
+  min_offline: number;
+  model: string;
+  rx: number | null;
+  tx: number | null;
+  olt: string;
+}
+
+export interface ERPRede {
+  clients_offline: number;
+  regional_incident: boolean;
+  incident_desc: string | null;
+}
+
+export interface ERPChamados {
+  open: number;
+  recent: number;
+  recurrent: boolean;
+  last_type: string | null;
+}
+
+export interface ERPHistorico {
+  drops7: number;
+  instability: boolean;
+}
+
+export interface ERPEnrichment {
+  found: boolean;
+  erp: string;
+  sistema: 'sgp' | 'ixc';
+  cliente: ERPCliente;
+  financial: ERPFinanceiro;
+  connection: ERPConexao;
+  network: ERPRede;
+  tickets: ERPChamados;
+  history: ERPHistorico;
+}
+
+// ── Resultado de ação simples ────────────────────────────────────────────────
+
+export interface ERPActionResult {
+  success: boolean;
+  message: string;
+  data?: any;
+}
+
+// ── Helpers de normalização ──────────────────────────────────────────────────
+
+function safeFloat(v: any, fallback = 0): number {
+  const n = parseFloat(String(v ?? fallback));
+  return isNaN(n) ? fallback : n;
+}
+
+function safeInt(v: any, fallback = 0): number {
+  const n = parseInt(String(v ?? fallback));
+  return isNaN(n) ? fallback : n;
+}
+
+function normalizeSuspended(status: string): boolean {
+  const s = (status ?? '').toLowerCase();
+  return ['suspenso', 'suspended', 'bloqueado', 'blocked', 'inativo'].includes(s);
+}
+
+// ── Normalização SGP → schema único ─────────────────────────────────────────
+
+function normalizeSGP(results: Record<string, any>, phone: string): ERPEnrichment {
+  const c   = results.cliente   ?? {};
+  const f   = results.financeiro ?? {};
+  const o   = results.onu        ?? {};
+  const olt = results.olt        ?? {};
+  const t   = results.chamados   ?? {};
+  const h   = results.historico  ?? {};
+
+  const finStatus = (f.status ?? f.status_contrato ?? 'ativo').toLowerCase();
+  const onuStatus = (o.status ?? 'desconhecido').toLowerCase();
+  const cliOff    = safeInt(olt.clientes_offline ?? olt.total_offline);
+  const drops7    = safeInt(h.quedas_7dias ?? h.disconnections);
+  const recentTkt = safeInt(t.total_recentes ?? t.recent_count ?? (Array.isArray(t) ? t.length : 0));
+
+  return {
+    found: !!(c.id_cliente || c.id),
+    erp: 'SGP',
+    sistema: 'sgp',
+    cliente: {
+      id:       String(c.id_cliente ?? c.id ?? ''),
+      name:     String(c.nome ?? c.name ?? 'Cliente'),
+      phone,
+      email:    String(c.email ?? ''),
+      address:  String(c.endereco ?? c.address ?? ''),
+      plan:     String(c.plano ?? c.plan ?? ''),
+      speed:    String(c.velocidade ?? c.speed ?? ''),
+      price:    safeFloat(c.valor_plano ?? c.plan_price),
+      contract: String(c.id_contrato ?? c.contract_id ?? ''),
+      months:   safeInt(c.tempo_cliente_meses ?? c.months_as_client),
+    },
+    financial: {
+      status:        finStatus,
+      is_suspended:  normalizeSuspended(finStatus),
+      reason:        f.motivo_suspensao ?? null,
+      amount_due:    safeFloat(f.valor_total ?? f.amount_due),
+      open_invoices: safeInt(f.faturas_em_aberto ?? f.open_invoices),
+      days_late:     safeInt(f.dias_atraso ?? f.days_late),
+      last_payment:  f.data_ultimo_pagamento ?? null,
+    },
+    connection: {
+      status:     onuStatus === 'online' ? 'online' : onuStatus === 'offline' ? 'offline' : 'unknown',
+      is_offline: onuStatus === 'offline',
+      min_offline: safeInt(o.minutos_offline ?? o.minutes_offline),
+      model:      String(o.modelo_onu ?? o.model ?? ''),
+      rx:         o.rx_power != null ? safeFloat(o.rx_power) : null,
+      tx:         o.tx_power != null ? safeFloat(o.tx_power) : null,
+      olt:        String(olt.nome_olt ?? olt.olt ?? ''),
+    },
+    network: {
+      clients_offline:  cliOff,
+      regional_incident: cliOff > 5,
+      incident_desc:    olt.descricao_incidente ?? null,
+    },
+    tickets: {
+      open:      safeInt(t.chamados_abertos ?? t.open_count),
+      recent:    recentTkt,
+      recurrent: recentTkt > 2,
+      last_type: t.ultimo_tipo ?? null,
+    },
+    history: {
+      drops7,
+      instability: drops7 > 2,
+    },
+  };
+}
+
+// ── Normalização IXC → schema único ─────────────────────────────────────────
+
+function normalizeIXC(results: Record<string, any>, phone: string): ERPEnrichment {
+  const rawCli  = results.cliente   ?? {};
+  const cli     = (rawCli.registros ?? [rawCli])[0] ?? {};
+  const rawFin  = results.financeiro ?? {};
+  const faturas = rawFin.registros ?? [];
+  const rawOnu  = results.onu       ?? {};
+  const onu     = (rawOnu.registros ?? [rawOnu])[0] ?? {};
+  const rawReg  = results.regiao    ?? {};
+  const regiaoItems = rawReg.registros ?? [];
+  const rawTkt  = results.chamados  ?? {};
+  const tkts    = rawTkt.registros  ?? [];
+  const rawHist = results.historico ?? {};
+  const histItems = rawHist.registros ?? [];
+
+  const fatAberto  = faturas.filter((f: any) => f.status === 'A');
+  const totalAberto = fatAberto.reduce((s: number, f: any) =>
+    s + safeFloat(f.valor_atualizado ?? f.vl_custo), 0);
+  const vencida  = fatAberto.sort((a: any, b: any) =>
+    a.data_vencimento > b.data_vencimento ? 1 : -1)[0];
+  const diasAtraso = vencida
+    ? Math.max(0, Math.floor((Date.now() - new Date(vencida.data_vencimento).getTime()) / 86400000))
+    : 0;
+
+  const onuSt   = onu.acesso === '0' ? 'offline' : onu.acesso === '1' ? 'online' : 'unknown';
+  const cliOff  = regiaoItems.filter((r: any) => r.acesso === '0').length;
+  const drops7  = histItems.filter((h: any) => h.acesso === '0').length;
+
+  const isSusp = normalizeSuspended(cli.status_internet ?? '');
+
+  return {
+    found: !!cli.id,
+    erp: 'IXC Soft',
+    sistema: 'ixc',
+    cliente: {
+      id:       String(cli.id ?? ''),
+      name:     String(cli.razao ?? cli.nome ?? 'Cliente'),
+      phone,
+      email:    String(cli.email ?? ''),
+      address:  String(cli.endereco ?? ''),
+      plan:     String(cli.contrato ?? ''),
+      speed:    String(cli.velocidade ?? ''),
+      price:    safeFloat(cli.valor_contrato),
+      contract: String(cli.id_contrato ?? cli.id ?? ''),
+      months:   0,
+    },
+    financial: {
+      status:        isSusp ? 'suspenso' : (cli.status_internet ?? 'ativo').toLowerCase(),
+      is_suspended:  isSusp,
+      reason:        null,
+      amount_due:    parseFloat(totalAberto.toFixed(2)),
+      open_invoices: fatAberto.length,
+      days_late:     diasAtraso,
+      last_payment:  null,
+    },
+    connection: {
+      status:      onuSt as any,
+      is_offline:  onuSt === 'offline',
+      min_offline: 0,
+      model:       String(onu.modelo ?? ''),
+      rx:          onu.rx ? safeFloat(onu.rx) : null,
+      tx:          null,
+      olt:         String(onu.concentrador ?? ''),
+    },
+    network: {
+      clients_offline:  cliOff,
+      regional_incident: cliOff > 5,
+      incident_desc:    null,
+    },
+    tickets: {
+      open:      tkts.filter((tk: any) => tk.status !== 'F').length,
+      recent:    tkts.length,
+      recurrent: tkts.length > 2,
+      last_type: tkts[0]?.tipo ?? null,
+    },
+    history: {
+      drops7,
+      instability: drops7 > 2,
+    },
+  };
+}
+
+// ── Serviço principal ────────────────────────────────────────────────────────
+
+export class N8nErpService {
+
+  // Busca config ISP do workspace
+  private async getISPConfig(workspaceId: string) {
+    const configs = await db
+      .select()
+      .from(isp_configs)
+      .where(eq(isp_configs.workspace_id, workspaceId))
+      .limit(1);
+    return configs[0] ?? null;
+  }
+
+  // ── ENRICHMENT COMPLETO (ação principal do N8N) ──────────────────────────
+  async enrichmentCompleto(workspaceId: string, telefone: string): Promise<ERPEnrichment> {
+    const config = await this.getISPConfig(workspaceId);
+
+    if (!config) {
+      throw new Error(`Configuração ISP não encontrada para workspace ${workspaceId}`);
+    }
+
+    // Importa o adapter correto via factory pattern existente
+    const { getISPAdapter } = await import('./ispAdapterFactory');
+    const adapter = getISPAdapter(config);
+
+    const phoneLimpo = telefone.replace('@s.whatsapp.net', '').replace('@lid', '');
+
+    if (config.provider === 'sgp') {
+      // SGP: busca sequencial (cliente primeiro para ter o id_contrato)
+      const clienteResult = await this.safeCall(() =>
+        adapter.buscarClientePorTelefone(phoneLimpo));
+
+      const idContrato = clienteResult?.id_contrato ?? clienteResult?.id ?? '';
+      const idCliente  = clienteResult?.id_cliente  ?? clienteResult?.id ?? '';
+      const idOlt      = '';
+
+      // Demais chamadas em paralelo com Promise.allSettled (resiliente)
+      const [fin, onu, olt, chamados, historico] = await Promise.allSettled([
+        adapter.consultarStatusFinanceiro(idContrato, idCliente),
+        adapter.consultarONU(idContrato),
+        adapter.consultarOLT(idOlt),
+        adapter.listarChamados(idCliente, 10),
+        adapter.logConexao(idContrato, 7),
+      ]);
+
+      return normalizeSGP({
+        cliente:    clienteResult,
+        financeiro: this.settled(fin),
+        onu:        this.settled(onu),
+        olt:        this.settled(olt),
+        chamados:   this.settled(chamados),
+        historico:  this.settled(historico),
+      }, phoneLimpo);
+
+    } else {
+      // IXC: busca cliente primeiro, depois paralelo
+      const clienteResult = await this.safeCall(() =>
+        adapter.buscarClientePorTelefone(phoneLimpo));
+
+      const idCliente = (clienteResult?.registros?.[0]?.id) ?? '';
+
+      const [fin, onu, regiao, chamados, historico] = await Promise.allSettled([
+        adapter.consultarStatusFinanceiro(idCliente),
+        adapter.consultarONU(idCliente),
+        adapter.consultarRegiao(idCliente),
+        adapter.listarChamados(idCliente, 10),
+        adapter.logConexao(idCliente, 7),
+      ]);
+
+      return normalizeIXC({
+        cliente:    clienteResult,
+        financeiro: this.settled(fin),
+        onu:        this.settled(onu),
+        regiao:     this.settled(regiao),
+        chamados:   this.settled(chamados),
+        historico:  this.settled(historico),
+      }, phoneLimpo);
+    }
+  }
+
+  // ── AÇÕES SIMPLES ────────────────────────────────────────────────────────
+
+  async liberarCliente(workspaceId: string, params: {
+    id_cliente: string;
+    id_contrato?: string;
+  }): Promise<ERPActionResult> {
+    const config = await this.getISPConfig(workspaceId);
+    if (!config) throw new Error('Config ISP não encontrada');
+    const { getISPAdapter } = await import('./ispAdapterFactory');
+    const adapter = getISPAdapter(config);
+    try {
+      const result = await adapter.liberarCliente(params.id_contrato ?? params.id_cliente);
+      return { success: true, message: 'Cliente liberado com sucesso', data: result };
+    } catch (err: any) {
+      return { success: false, message: err.message ?? 'Erro ao liberar cliente' };
+    }
+  }
+
+  async suspenderCliente(workspaceId: string, params: {
+    id_cliente: string;
+    id_contrato?: string;
+  }): Promise<ERPActionResult> {
+    const config = await this.getISPConfig(workspaceId);
+    if (!config) throw new Error('Config ISP não encontrada');
+    const { getISPAdapter } = await import('./ispAdapterFactory');
+    const adapter = getISPAdapter(config);
+    try {
+      const result = await adapter.suspenderCliente(params.id_contrato ?? params.id_cliente);
+      return { success: true, message: 'Cliente suspenso', data: result };
+    } catch (err: any) {
+      return { success: false, message: err.message ?? 'Erro ao suspender' };
+    }
+  }
+
+  async abrirChamado(workspaceId: string, params: {
+    id_cliente: string;
+    titulo: string;
+    descricao: string;
+    prioridade?: string;
+  }): Promise<ERPActionResult> {
+    const config = await this.getISPConfig(workspaceId);
+    if (!config) throw new Error('Config ISP não encontrada');
+    const { getISPAdapter } = await import('./ispAdapterFactory');
+    const adapter = getISPAdapter(config);
+    try {
+      const result = await adapter.abrirChamado({
+        id_cliente:  params.id_cliente,
+        titulo:      params.titulo,
+        descricao:   params.descricao,
+        prioridade:  params.prioridade ?? 'normal',
+      });
+      return { success: true, message: 'Chamado aberto com sucesso', data: result };
+    } catch (err: any) {
+      return { success: false, message: err.message ?? 'Erro ao abrir chamado' };
+    }
+  }
+
+  async consultarPagamento(workspaceId: string, params: {
+    id_cliente: string;
+    id_contrato?: string;
+  }): Promise<{ paid: boolean; status: string; amount_due: number }> {
+    const config = await this.getISPConfig(workspaceId);
+    if (!config) throw new Error('Config ISP não encontrada');
+    const { getISPAdapter } = await import('./ispAdapterFactory');
+    const adapter = getISPAdapter(config);
+    const result = await this.safeCall(() =>
+      adapter.consultarStatusFinanceiro(
+        params.id_contrato ?? params.id_cliente,
+        params.id_cliente
+      )
+    );
+    const finStatus = (result?.status ?? result?.status_contrato ?? 'ativo').toLowerCase();
+    const amountDue = parseFloat(result?.valor_total ?? result?.amount_due ?? '0') || 0;
+    return {
+      paid:       amountDue === 0 || !normalizeSuspended(finStatus),
+      status:     finStatus,
+      amount_due: amountDue,
+    };
+  }
+
+  // ── Helpers ──────────────────────────────────────────────────────────────
+
+  private async safeCall<T>(fn: () => Promise<T>): Promise<T | null> {
+    try { return await fn(); }
+    catch { return null; }
+  }
+
+  private settled(result: PromiseSettledResult<any>): any {
+    return result.status === 'fulfilled' ? result.value : null;
+  }
+}
+
+export const n8nErpService = new N8nErpService();
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ARQUIVO 2: server/routes/n8n.ts
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+import { Router, Request, Response } from 'express';
+import { requireAuth } from '../middleware/auth';
+import { resolveWorkspaceId } from '../utils/workspace';
+import { n8nErpService } from '../services/n8nErpService';
+
+const router = Router();
+
+// Todas as rotas /api/n8n/* exigem JWT válido
+router.use(requireAuth);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/n8n/erp
+// Body: { action, params }
+// Actions: enrichmentCompleto | liberarCliente | suspenderCliente |
+//          abrirChamado | consultarPagamento
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/erp', async (req: Request, res: Response) => {
+  try {
+    const workspaceId = resolveWorkspaceId(req);
+    const { action, params = {} } = req.body as {
+      action: string;
+      params?: Record<string, any>;
+    };
+
+    if (!action) {
+      return res.status(400).json({ error: 'Campo action é obrigatório' });
+    }
+
+    let result: any;
+
+    switch (action) {
+
+      case 'enrichmentCompleto': {
+        const telefone = params.telefone ?? params.phone ?? '';
+        if (!telefone) {
+          return res.status(400).json({ error: 'Param telefone é obrigatório para enrichmentCompleto' });
+        }
+        result = await n8nErpService.enrichmentCompleto(workspaceId, telefone);
+        break;
+      }
+
+      case 'liberarCliente': {
+        if (!params.id_cliente) {
+          return res.status(400).json({ error: 'Param id_cliente é obrigatório' });
+        }
+        result = await n8nErpService.liberarCliente(workspaceId, params);
+        break;
+      }
+
+      case 'suspenderCliente': {
+        if (!params.id_cliente) {
+          return res.status(400).json({ error: 'Param id_cliente é obrigatório' });
+        }
+        result = await n8nErpService.suspenderCliente(workspaceId, params);
+        break;
+      }
+
+      case 'abrirChamado': {
+        if (!params.id_cliente || !params.titulo || !params.descricao) {
+          return res.status(400).json({
+            error: 'Params obrigatórios: id_cliente, titulo, descricao'
+          });
+        }
+        result = await n8nErpService.abrirChamado(workspaceId, params);
+        break;
+      }
+
+      case 'consultarPagamento': {
+        if (!params.id_cliente) {
+          return res.status(400).json({ error: 'Param id_cliente é obrigatório' });
+        }
+        result = await n8nErpService.consultarPagamento(workspaceId, params);
+        break;
+      }
+
+      default:
+        return res.status(400).json({
+          error: `Action desconhecida: ${action}`,
+          actions_validas: [
+            'enrichmentCompleto',
+            'liberarCliente',
+            'suspenderCliente',
+            'abrirChamado',
+            'consultarPagamento',
+          ],
+        });
+    }
+
+    return res.json({ ok: true, action, result });
+
+  } catch (err: any) {
+    console.error('[N8N ERP]', err);
+    return res.status(500).json({
+      ok: false,
+      error: err.message ?? 'Erro interno no ERP proxy',
+    });
+  }
+});
+
+export default router;
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+MODIFICAÇÃO: server/index.ts
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Encontre o bloco onde as outras rotas são registradas (ex: onde tem
+app.use('/api/automations', ...) ou similar) e adicione:
+
+import n8nRoutes from './routes/n8n';
+// ...
+app.use('/api/n8n', n8nRoutes);
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+VERIFICAÇÃO APÓS IMPLEMENTAR
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Teste com curl ou Postman:
+
+POST https://chatbanana.com.br/api/n8n/erp
+Authorization: Bearer {seu_jwt}
+Content-Type: application/json
+
+{
+  "action": "enrichmentCompleto",
+  "params": { "telefone": "91999999999" }
+}
+
+Resposta esperada:
+{
+  "ok": true,
+  "action": "enrichmentCompleto",
+  "result": {
+    "found": true,
+    "erp": "SGP",
+    "sistema": "sgp",
+    "cliente": { "name": "João Silva", "plan": "400MB", ... },
+    "financial": { "status": "suspenso", "is_suspended": true, ... },
+    "connection": { "status": "offline", ... },
+    ...
+  }
+}

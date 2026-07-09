@@ -1,0 +1,415 @@
+Resultado excelente! 11/11 verificadas, plataforma significativamente mais segura e performática. Vamos fechar o que resta.
+
+Scorecard atualizado
+CategoriaAntesDepoisSegurança5/109/10Performance6/108/10Arquitetura6/108/10Qualidade código5/106/10
+O que resta são os médios de refatoração — não causam bugs agora, mas vão dificultar crescimento do time e da plataforma.
+
+PROMPT 8 — Refatorar inbox.tsx (M2)
+Refactor client/src/pages/inbox.tsx into smaller, maintainable components.
+The file has 3.112 lines — this makes debugging, onboarding new devs,
+and adding features extremely slow.
+
+## Context
+- Do NOT change any functionality — only reorganize code
+- All existing features must work exactly the same after
+- Use the same design system, imports, and patterns
+- Extract components one at a time, test each before continuing
+
+## Step 1: Audit the file first
+
+Before extracting, map the major sections:
+Read inbox.tsx and identify the top-level logical sections:
+- State declarations and hooks
+- WebSocket connection logic
+- Message sending handlers
+- File/media upload handlers
+- Audio recording logic
+- Contact info panel
+- Internal chat section
+- Main chat/message list
+- Conversation list sidebar
+- Any modals or overlays
+
+Report the sections found and their approximate line ranges.
+
+## Step 2: Extract components in this order
+
+### 2a. AudioRecorder component
+File: client/src/components/inbox/AudioRecorder.tsx
+
+Extract everything related to:
+- useRef for mediaRecorder, audioChunks, timerInterval
+- useState for isRecording, recordingTime
+- startRecording(), stopRecording(), cancelRecording()
+- The audio recording UI (microphone button, timer, cancel button)
+
+Props interface:
+```typescript
+interface AudioRecorderProps {
+  onAudioReady: (audioBlob: Blob) => void;
+  onCancel: () => void;
+  disabled?: boolean;
+}
+```
+
+### 2b. MessageInput component
+File: client/src/components/inbox/MessageInput.tsx
+
+Extract:
+- The message text input field
+- Send button
+- Emoji picker trigger
+- File attachment button
+- AudioRecorder usage
+- All input-related handlers
+
+Props interface:
+```typescript
+interface MessageInputProps {
+  conversationId: number;
+  workspaceId: string;
+  onMessageSent: () => void;
+  disabled?: boolean;
+  channel: 'zapi' | 'meta' | string;
+}
+```
+
+### 2c. MessageBubble component
+File: client/src/components/inbox/MessageBubble.tsx
+
+Extract:
+- Individual message rendering (text, image, audio, document, video)
+- Message status indicators (sent, delivered, read)
+- Timestamp display
+- Reaction handling if exists
+
+Props interface:
+```typescript
+interface MessageBubbleProps {
+  message: Message;
+  isOwn: boolean;
+  showAvatar?: boolean;
+}
+```
+
+### 2d. ConversationHeader component
+File: client/src/components/inbox/ConversationHeader.tsx
+
+Extract:
+- Contact name and avatar display
+- Status badge (online, typing, etc.)
+- Action buttons (transfer, close, reopen)
+- Channel indicator (WhatsApp, Meta)
+
+### 2e. ContactSidePanel component
+File: client/src/components/inbox/ContactSidePanel.tsx
+
+Extract:
+- Contact information display
+- Tags section
+- Notes/annotations
+- Lead info if present
+- ISP customer info if present
+
+## Step 3: Update inbox.tsx
+
+After extracting each component:
+- Import it in inbox.tsx
+- Replace the extracted JSX with the component
+- Pass required props
+- Verify the component renders correctly
+
+## Important rules:
+1. Extract ONE component at a time
+2. After each extraction, confirm the page still works
+3. Keep all state in inbox.tsx initially — move to components only if clearly local
+4. Use named exports for all new components
+5. Place all new files in: client/src/components/inbox/
+
+## After implementing:
+1. inbox.tsx should be under 800 lines
+2. Each extracted component should be under 200 lines
+3. All inbox features work identically to before
+4. TypeScript compiles without errors
+5. Report final line count of inbox.tsx and each new component
+
+PROMPT 9 — Refatorar routes.ts (M4)
+Split server/routes.ts (5.512 lines) into focused route modules.
+This is the highest-risk refactor — proceed carefully.
+
+## Strategy: Extract one module at a time, test before continuing
+
+## Step 1: Create the module structure
+
+Create these files (empty for now):
+- server/routes/auth.ts
+- server/routes/conversations.ts
+- server/routes/leads.ts
+- server/routes/contacts.ts
+- server/routes/messages.ts
+- server/routes/automacoes.ts
+- server/routes/campanhas.ts
+- server/routes/pipeline.ts
+- server/routes/dashboard.ts
+- server/routes/usuarios.ts
+- server/routes/appointments.ts
+- server/routes/transactions.ts
+
+## Step 2: Extract auth routes FIRST (lowest risk)
+
+Move to server/routes/auth.ts:
+- POST /api/auth/login
+- POST /api/auth/register
+- POST /api/auth/logout
+- GET /api/auth/me
+- POST /api/auth/change-password
+
+Template for each new module:
+```typescript
+import { Router } from 'express';
+import { db } from '../db';
+import { requireAuth } from '../middleware/auth';
+import { resolveWorkspaceId } from '../middleware/workspace';
+// ... other imports as needed
+
+const router = Router();
+
+// Routes go here
+
+export default router;
+```
+
+Register in server/index.ts:
+```typescript
+import authRouter from './routes/auth';
+app.use('/api/auth', authRouter);
+```
+
+Remove the auth routes from server/routes.ts after confirming they work.
+
+## Step 3: Extract leads routes
+
+Move to server/routes/leads.ts:
+- GET /api/leads
+- POST /api/leads
+- GET /api/leads/:id
+- PATCH /api/leads/:id
+- DELETE /api/leads/:id
+- POST /api/leads/:id/tags
+- DELETE /api/leads/:id/tags/:tagId
+- GET /api/leads/:id/annotations
+- POST /api/leads/:id/annotations
+
+Register: app.use('/api/leads', requireAuth, leadsRouter);
+
+Test all lead operations in the UI before continuing.
+
+## Step 4: Extract conversations routes
+
+Move to server/routes/conversations.ts:
+- GET /api/conversations
+- GET /api/conversations/:id
+- PATCH /api/conversations/:id/status
+- PATCH /api/conversations/:id/priority
+- PATCH /api/conversations/:id/agent
+- POST /api/conversations/:id/read
+- GET /api/conversations/:id/messages
+
+## Step 5: Continue with remaining modules
+
+Extract one module at a time in this order:
+1. contacts.ts
+2. messages.ts  
+3. pipeline.ts
+4. automacoes.ts
+5. campanhas.ts
+6. usuarios.ts
+7. appointments.ts
+8. transactions.ts
+9. dashboard.ts
+
+## Critical rules:
+1. Extract ONE module, test it fully, then extract the next
+2. After each extraction, run a quick smoke test:
+   - Does the app start?
+   - Does the extracted feature work in the UI?
+3. Keep all middleware imports consistent across modules
+4. If a helper function is used by multiple modules, move it to server/utils/helpers.ts
+5. Do NOT change any route logic — only move code
+6. Run TypeScript compiler after each module extraction
+
+## After completing:
+1. server/routes.ts should be under 200 lines (just imports and registration)
+2. Each route module should be under 300 lines
+3. All features work identically
+4. TypeScript compiles without errors
+5. Report final structure with line counts
+
+PROMPT 10 — ISP Adapters + Webhooks (B6 + M8)
+Fix two remaining issues: incomplete ISP adapter implementations
+and inconsistent webhook processing between Meta and Z-API.
+
+## FIX 1: Verify and complete ISP adapter methods (B6)
+
+Check both adapters implement ALL methods of ISPProvider interface:
+
+Required methods:
+- searchCustomerByCPF
+- getOpenInvoices
+- generateSecondCopy
+- createSupportTicket
+- getTicketStatus
+- getOverdueCustomers
+- getInvoicesDueSoon
+- getCustomerByPhone
+- getAllCustomers
+- trustUnlock
+- confirmPayment
+- reactivateContract
+
+### Check SGP adapter (server/services/sgp-adapter.ts):
+For each method, verify:
+1. It's exported
+2. It's not a stub (actually makes API calls)
+3. It correctly maps response fields to ISPCustomer/ISPInvoice/ISPTicket interfaces
+4. It handles errors with proper SGPError/ISPError
+
+### Check IXC adapter (server/services/ixc-adapter.ts):
+Same checks as SGP.
+
+For any method that is a stub or missing:
+- Implement it fully following the pattern of the other methods
+- Use the correct IXC endpoint based on the real API docs:
+  - cliente: GET {baseUrl}/cliente?qtype=cpf_cnpj&query={cpf}&oper=%3D
+  - fn_areceber: GET {baseUrl}/fn_areceber?qtype=id_cliente&query={id}&oper=%3D
+  - su_oss_chamado: POST {baseUrl}/su_oss_chamado with ixcsoft: incluir header
+  - trustUnlock: PUT {baseUrl}/cliente_contrato/{id} with bloqueio: 'N'
+  - confirmPayment: PUT {baseUrl}/fn_areceber/{id} with status: 'B'
+  - reactivateContract: PUT {baseUrl}/cliente_contrato/{id} with ativo: 'S'
+
+### Verify provider factory (server/services/isp-provider-factory.ts):
+- Confirm getISPProvider('sgp') returns sgpProvider
+- Confirm getISPProvider('ixc') returns ixcProvider
+- Confirm buildCredentials includes all needed fields:
+  baseUrl, apiToken, erpType, sgpApp, ixcTokenId
+
+---
+
+## FIX 2: Unify webhook processing logic (M8)
+
+Files: server/routes.ts (Z-API webhook), server/routes/webhook-meta.ts
+
+PROBLEM: Meta webhook has "combined text" AI context logic that Z-API lacks.
+Deduplication also works differently between the two.
+
+### Step 1: Create shared message processor
+
+File to create: server/services/message-processor.ts
+```typescript
+export interface IncomingMessage {
+  workspaceId: string;
+  conversationId: number;
+  contactId: number;
+  messageId: number;        // local DB id
+  externalId: string;       // wamid or z-api message id
+  content: string;
+  type: string;             // text, image, audio, document, video
+  mediaUrl?: string | null;
+  channel: 'zapi' | 'meta' | 'wweb';
+  customerPhone: string;
+  // Meta-specific
+  phoneNumberId?: string;
+  accessToken?: string;
+}
+
+export async function processIncomingMessageForAutomation(
+  msg: IncomingMessage
+): Promise<void> {
+  // 1. Build combined text context for AI (currently only in Meta webhook)
+  // Move the "combined text" logic here so both channels use it
+  
+  // 2. Check for pending automation inputs (resume flow)
+  // Currently exists in both webhooks — unify here
+  
+  // 3. Trigger new automation flows
+  // Currently exists in both webhooks — unify here
+  
+  // 4. Emit WebSocket event for real-time inbox update
+  // Currently exists in both webhooks — unify here
+}
+
+// Helper: Build combined message context for AI nodes
+export function buildMessageContext(content: string, type: string, mediaUrl?: string | null): {
+  text: string;
+  hasMedia: boolean;
+  mediaType?: string;
+} {
+  // Move the "combined text" building logic from Meta webhook here
+  // Make it work for both Z-API and Meta messages
+}
+```
+
+### Step 2: Update both webhooks to use shared processor
+
+In server/routes/webhook-meta.ts:
+```typescript
+import { processIncomingMessageForAutomation } from '../services/message-processor';
+
+// After saving message to DB:
+await processIncomingMessageForAutomation({
+  workspaceId,
+  conversationId: conversation.id,
+  contactId: contact.id,
+  messageId: savedMessage.id,
+  externalId: wamid,
+  content,
+  type: messageType,
+  mediaUrl,
+  channel: 'meta',
+  customerPhone: fromPhone,
+  phoneNumberId,
+  accessToken: connection.access_token
+});
+```
+
+In server/routes.ts (Z-API webhook handler):
+```typescript
+import { processIncomingMessageForAutomation } from './services/message-processor';
+
+// After saving message to DB:
+await processIncomingMessageForAutomation({
+  workspaceId,
+  conversationId: conversation.id,
+  contactId: contact.id,
+  messageId: savedMessage.id,
+  externalId: externalMessageId,
+  content: messageText,
+  type: messageType,
+  mediaUrl,
+  channel: 'zapi',
+  customerPhone: phone
+});
+```
+
+### Step 3: Unify deduplication
+
+Create a shared deduplication check in message-processor.ts:
+```typescript
+export async function isMessageDuplicate(
+  workspaceId: string,
+  externalId: string
+): Promise<boolean> {
+  // Check whatsapp_webhook_events table first (fast)
+  // Then check messages table as fallback
+  // Return true if already processed
+}
+```
+
+## After implementing:
+1. Both Z-API and Meta messages now use same AI context building
+2. Deduplication works identically for both channels
+3. TypeScript compiles without errors
+4. Test: send message via Z-API — confirm automation triggers
+5. Test: send message via Meta — confirm same automation triggers
+6. Confirm no duplicate message processing
+7. Report any ISP adapter methods that were stubs and are now implemented

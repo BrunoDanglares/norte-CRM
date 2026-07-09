@@ -1,0 +1,145 @@
+Vou gerar baseado no que sei: inbox refatorado para ~791 linhas, usa apiFetch, WebSocket já ativo, conversations vêm de GET /api/conversations.
+
+Prompt — Número do Protocolo no Inbox
+Implemente a exibição do número do protocolo ativo no Inbox do ChatBanana,
+ao lado de cada conversa na lista lateral.
+
+--- PARTE 1: BACKEND — Enriquecer as conversas com protocolo ativo ---
+
+No arquivo que serve GET /api/conversations (provavelmente em server/routes.ts
+ou server/routes/conversations.ts), localize o endpoint que retorna a lista
+de conversas para o inbox.
+
+Após buscar as conversas, adicione um LEFT JOIN ou uma query secundária
+para buscar o protocolo ativo de cada conversa.
+
+Implemente assim — após buscar a lista de conversas, faça:
+
+const conversationIds = conversations.map(c => c.id).filter(Boolean);
+
+Se conversationIds.length > 0:
+  Buscar em protocols WHERE:
+  - conversation_id IN (conversationIds)
+  - workspace_id = workspaceId
+  - status NOT IN ('fechado')
+  ORDER BY created_at DESC
+
+Montar um Map<conversationId, { numero: string, status: string, slaViolado: boolean }>
+com o protocolo mais recente de cada conversa (primeiro de cada grupo).
+
+Enriquecer cada conversa no array de retorno com:
+  protocolNumero: string | null
+  protocolStatus: string | null  
+  protocolSlaViolado: boolean
+
+Exemplo de retorno de cada conversa:
+{
+  id: 123,
+  nome: "João Silva",
+  telefone: "91999990000",
+  ...camposExistentes,
+  protocolNumero: "202603310001",
+  protocolStatus: "em_andamento",
+  protocolSlaViolado: false
+}
+
+Se a conversa não tiver protocolo ativo: todos os campos protocol* como null/false.
+
+IMPORTANTE: Fazer isso de forma eficiente — UMA query só para todos os protocolos
+do batch, não uma query por conversa (evitar N+1).
+
+--- PARTE 2: BACKEND — Broadcast ao criar/atualizar protocolo ---
+
+No arquivo server/services/protocol.service.ts, nas funções criarProtocolo
+e atualizarStatusProtocolo:
+
+Após qualquer mudança, se o protocolo tiver conversationId, chamar:
+
+broadcastToWorkspace(protocol.workspaceId, 'protocol_updated', {
+  conversationId: protocol.conversationId,
+  protocolNumero: protocol.numero,
+  protocolStatus: protocol.status,
+  protocolSlaViolado: protocol.slaViolado,
+})
+
+Importe broadcastToWorkspace de "../index".
+
+--- PARTE 3: FRONTEND — Badge de protocolo na lista do Inbox ---
+
+No arquivo client/src/pages/inbox.tsx (ou o componente que renderiza
+a lista de conversas no painel esquerdo), localize onde cada item
+da lista de conversas é renderizado.
+
+Adicione a interface local ou atualize o tipo Conversation para incluir:
+  protocolNumero?: string | null
+  protocolStatus?: string | null
+  protocolSlaViolado?: boolean
+
+No JSX de cada item da lista de conversas, após o nome/preview da última
+mensagem, adicione condicionalmente o badge do protocolo:
+
+{conversa.protocolNumero && (
+  <span
+    style={{
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: '3px',
+      fontSize: '10px',
+      fontFamily: 'monospace',
+      padding: '1px 6px',
+      borderRadius: '4px',
+      background: conversa.protocolSlaViolado ? '#2e1010' : '#1e1540',
+      color: conversa.protocolSlaViolado ? '#E24B4A' : '#8b5cf6',
+      border: `0.5px solid ${conversa.protocolSlaViolado ? '#E24B4A' : '#8b5cf6'}`,
+      flexShrink: 0,
+      whiteSpace: 'nowrap',
+    }}
+  >
+    {conversa.protocolSlaViolado ? '! ' : '#'}{conversa.protocolNumero}
+  </span>
+)}
+
+Posicionar o badge na linha de baixo do item, junto ao preview da última
+mensagem, alinhado à esquerda. Deve aparecer discreto mas legível.
+Nunca quebrar o layout existente — se não couber, truncar o texto
+da última mensagem com text-overflow: ellipsis.
+
+--- PARTE 4: FRONTEND — Atualização em tempo real via WebSocket ---
+
+No mesmo arquivo do Inbox, localize onde os eventos WebSocket são tratados
+(provavelmente um useEffect com ws.onmessage ou similar).
+
+Adicione o handler para o evento 'protocol_updated':
+
+case 'protocol_updated': {
+  const { conversationId, protocolNumero, protocolStatus, protocolSlaViolado } = data;
+  setConversations(prev =>
+    prev.map(c =>
+      c.id === conversationId
+        ? { ...c, protocolNumero, protocolStatus, protocolSlaViolado }
+        : c
+    )
+  );
+  break;
+}
+
+Isso garante que quando um protocolo for criado ou atualizado em qualquer
+lugar do sistema, o inbox atualiza o badge instantaneamente sem precisar
+recarregar a página.
+
+--- RESULTADO ESPERADO ---
+
+Na lista de conversas do inbox, cada conversa que tiver um protocolo ativo
+exibirá um badge compacto com o número, ex:
+
+  João Silva          [há 5min]
+  Último: Bom dia!
+  #202603310001                    ← badge roxo discreto
+
+Se o SLA estiver violado:
+  Maria Pereira       [há 2h]
+  Último: Ainda sem resposta
+  ! 202603310048                   ← badge vermelho com "!"
+
+Confirme quando implementado, listando arquivos modificados e
+descrevendo onde exatamente o badge aparece na UI.

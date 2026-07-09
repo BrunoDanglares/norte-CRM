@@ -1,0 +1,137 @@
+Quero melhorar meu código atual de classificação de intenção (Code: Contexto + SDR) sem quebrar a estrutura existente.
+
+IMPORTANTE:
+- NÃO alterar nomes de variáveis existentes
+- NÃO remover regras atuais
+- NÃO mudar estrutura de retorno
+- NÃO alterar integração com outros nodes
+- Apenas MELHORAR inteligência e robustez
+
+---
+
+## 🎯 MELHORIAS NECESSÁRIAS
+
+### 1. USAR SEMPRE mensagem_efetiva
+
+Garantir que toda análise use:
+
+entrada.mensagem_efetiva || entrada.mensagem
+
+Isso já existe, mas revisar e garantir consistência.
+
+---
+
+### 2. INTERPRETAÇÃO DE NÚMEROS (CRÍTICO)
+
+Adicionar suporte para:
+
+- "1", "2", "3"
+- "primeiro", "segundo", "terceiro"
+
+Regra:
+
+Se houver múltiplos contratos:
+- interpretar número
+- mapear para contrato correto
+- setar contrato_selecionado corretamente
+
+SEM remover lógica atual de contrato.
+
+---
+
+### 3. MELHORAR DETECÇÃO DE INTENÇÃO
+
+Hoje usa score por palavra-chave.
+
+Melhorar adicionando:
+
+- tolerância a erro de digitação leve
+- interpretação semântica simples
+- reforço quando cliente repete intenção
+
+SEM remover score atual.
+
+---
+
+### 4. DETECÇÃO DE MUDANÇA DE INTENÇÃO MAIS INTELIGENTE
+
+Hoje:
+
+if (detectouNovaIntencao && intentOriginal && topIntent !== intentOriginal)
+
+Melhorar para:
+
+- considerar contexto recente
+- ignorar saudações
+- detectar mudança mesmo sem keyword exata
+
+---
+
+### 5. SUPORTE A TEXTO LIVRE (CRÍTICO)
+
+Garantir que frases como:
+
+"quero pagar"
+"me manda boleto"
+"to sem internet"
+"caiu tudo aqui"
+
+sejam corretamente interpretadas
+
+SEM depender de palavra exata.
+
+---
+
+### 6. NÃO QUEBRAR IDENTIFICAÇÃO (CPF)
+
+Manter exatamente a lógica atual:
+
+- SOLICITAR_CPF
+- IDENTIFICACAO
+- intent_para_depois
+
+---
+
+### 7. MELHORAR FALLBACK
+
+Se não detectar intenção clara:
+
+- manter fluxo atual se existir
+- ou cair em MENU
+
+Nunca deixar intenção indefinida.
+
+---
+
+### 8. PRESERVAR TODA ESTRUTURA FINAL
+
+Manter exatamente:
+
+return [{ json: { ... } }]
+
+com TODOS os campos atuais.
+
+---
+
+## ⚠️ REGRAS CRÍTICAS
+
+- NÃO remover nenhuma regra existente
+- NÃO alterar nomes de campos
+- NÃO mudar comportamento de ERP
+- NÃO mexer na estrutura de sessão
+- NÃO alterar integração com Switch
+
+---
+
+## 🎯 OBJETIVO FINAL
+
+Deixar o sistema:
+
+- mais inteligente
+- mais flexível
+- capaz de entender linguagem natural
+- sem quebrar absolutamente nada do fluxo atual
+
+---
+
+Quero o código completo atualizado, pronto para substituir o atual.

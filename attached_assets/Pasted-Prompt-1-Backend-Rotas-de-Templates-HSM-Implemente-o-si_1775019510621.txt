@@ -1,0 +1,237 @@
+Prompt 1 — Backend: Rotas de Templates HSM
+Implemente o sistema completo de gerenciamento de templates HSM no ChatBanana.
+A tabela whatsapp_message_templates já existe no schema. Falta o serviço e as rotas.
+
+--- ARQUIVO 1: server/services/meta-whatsapp-templates.ts ---
+
+Crie este arquivo com as seguintes funções:
+
+FUNÇÃO 1 — submitTemplate
+Envia um novo template para aprovação da Meta.
+
+export async function submitTemplate(params: {
+  phoneNumberId: string;
+  accessToken: string;
+  wabaId: string;
+  templateName: string;
+  category: 'MARKETING' | 'UTILITY' | 'AUTHENTICATION';
+  language: string;
+  headerType?: 'TEXT' | 'IMAGE' | 'DOCUMENT' | 'VIDEO' | null;
+  headerContent?: string;
+  bodyText: string;
+  footerText?: string;
+  buttons?: Array<{
+    type: 'QUICK_REPLY' | 'URL' | 'PHONE_NUMBER';
+    text: string;
+    url?: string;
+    phone?: string;
+  }>;
+}): Promise<{ templateId: string; status: string }>
+
+Lógica:
+1. Montar o payload para POST https://graph.facebook.com/v19.0/{wabaId}/message_templates
+2. O payload tem: name, category, language, components
+3. components é um array. Montar assim:
+   - Se headerType existe: { type: "HEADER", format: headerType, text: headerContent }
+   - Sempre: { type: "BODY", text: bodyText }
+   - Se footerText: { type: "FOOTER", text: footerText }
+   - Se buttons.length > 0: { type: "BUTTONS", buttons: [...] }
+4. Fazer fetch com Authorization: Bearer {accessToken}
+5. Se resposta ok: retornar { templateId: data.id, status: data.status || 'PENDING' }
+6. Se erro: lançar Error com a mensagem da Meta (data.error?.message)
+
+FUNÇÃO 2 — syncTemplateStatus
+Busca o status atual de um template na Meta API.
+
+export async function syncTemplateStatus(params: {
+  wabaId: string;
+  accessToken: string;
+  templateName: string;
+  language: string;
+}): Promise<{ status: string; rejectionReason?: string } | null>
+
+Lógica:
+1. GET https://graph.facebook.com/v19.0/{wabaId}/message_templates
+   ?name={templateName}&fields=name,status,language,rejected_reason
+   Authorization: Bearer {accessToken}
+2. Encontrar o template que bate name + language nos dados retornados
+3. Retornar { status: template.status, rejectionReason: template.rejected_reason || null }
+4. Se não encontrar: retornar null
+5. Envolver em try/catch retornando null em caso de erro
+
+FUNÇÃO 3 — listMetaTemplates  
+Lista todos os templates do WABA diretamente da Meta.
+
+export async function listMetaTemplates(params: {
+  wabaId: string;
+  accessToken: string;
+}): Promise<Array<{
+  id: string;
+  name: string;
+  status: string;
+  language: string;
+  category: string;
+  rejectedReason?: string;
+}>>
+
+Lógica:
+1. GET https://graph.facebook.com/v19.0/{wabaId}/message_templates
+   ?fields=id,name,status,language,category,rejected_reason&limit=100
+2. Retornar data.data mapeado para o formato acima
+3. Em caso de erro: retornar array vazio
+
+FUNÇÃO 4 — countTemplateVariables
+Conta quantas variáveis {{N}} existem em um texto.
+
+export function countTemplateVariables(text: string): number {
+  const matches = text.match(/\{\{\d+\}\}/g);
+  return matches ? matches.length : 0;
+}
+
+--- ARQUIVO 2: Adicionar rotas em server/routes/whatsapp-official.ts ---
+
+No router de whatsapp-official (já existente), adicione as seguintes rotas:
+
+GET /templates
+- Buscar whatsapp_official_connections WHERE workspace_id = workspaceId
+- Se não existe conexão: retornar []
+- Buscar todos os templates da tabela whatsapp_message_templates
+  WHERE workspace_id = workspaceId ORDER BY created_at DESC
+- Retornar array de templates
+
+POST /templates
+- Body: { templateName, category, language, headerType, headerContent,
+          bodyText, footerText, buttons }
+- Validações:
+  * templateName obrigatório, só letras minúsculas, números e underscores
+    (regex: /^[a-z0-9_]+$/ — a Meta exige esse formato)
+  * bodyText obrigatório, máximo 1024 chars
+  * category deve ser: MARKETING, UTILITY ou AUTHENTICATION
+- Buscar conexão Meta ativa do workspace
+- Chamar submitTemplate do serviço acima
+- Inserir na tabela whatsapp_message_templates com status 'PENDING'
+- Retornar o template criado com status 201
+
+POST /templates/:id/sync
+- Buscar o template pelo id e workspace_id
+- Buscar a conexão Meta ativa
+- Chamar syncTemplateStatus
+- Se retornou dados: UPDATE whatsapp_message_templates
+  SET status = novoStatus, rejection_reason = motivo, updated_at = now()
+- Retornar o template atualizado
+
+POST /templates/sync-all
+- Buscar todos os templates PENDING ou em revisão do workspace
+- Para cada um: chamar syncTemplateStatus e atualizar no banco
+- Retornar { updated: N, total: M }
+
+DELETE /templates/:id
+- Buscar o template pelo id e workspace_id
+- Se status for APPROVED, fazer DELETE na Meta API:
+  DELETE https://graph.facebook.com/v19.0/{wabaId}/message_templates
+  ?name={templateName}
+  Authorization: Bearer {accessToken}
+- Deletar da tabela whatsapp_message_templates
+- Retornar { success: true }
+
+--- ARQUIVO 3: Scheduler de sincronização automática ---
+
+No server/index.ts, dentro do bloco do setInterval existente (após startISPSchedulers),
+adicione um novo scheduler que roda a cada 30 minutos:
+
+setInterval(async () => {
+  try {
+    const { db: schedDb } = await import("./db");
+    const { whatsappOfficialConnections, whatsappMessageTemplates } = await import("@shared/schema");
+    const { eq, inArray } = await import("drizzle-orm");
+    const { syncTemplateStatus } = await import("./services/meta-whatsapp-templates");
+
+    const pendingTemplates = await schedDb
+      .select()
+      .from(whatsappMessageTemplates)
+      .where(inArray(whatsappMessageTemplates.status, ['PENDING', 'IN_APPEAL']));
+
+    if (pendingTemplates.length === 0) return;
+
+    for (const tmpl of pendingTemplates) {
+      try {
+        const [conn] = await schedDb
+          .select()
+          .from(whatsappOfficialConnections)
+          .where(eq(whatsappOfficialConnections.workspaceId, tmpl.workspaceId))
+          .limit(1);
+
+        if (!conn) continue;
+
+        const result = await syncTemplateStatus({
+          wabaId: conn.wabaId,
+          accessToken: conn.accessToken,
+          templateName: tmpl.templateName,
+          language: tmpl.language,
+        });
+
+        if (result && result.status !== tmpl.status) {
+          await schedDb
+            .update(whatsappMessageTemplates)
+            .set({
+              status: result.status,
+              rejectionReason: result.rejectionReason || null,
+              approvedAt: result.status === 'APPROVED' ? new Date() : null,
+              updatedAt: new Date(),
+            })
+            .where(eq(whatsappMessageTemplates.id, tmpl.id));
+
+          console.log(`[HSM Sync] Template "${tmpl.templateName}" status: ${tmpl.status} → ${result.status}`);
+        }
+      } catch (e: any) {
+        console.error(`[HSM Sync] Error syncing template ${tmpl.id}:`, e.message);
+      }
+    }
+  } catch (e: any) {
+    console.error("[HSM Sync] Scheduler error:", e.message);
+  }
+}, 30 * 60 * 1000);
+
+--- ARQUIVO 4: Integração com cobranças ISP ---
+
+No arquivo server/services/isp-schedulers.ts (ou onde ficam os schedulers ISP),
+localize a função que envia mensagens de cobrança via WhatsApp
+(provavelmente usa sendMessage do channel-router).
+
+Adicione a seguinte lógica ANTES de cada envio de cobrança:
+
+1. Verificar se a conversa com o cliente tem lastCustomerMessageAt
+   dentro das últimas 24h via storage.getConversationByPhone(phone, workspaceId)
+
+2. Se a janela de 24h estiver ABERTA (dentro das 24h): enviar mensagem de texto normal
+   como já faz hoje — sem mudança
+
+3. Se a janela de 24h estiver FECHADA (mais de 24h sem resposta ou sem conversa):
+   a. Buscar template aprovado do tipo cobrança:
+      SELECT * FROM whatsapp_message_templates
+      WHERE workspace_id = workspaceId
+      AND status = 'APPROVED'
+      AND category IN ('UTILITY', 'MARKETING')
+      ORDER BY approved_at DESC
+      LIMIT 1
+   b. Se encontrou template: usar sendMessage com type: 'template',
+      templateName: template.templateName,
+      templateLanguage: template.language,
+      templateComponents: montar com os dados do cliente
+      (nome = {{1}}, valor = {{2}}, vencimento = {{3}})
+   c. Se não encontrou template aprovado: logar aviso e PULAR o envio
+      (não tentar enviar texto livre fora da janela — vai falhar)
+
+Adicionar log: [ISP Billing] Janela 24h fechada para {phone} —
+  usando template HSM "{templateName}" / sem template disponível, pulando
+
+--- VERIFICAÇÃO FINAL ---
+
+Após implementar:
+1. Servidor inicia sem erros
+2. GET /api/whatsapp-official/templates retorna 200
+3. Verificar no log do boot que o scheduler HSM está registrado
+4. Confirmar que as rotas POST /templates, POST /templates/:id/sync
+   e DELETE /templates/:id respondem corretamente
+
+Liste os arquivos criados e modificados.

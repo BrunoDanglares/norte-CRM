@@ -1,0 +1,214 @@
+Não consigo acessar o package.json diretamente. Mas não importa — já que você escolheu apenas cards e números sem gráficos, o Recharts não é necessário. Layout mais limpo, carrega mais rápido, e funciona perfeitamente para gestão de provedor.
+
+Execute o Prompt 1 do backend que gerei antes (role a conversa acima), e quando confirmar que as 3 rotas estão funcionando, execute este:
+
+Prompt 2 — Frontend: Tab Relatórios no CRM
+Implemente a tab de Relatórios dentro da página CRM do ChatBanana.
+A tab já existe na UI (Pipeline | Contatos | Relatórios) — agora precisamos
+preencher seu conteúdo com dados reais do backend.
+
+--- LOCALIZAÇÃO ---
+
+No arquivo que contém a tab Relatórios do CRM (provavelmente client/src/pages/crm.tsx
+ou client/src/pages/leads.tsx), localize a tab com valor "relatorios".
+Substitua o conteúdo vazio/placeholder pelo componente abaixo.
+
+--- COMPONENTE INTERNO: RelatoriosTab ---
+
+Crie um componente local RelatoriosTab() dentro do mesmo arquivo.
+NÃO criar arquivo separado.
+
+O componente tem:
+
+1. ESTADO LOCAL:
+   const [subTab, setSubTab] = useState<'atendimentos' | 'protocolos' | 'isp'>('atendimentos')
+   const [periodo, setPeriodo] = useState('30d')
+   const [dataInicio, setDataInicio] = useState('')
+   const [dataFim, setDataFim] = useState('')
+   const [loading, setLoading] = useState(false)
+   const [dadosAtendimentos, setDadosAtendimentos] = useState<any>(null)
+   const [dadosProtocolos, setDadosProtocolos] = useState<any>(null)
+   const [dadosIsp, setDadosIsp] = useState<any>(null)
+
+2. FUNÇÃO fetchDados():
+   Monta a query string baseada no período:
+   - Se periodo !== 'custom': ?periodo=${periodo}
+   - Se periodo === 'custom' e dataInicio e dataFim preenchidos:
+     ?dataInicio=${dataInicio}&dataFim=${dataFim}
+   
+   Chamar em paralelo com Promise.allSettled:
+   - apiFetch('/api/relatorios/stats/atendimentos' + qs)
+   - apiFetch('/api/relatorios/stats/protocolos' + qs)
+   - apiFetch('/api/relatorios/stats/isp' + qs)
+   
+   Atualizar cada estado apenas se a promise resolveu (status === 'fulfilled').
+   Envolver em try/catch com setLoading(false) no finally.
+
+3. useEffect(() => { fetchDados() }, [periodo, dataInicio, dataFim])
+
+4. HEADER DO COMPONENTE:
+   Linha com chips de período + range picker:
+
+   Chips (botões pill):
+   [Hoje] [7 dias] [30 dias] [90 dias] [Personalizado]
+   
+   Chip ativo: background #8b5cf6, cor branca
+   Chip inativo: background #1c1830, border #2a2440, cor #7c6fa0
+   
+   Quando clicar em "Personalizado": setPeriodo('custom') e mostrar
+   dois inputs date lado a lado:
+   <input type="date"> para dataInicio e dataFim
+   Estilo dos inputs: background #1c1830, border #2a2440, cor #c4b8f0,
+   padding 6px 10px, borderRadius 6px, fontSize 12px
+
+5. SUB-TABS:
+   Linha com 3 botões de sub-tab:
+   [Atendimentos] [Protocolos] [ISP / Provedor]
+   
+   Sub-tab ativa: border-bottom 2px solid #8b5cf6, cor #c4b8f0
+   Sub-tab inativa: cor #5a4d7a, sem border
+   background transparente para todas
+
+6. CONTEÚDO POR SUB-TAB:
+
+   === SUB-TAB ATENDIMENTOS ===
+   
+   Se dadosAtendimentos é null e loading: mostrar "Carregando..."
+   Se dadosAtendimentos é null e não loading: mostrar "Sem dados"
+   
+   GRID 1 — 4 cards de métricas principais (grid 4 colunas, gap 12px):
+   
+   Card padrão: background #1c1830, border 0.5px solid #2a2440,
+   borderRadius 8px, padding 14px 16px
+   Label: fontSize 11px, color #5a4d7a, marginBottom 4px
+   Valor: fontSize 24px, fontWeight 500
+   
+   - "Total de conversas" → dadosAtendimentos.totalConversas (cor #c4b8f0)
+   - "Resolvidas" → dadosAtendimentos.conversasResolvidas (cor #5DCAA5)
+   - "Taxa de resolução" → dadosAtendimentos.taxaResolucao + '%' (cor #8b5cf6)
+   - "Tempo médio" → dadosAtendimentos.tempoMedioResolucao
+     Se null: mostrar "–"
+     Se < 1: mostrar (valor * 60).toFixed(0) + 'min'
+     Se >= 1: mostrar valor.toFixed(1) + 'h'
+     Cor: #EF9F27
+   
+   GRID 2 — 2 cards lado a lado (grid 2 colunas, gap 12px, marginTop 12px):
+   
+   Card "Por canal":
+   - Título interno: "Volume por canal" (12px, #5a4d7a)
+   - Lista de { canal, total } de dadosAtendimentos.porCanal
+   - Cada linha: nome do canal à esquerda, número à direita
+   - Barra de progresso proporcional ao maior valor
+     height 3px, borderRadius 2px, background #8b5cf6, opacity 0.6
+     largura = (total / maxTotal * 100)%
+   - Max 5 itens
+   
+   Card "Por agente":
+   - Título interno: "Atendimentos por agente" (12px, #5a4d7a)
+   - Lista de { agenteNome, total, resolvidas } de dadosAtendimentos.porAgente
+   - Cada linha: nome à esquerda, "X atend. / Y resolvidos" à direita (11px)
+   - Max 5 itens
+   - Se vazio: "Nenhum agente com atendimentos no período"
+
+   === SUB-TAB PROTOCOLOS ===
+   
+   Se dadosProtocolos?.total === 0 ou null: mostrar card central
+   "Nenhum protocolo no período selecionado"
+   
+   GRID 1 — 4 cards principais:
+   - "Total de protocolos" → dadosProtocolos.total (cor #c4b8f0)
+   - "SLA violados" → dadosProtocolos.slaViolados
+     Cor: se > 0 → #E24B4A, senão → #5DCAA5
+     Sub-label: dadosProtocolos.taxaSlaViolado + '% do total'
+   - "CSAT médio" → dadosProtocolos.csatMedia
+     Se null: "–"
+     Senão: valor.toFixed(1) + ' / 5'
+     Cor: se >= 4 → #5DCAA5, se >= 3 → #EF9F27, senão → #E24B4A
+   - "Tempo médio resolução" → mesmo formato de horas do atendimentos
+     Cor #EF9F27
+   
+   GRID 2 — 2 cards lado a lado:
+   
+   Card "Por categoria":
+   - Lista de dadosProtocolos.porCategoria
+   - Traduzir categoria:
+     'suporte_tecnico' → 'Suporte técnico'
+     'financeiro' → 'Financeiro'
+     'comercial' → 'Comercial'
+     'geral' → 'Geral'
+   - Barra proporcional como em "Por canal" mas cor #4CB8F0
+   
+   Card "Por status":
+   - Lista de dadosProtocolos.porStatus
+   - Traduzir status:
+     'aberto' → 'Aberto'
+     'em_andamento' → 'Em andamento'
+     'aguardando_cliente' → 'Aguardando cliente'
+     'resolvido' → 'Resolvido'
+     'fechado' → 'Fechado'
+   - Cor da bolinha por status (igual ao módulo de protocolos):
+     aberto → #4CB8F0
+     em_andamento → #8b5cf6
+     aguardando_cliente → #EF9F27
+     resolvido → #5DCAA5
+     fechado → #7c6fa0
+   - Cada linha: bolinha + status à esquerda, número à direita
+   
+   Card "Distribuição CSAT" (largura total, abaixo dos 2 cards):
+   - Se dadosProtocolos.distribuicaoCsat vazio: "Nenhuma avaliação no período"
+   - Senão: linha para cada nota 1-5 com:
+     Estrelas à esquerda (★ repetido N vezes, cor #FFB300)
+     Barra proporcional ao centro (cor #FFB300, height 6px)
+     Total à direita
+
+   === SUB-TAB ISP ===
+   
+   Se dadosIsp?.enabled === false:
+   Mostrar card centralizado:
+   "Módulo ISP não configurado neste workspace.
+   Configure em Provedor ISP para ver relatórios."
+   
+   Se dadosIsp?.enabled === true:
+   
+   GRID 1 — 4 cards principais:
+   - "Cobranças enviadas" → dadosIsp.cobrancasEnviadas (cor #5DCAA5)
+   - "Desbloqueios realizados" → dadosIsp.desbloqueios.total (cor #8b5cf6)
+   - "Taxa sucesso desbloqueio" → dadosIsp.desbloqueios.taxaSucesso + '%'
+     Cor: se >= 80 → #5DCAA5, senão → #EF9F27
+   - "Tickets abertos" → dadosIsp.tickets.abertos (cor #EF9F27)
+   
+   GRID 2 — 2 cards lado a lado:
+   
+   Card "Cobranças por tipo":
+   - Lista de dadosIsp.porTipoMensagem
+   - label já vem traduzido do backend
+   - Barra proporcional, cor #5DCAA5
+   
+   Card "Desbloqueios":
+   - 2 linhas simples:
+     "Sucesso" → dadosIsp.desbloqueios.sucesso (verde)
+     "Falha" → dadosIsp.desbloqueios.falha (vermelho)
+   - Se dadosIsp.desbloqueios.porTipo existir e tiver itens:
+     Subtítulo "Por tipo:" e lista de { unlockType, total }
+
+7. ESTADO DE LOADING:
+   Enquanto loading === true, mostrar sobre cada card um overlay sutil:
+   opacity 0.5 no container + texto "Atualizando..." no centro
+   OU simplesmente desabilitar os chips e mostrar um spinner de 16px
+   ao lado do período ativo.
+   Usar a abordagem mais simples possível.
+
+--- ESTILOS GERAIS ---
+
+Todos os estilos inline (não criar classes CSS separadas).
+Sem dependências externas novas.
+Manter consistência com o tema escuro do ChatBanana:
+- bg principal: #0f0c1a
+- cards: #1c1830
+- borders: #2a2440
+- texto primário: #c4b8f0
+- texto secundário: #5a4d7a
+- accent: #8b5cf6
+
+Confirme quando implementado, descrevendo como ficou cada sub-tab
+e se há algum dado sendo exibido (mesmo que zero).

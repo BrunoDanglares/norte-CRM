@@ -1,0 +1,93 @@
+Completar detecção de situações C2, C4, C7, C9, C10 no
+ComercialAgent. Os existentes C1, C3, C5, C6, C8 já cobertos.
+
+══ comercialAgent.ts — detectSituation() ══
+
+Adicione os casos abaixo ao detectSituation() existente:
+
+  // C2 — Agendamento de instalação
+  if (/agendar|agenda|quando instalam|quando vem o técnico|
+       marcar instalação|horário de instalação/i.test(texto)) {
+    return 'C2';
+  }
+
+  // C4 — Consulta de fidelidade e multa
+  if (/fidelidade|multa|fidelidade do contrato|
+       quando termina minha fidelidade|
+       vou pagar multa/i.test(texto)) {
+    return 'C4';
+  }
+
+  // C7 — Alteração de titularidade (escalate_always)
+  if (/trocar titular|mudar titular|passar pra outra pessoa|
+       mudei o titular|troca o cpf do contrato|
+       nova titularidade/i.test(texto)) {
+    return 'C7';
+  }
+
+  // C9 — Mudança de endereço
+  if (/mudar de casa|mudei de endereço|vou mudar|
+       transferir minha internet|novo endereço|
+       mudança de endereço/i.test(texto)) {
+    return 'C9';
+  }
+
+  // C10 — Indicação / Referral
+  if (/indiquei|indicação|meu vizinho quer|
+       indicar alguém|amigo quer contratar|
+       programa de indicação/i.test(texto)) {
+    return 'C10';
+  }
+
+══ handle() do ComercialAgent — tratar escalações ══
+
+Após detectar situação, adicione bloco para escalações
+obrigatórias (C6 e C7):
+
+  // C6 — Retenção (sempre escala — já deve estar no
+  //       CancelamentoAgent, mas pode chegar pelo comercial)
+  if (situationCode === 'C6') {
+    return {
+      message: '',
+      redirectTo: 'CANCELAMENTO',
+      guardFeedback:
+        `Cliente com intenção de cancelamento. ` +
+        `Motivo coletado: ${dados.motivo_cancelamento ?? 'não informado'}.`,
+    };
+  }
+
+  // C7 — Titularidade (sempre escala)
+  if (situationCode === 'C7') {
+    return {
+      message: '',
+      redirectTo: 'HUMANO',
+      guardFeedback:
+        'Solicitação de alteração de titularidade — ' +
+        'requer validação de documentos e alteração contratual.',
+    };
+  }
+
+══ Enriquecer contexto para C2 e C9 ══
+
+Para C2 (agendamento) e C9 (mudança de endereço),
+ambas dependem de dados do ERP. No handle() do agente,
+quando situationCode for um desses, tente buscar:
+
+  if (situationCode === 'C2') {
+    try {
+      // Buscar agenda disponível se o ERP suportar
+      // Se não suportar, injetar no contexto:
+      dados.agenda_disponivel =
+        'Consulte nossa equipe para datas disponíveis';
+    } catch (e) {
+      dados.agenda_disponivel = 'não disponível via sistema';
+    }
+  }
+
+  if (situationCode === 'C9') {
+    // Coletar novo endereço se ainda não coletado
+    if (!dados.novo_endereco && input.textoEfetivo) {
+      // A IA vai solicitar via prompt — apenas marca a situação
+      dados.coletando_novo_endereco = true;
+    }
+  }

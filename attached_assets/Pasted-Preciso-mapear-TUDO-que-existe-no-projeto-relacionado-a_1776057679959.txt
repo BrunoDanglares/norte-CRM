@@ -1,0 +1,49 @@
+Preciso mapear TUDO que existe no projeto relacionado a 4 integrações que serão completamente removidas: Zapier/Make, N8N, Google Calendar e Mercado Pago.
+
+Não altere nenhum arquivo. Apenas localize e liste.
+
+Para cada integração, me informe:
+
+---
+
+**1. ZAPIER / MAKE**
+- Tabelas no schema Drizzle (zapier_config, etc.)
+- Arquivos de rota (server/routes/zapier*, webhooks.ts referências)
+- Funções utilitárias (triggerZapierWebhook, etc.) — caminho e nome
+- Referências no automation engine / flow executor
+- Node no canvas de automações (frontend)
+- Componentes frontend (modais, configurações, cards)
+- Imports em outros arquivos que referenciam essas funções
+- Variáveis de ambiente usadas (ZAPIER_*, etc.)
+
+**2. N8N**
+- Tabelas no schema Drizzle (se houver)
+- Arquivos de rota (server/routes/n8n*, /api/n8n/*)
+- Services que ainda referenciam N8N como integração externa (ignora ispAiService, ispErpService etc — esses são legado de nome, não integração real)
+- Node N8N no canvas de automações (frontend)
+- Middleware de service token que valida token N8N especificamente
+- Variáveis de ambiente (N8N_WEBHOOK_URL, N8N_SERVICE_TOKEN, etc.)
+
+**3. GOOGLE CALENDAR**
+- Tabelas no schema Drizzle (oauth_tokens, calendar_*, etc.)
+- Arquivos de serviço (googleCalendar*, calendar*, oauth*)
+- Rotas (server/routes/calendar*, /api/calendar/*, /api/oauth/*)
+- Componentes frontend (AgendaCalendar, sync buttons, OAuth flow)
+- Variáveis de ambiente (GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, etc.)
+
+**4. MERCADO PAGO**
+- Tabelas no schema Drizzle (se houver)
+- Arquivos de serviço (mercadopago*, payment*)
+- Rotas de webhook e API
+- Node no canvas de automações (frontend)
+- Componentes frontend
+- Variáveis de ambiente (MP_ACCESS_TOKEN, MERCADOPAGO_*, etc.)
+
+---
+
+Para cada item encontrado, me informa:
+- Caminho completo do arquivo
+- Nome da função/tabela/componente específico
+- Outros arquivos que importam ou dependem desse item (dependências inversas)
+
+Organiza o resultado como uma lista de checklist que usarei para guiar a remoção segura.

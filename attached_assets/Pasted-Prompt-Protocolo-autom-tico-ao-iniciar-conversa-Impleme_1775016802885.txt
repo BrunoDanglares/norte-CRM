@@ -1,0 +1,93 @@
+Prompt — Protocolo automático ao iniciar conversa
+Implemente a geração automática de protocolo quando uma nova conversa
+é criada no ChatBanana, com envio do número para o cliente via WhatsApp.
+
+--- LOCALIZAÇÃO ---
+
+No arquivo server/services/message-processor.ts, localize o trecho onde
+uma nova conversa é criada (provavelmente algo como db.insert(conversations)
+ou uma chamada como findOrCreateConversation / getOrCreateConversation).
+
+--- LÓGICA A ADICIONAR ---
+
+Imediatamente após a conversa ser criada (apenas quando for NOVA, não quando
+for encontrada já existente), adicionar o seguinte bloco:
+
+// Gerar protocolo automático para conversa nova
+try {
+  const { criarProtocolo } = await import("./protocol.service");
+  const { sendMessage } = await import("./channel-router");
+
+  const protocolo = await criarProtocolo({
+    workspaceId: workspaceId,
+    titulo: `Atendimento - ${nomeContato}`,
+    categoria: "geral",
+    prioridade: "media",
+    conversationId: conversa.id,
+    criadoPorNome: "Sistema",
+  });
+
+  // Enviar número do protocolo para o cliente
+  const mensagemProtocolo =
+    `Olá! Seu atendimento foi registrado com o protocolo *${protocolo.numero}*.\n` +
+    `Em breve um de nossos agentes irá lhe atender.\n` +
+    `Guarde este número para acompanhamento.`;
+
+  await sendMessage({
+    workspaceId: workspaceId,
+    to: telefoneContato,
+    type: "text",
+    content: mensagemProtocolo,
+  });
+
+} catch (err: any) {
+  console.error("[Protocol] Erro ao gerar protocolo automático:", err.message);
+}
+
+IMPORTANTE sobre as variáveis:
+- workspaceId: já disponível no contexto da função
+- nomeContato: nome do contato/lead da conversa (usar o nome que já está
+  sendo usado para criar a conversa, ex: payload.nome ou contact.nome)
+- conversa.id: o id da conversa recém criada (integer)
+- telefoneContato: o número de telefone sem formatação (só dígitos)
+  que já está sendo usado para criar a conversa
+
+Adapte os nomes das variáveis conforme o contexto real do arquivo.
+O bloco inteiro está em try/catch — se falhar, apenas loga e continua.
+NUNCA deve bloquear o fluxo principal de recebimento de mensagem.
+
+--- IMPORTANTE: APENAS CONVERSAS NOVAS ---
+
+O protocolo deve ser gerado SOMENTE quando a conversa for criada pela
+primeira vez. NÃO gerar se a conversa já existia (cliente retornando).
+
+Verifique como o código já distingue conversa nova de existente:
+- Se usa uma variável como isNew, isNewConversation, created: true — usar essa
+- Se faz insert e retorna a conversa — é sempre nova
+- Se faz upsert — verificar se houve insert real ou apenas select
+
+Adicionar o bloco APENAS no branch de criação nova.
+
+--- CANAL ---
+
+O sendMessage deve usar as credenciais já disponíveis no contexto
+(conexaoId ou workspaceId para o channel-router resolver automaticamente).
+O channel-router já sabe qual canal usar baseado no workspaceId.
+Não passar conexaoId se não estiver disponível — o router busca sozinho.
+
+--- RESULTADO ESPERADO ---
+
+Quando um novo cliente mandar a primeira mensagem no WhatsApp:
+1. Conversa criada normalmente
+2. Protocolo gerado: ex. 202604010001
+3. Cliente recebe automaticamente:
+   "Olá! Seu atendimento foi registrado com o protocolo *202604010001*.
+   Em breve um de nossos agentes irá lhe atender.
+   Guarde este número para acompanhamento."
+4. Badge #202604010001 aparece no inbox ao lado da conversa
+5. Protocolo aparece na página de Protocolos com status "aberto"
+
+Confirme quando implementado, informando:
+- Em qual função exatamente o bloco foi inserido
+- Como foi identificada a conversa nova vs existente
+- Se houve alguma adaptação necessária nas variáveis

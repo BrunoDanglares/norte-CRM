@@ -1,0 +1,68 @@
+PROMPT 4 — Configurar Webhook e Validação Final
+Preciso finalizar a integração Z-API configurando o webhook
+e validando todo o fluxo de ponta a ponta.
+
+---
+
+PASSO 1 — Configurar webhook na Z-API
+
+Crie uma rota que configure automaticamente o webhook na Z-API:
+
+POST /api/conexoes/:id/configurar-webhook
+- Monta a URL do webhook: process.env.APP_URL + '/api/webhook/zapi'
+  (APP_URL deve estar nas variáveis de ambiente com a URL pública do Replit)
+- Chama Z-API: POST /update-webhook-received com body:
+  { value: webhookUrl }
+- Chama Z-API: POST /update-webhook-delivery com body:
+  { value: webhookUrl }
+- Salva a webhook_url no banco
+- Retorna: { ok: true, message: "Webhook configurado", url: webhookUrl }
+
+Chame essa rota automaticamente quando uma conexão for marcada
+como 'connected' pela primeira vez.
+
+---
+
+PASSO 2 — Adicionar APP_URL nas variáveis de ambiente
+
+Instrua o desenvolvedor a adicionar no Replit Secrets:
+APP_URL = https://[nome-do-projeto].repl.co
+
+(A URL pública do projeto no Replit — necessária para o webhook)
+
+---
+
+PASSO 3 — Validação completa
+
+Teste e confirme cada item:
+
+[ ] GET /api/conexoes retorna lista do banco (não mock)
+[ ] GET /api/conexoes/:id/qrcode retorna base64 de um QR Code real da Z-API
+[ ] QR Code é exibido na tela corretamente
+[ ] Após escanear, GET /api/conexoes/:id/status retorna connected: true
+[ ] Status connected atualiza o visual na tela automaticamente
+[ ] Webhook /api/webhook/zapi recebe POST sem erro 401
+    (teste com: curl -X POST https://[url]/api/webhook/zapi -H "Content-Type: application/json" -d '{"type":"test"}')
+[ ] Ao receber mensagem de número novo via webhook:
+    - Lead é criado automaticamente no banco
+    - Conversa é criada associada ao lead
+    - Mensagem aparece no Inbox
+
+[ ] POST /api/conexoes/:id/send envia mensagem real para um número de teste
+[ ] POST /api/conexoes/:id/disconnect desconecta e atualiza status no banco
+
+---
+
+PASSO 4 — Tratamento de erros específicos da Z-API
+
+Adicione tratamento para os erros mais comuns:
+- Se Z-API retornar { error: "instance not found" }:
+  Responder ao frontend com status 404 e mensagem amigável
+- Se Z-API retornar { error: "not connected" }:
+  Atualizar status no banco para 'disconnected' e notificar frontend
+- Se a chamada à Z-API der timeout (> 10s):
+  Retornar status 503 com { error: "Serviço temporariamente indisponível" }
+
+Adicione timeout de 10 segundos em todas as chamadas zapiFetch.
+
+Relate ao final o que foi testado e o que está funcionando.

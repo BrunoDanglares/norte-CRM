@@ -1,0 +1,129 @@
+Criar um handler centralizado para situações de escalação
+obrigatória e padronizar o handoff summary enviado ao agente
+humano em todos os casos de redirectTo: 'HUMANO'.
+
+══ CRIAR server/services/agents/escalationHandler.ts ══
+
+export interface HandoffSummary {
+  motivo: string;
+  situationCode: string;
+  cliente: {
+    nome: string | null;
+    cpf: string | null;
+    contrato: string | null;
+  };
+  contexto: Record<string, any>;
+  urgencia: 'normal' | 'alta';
+}
+
+export function buildHandoffSummary(
+  sessionState: any,
+  situationCode: string,
+  motivo: string
+): HandoffSummary {
+  const dados = sessionState.dados_coletados ?? {};
+
+  const urgencias: Record<string, 'alta' | 'normal'> = {
+    S3: 'alta',   // ONU offline
+    F8: 'alta',   // Contestação de cobrança
+    C7: 'alta',   // Titularidade
+    F7: 'alta',   // Negociação de dívida
+  };
+
+  return {
+    motivo,
+    situationCode,
+    cliente: {
+      nome:     sessionState.cliente_nome ?? null,
+      cpf:      sessionState.cpf ?? null,
+      contrato: sessionState.contrato_id ?? null,
+    },
+    contexto: {
+      fluxo_anterior:    sessionState.fluxo_atual,
+      departamento:      dados.departamento_selecionado,
+      problema_suporte:  dados.problema_suporte,
+      valor_divida:      dados.valor_divida,
+      boleto_enviado:    dados.boleto_enviado,
+      os_aberta:         dados.os_aberta,
+      os_protocolo:      dados.os_protocolo,
+      motivo_cancelamento: dados.motivo_cancelamento,
+      onu_status:        dados.onu_status,
+      intencao_pre_cpf:  dados.intent_pre_cpf,
+    },
+    urgencia: urgencias[situationCode] ?? 'normal',
+  };
+}
+
+export function formatHandoffMessage(summary: HandoffSummary): string {
+  const urgTag = summary.urgencia === 'alta' ? '🔴 URGENTE — ' : '';
+  const lines = [
+    `${urgTag}*Transferência para atendimento humano*`,
+    `Motivo: ${summary.motivo}`,
+    `Situação: ${summary.situationCode}`,
+    ``,
+    `*Cliente:* ${summary.cliente.nome ?? 'não identificado'}`,
+    `*CPF:* ${summary.cliente.cpf ?? 'não informado'}`,
+    `*Contrato:* ${summary.cliente.contrato ?? 'não informado'}`,
+  ];
+
+  if (summary.contexto.valor_divida) {
+    lines.push(`*Débito:* R$ ${summary.contexto.valor_divida}`);
+  }
+  if (summary.contexto.problema_suporte) {
+    lines.push(`*Problema:* ${summary.contexto.problema_suporte}`);
+  }
+  if (summary.contexto.os_protocolo) {
+    lines.push(`*OS:* ${summary.contexto.os_protocolo}`);
+  }
+  if (summary.contexto.motivo_cancelamento) {
+    lines.push(`*Motivo cancelamento:* ${summary.contexto.motivo_cancelamento}`);
+  }
+
+  return lines.join('\n');
+}
+
+Adicionar ao index.ts:
+  export {
+    buildHandoffSummary,
+    formatHandoffMessage
+  } from './escalationHandler';
+
+══ INTEGRAR no humanoAgent.ts ══
+
+No método handle() do HumanoAgent, quando receber
+um guardFeedback (vindo de redirectTo), use o
+formatHandoffMessage para construir a mensagem de
+resumo enviada internamente (no canal de atendimento
+humano, não para o cliente):
+
+  import { buildHandoffSummary, formatHandoffMessage }
+    from './escalationHandler';
+
+  // Se vier com guardFeedback, é um redirect automático
+  if (input.guardFeedback) {
+    const summary = buildHandoffSummary(
+      input.sessionState,
+      input.sessionState.dados_coletados?.situationCode ?? 'GERAL',
+      input.guardFeedback
+    );
+    const handoffMsg = formatHandoffMessage(summary);
+
+    // Salvar resumo no session state para contexto
+    input.sessionState.dados_coletados.resumo_conversa = handoffMsg;
+    input.sessionState.dados_coletados.urgencia_handoff = summary.urgencia;
+  }
+
+══ INTEGRAR no ispAgentEngine.ts ══
+
+Quando o motor processar um AgentResponse com redirectTo,
+antes de re-despachar para o agente destino, salve o
+situationCode no session state:
+
+  if (response.redirectTo) {
+    sessionState.dados_coletados.situationCode =
+      response.guardFeedback
+        ? sessionState.dados_coletados.situationCode
+        : 'REDIRECT';
+    sessionState.fluxo_atual = response.redirectTo;
+    // Re-despacha no mesmo ciclo (código já existe do A4)
+  }

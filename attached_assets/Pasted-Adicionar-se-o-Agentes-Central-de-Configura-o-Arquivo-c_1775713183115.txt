@@ -1,0 +1,101 @@
+Adicionar seção Agentes à Central de Configuração.
+Arquivo: client/src/pages/admin-tenant-settings.tsx
+
+══ PASSO 1 — Novo item no menu lateral ══
+
+Localize o array/lista de seções do menu lateral da Central
+de Configuração (Regras de Negócio, Planos Comerciais,
+Horário de Atendimento).
+
+Adicione novo item:
+
+  {
+    id: 'agentes',
+    label: 'Agentes e Capacidades',
+    description: 'Ative ou desative agentes e situações',
+    icon: <BotIcon /> // ou ícone equivalente já usado no projeto
+  }
+
+══ PASSO 2 — Seção Agentes e Capacidades ══
+
+Crie o painel da seção. Deve consumir GET /api/isp/capabilities
+e salvar via PUT /api/isp/capabilities/:agent.
+
+Layout — quatro cards, um por agente:
+
+  ┌─────────────────────────────────────────┐
+  │ 💰 Financeiro                [toggle ON]│
+  │ Escalar se desativado        [toggle ON]│
+  │                                         │
+  │ Situações ativas:                       │
+  │ [F1✓] [F2✓] [F3✓] [F4✓] [F5✓]         │
+  │ [F6✓] [F7✓] [F8✓] [F9✓] [F10✓]        │
+  └─────────────────────────────────────────┘
+
+Cada card tem:
+- Nome do agente com ícone (💰 Financeiro, 🔧 Suporte,
+  🛒 Comercial, ✂️ Cancelamento)
+- Toggle principal: Agente ativo/inativo
+  Quando desativado: card fica com opacity 0.5 e os
+  checkboxes de situação ficam disabled
+- Toggle: Escalar para humano se desativado
+- Grid de checkboxes com os códigos de situação (F1–F10,
+  S1–S13, C1–C10)
+  Cada checkbox mostra: código + nome curto da situação
+  Ex: "F1 — Promessa de pagamento"
+- Botão "Salvar" individual por card (PUT /api/isp/capabilities/:agent)
+
+Nomes curtos das situações para exibir no checkbox:
+F1=Promessa pgto | F2=Suspensão temp | F3=Reativação
+F4=2ª via/PIX | F5=Consulta débitos | F6=Status linha
+F7=Negociação | F8=Contestação | F9=Cancel c/ débito
+F10=Downgrade
+S1=Triagem sem acesso | S2=ONU online | S3=ONU offline
+S4=Lentidão geral | S5=Instabilidade | S6=Horário específico
+S7=Site específico | S8=OS status | S9=Troca equipamento
+S10=Senha WiFi | S11=WiFi sumiu | S12=Mover roteador
+S13=Consulta plano
+C1=Upgrade/downgrade | C2=Agendamento | C3=Cobertura
+C4=Fidelidade | C5=Nova contratação | C6=Retenção
+C7=Titularidade | C8=Consulta planos
+C9=Mudança endereço | C10=Indicação
+
+══ PASSO 3 — Seção de Prioridades ══
+
+Abaixo dos cards de agente, adicione subseção
+"Prioridade de roteamento":
+
+Mostre os 4 agentes configuráveis em inputs numéricos:
+  Financeiro:    [3] ← número editável
+  Suporte:       [4]
+  Comercial:     [5]
+  Cancelamento:  [2]
+  (Humano e Geral não são editáveis — fixos em P1 e P6)
+
+Ao salvar, envia via PUT /api/isp/capabilities com o campo
+priorities junto às capabilities.
+
+Botão "Restaurar padrões" no topo da seção:
+Chama POST /api/isp/capabilities/reset com confirmação
+em dialog antes de executar.
+
+══ PASSO 4 — Indicador visual de estado ══
+
+No menu lateral da Central de Configuração, ao lado do
+item "Agentes e Capacidades", mostre um badge:
+
+- Badge verde "Todos ativos" se todos os 4 agentes estão
+  enabled = true
+- Badge amarelo "X desativados" se algum agente está
+  enabled = false
+- Badge calculado em tempo real conforme o estado local
+
+Use o mesmo padrão visual dos badges já existentes
+no projeto (Tailwind classes do tema dark violet).
+
+Após implementar, teste:
+1. Desativar o agente SUPORTE_TECNICO
+2. Salvar
+3. Enviar mensagem "minha internet caiu" para o bot
+4. Verificar que o bot escalona para humano em vez de
+   entrar no fluxo de suporte

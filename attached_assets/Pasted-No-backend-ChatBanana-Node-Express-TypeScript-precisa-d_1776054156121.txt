@@ -1,0 +1,79 @@
+No backend ChatBanana (Node/Express/TypeScript), precisa de um Circuit Breaker simples para proteger contra falhas em cascata nas chamadas ao SGP e IXC Soft.
+
+**Cria o arquivo `server/utils/circuitBreaker.ts`:**
+
+```typescript
+interface CircuitState {
+  failures: number;
+  openedAt?: number;
+}
+
+const FAILURE_THRESHOLD = 3;
+const COOLDOWN_MS = 2 * 60 * 1000; // 2 minutos
+
+const circuits = new Map<string, CircuitState>();
+
+export async function withCircuitBreaker<T>(
+  key: string,
+  fn: () => Promise<T>,
+  fallback: T
+): Promise<T> {
+  const state = circuits.get(key) ?? { failures: 0 };
+
+  // Circuito aberto — verifica se já resfriou
+  if (state.openedAt) {
+    if (Date.now() - state.openedAt < COOLDOWN_MS) {
+      console.warn(`[CircuitBreaker] ${key} aberto — retornando fallback`);
+      return fallback;
+    }
+    // Meio-aberto: permite uma tentativa
+    state.openedAt = undefined;
+  }
+
+  try {
+    const result = await fn();
+    // Sucesso — reseta o circuito
+    circuits.set(key, { failures: 0 });
+    return result;
+  } catch (err) {
+    state.failures++;
+    if (state.failures >= FAILURE_THRESHOLD) {
+      state.openedAt = Date.now();
+      console.error(`[CircuitBreaker] ${key} abriu após ${state.failures} falhas`);
+    }
+    circuits.set(key, state);
+    console.warn(`[CircuitBreaker] ${key} falhou (${state.failures}/${FAILURE_THRESHOLD}) — retornando fallback`);
+    return fallback;
+  }
+}
+```
+
+**Aplica em `ispErpService.ts` em todas as chamadas ao SGP e IXC:**
+
+```typescript
+import { withCircuitBreaker } from '../utils/circuitBreaker';
+
+// Exemplo — adapta para as funções reais existentes:
+const clienteData = await withCircuitBreaker(
+  'sgp_consulta_cliente',
+  () => consultarClienteSGP(cpf),
+  null  // fallback: sem dados ERP, agente opera em modo degradado
+);
+
+const titulosData = await withCircuitBreaker(
+  'sgp_consulta_titulos',
+  () => consultarTitulosSGP(contratoId),
+  []    // fallback: lista vazia de títulos
+);
+```
+
+**No orchestrator `ispAgentEngine.ts`**, quando `erpData` for `null` (fallback do circuit breaker), passa um contexto degradado para o agente:
+
+```typescript
+if (!erpData) {
+  // Agente opera sem dados ERP — responde com empatia e pede confirmação manual
+  context.erpUnavailable = true;
+}
+```
+
+Mostra os arquivos alterados após aplicar.

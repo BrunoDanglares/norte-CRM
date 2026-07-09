@@ -1,0 +1,255 @@
+Prompt 1 — Memória de conversa + estado da sessão
+Crie o sistema de memória de conversa para o Agente ISP.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PASSO 1 — Criar tabelas via endpoint setup-db
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+No arquivo server/index.ts, no endpoint POST /api/n8n/setup-db,
+adicione a criação dessas duas tabelas após as existentes:
+
+    // Tabela de memória de conversa
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS conversation_turns (
+        id              UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+        workspace_id    UUID NOT NULL,
+        conversation_id TEXT NOT NULL,
+        telefone        TEXT NOT NULL,
+        role            TEXT NOT NULL CHECK (role IN ('user','assistant','system')),
+        content         TEXT NOT NULL,
+        intent          TEXT,
+        created_at      TIMESTAMPTZ DEFAULT now()
+      )
+    `);
+    await db.execute(`
+      CREATE INDEX IF NOT EXISTS ct_conv_id
+        ON conversation_turns(conversation_id, created_at DESC)
+    `);
+    await db.execute(`
+      CREATE INDEX IF NOT EXISTS ct_telefone
+        ON conversation_turns(workspace_id, telefone)
+    `);
+
+    // Tabela de estado da sessão ISP
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS isp_session_state (
+        id              UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+        workspace_id    UUID NOT NULL,
+        conversation_id TEXT NOT NULL UNIQUE,
+        telefone        TEXT NOT NULL,
+        cliente_nome    TEXT,
+        cliente_id_erp  TEXT,
+        cliente_contrato TEXT,
+        sistema_erp     TEXT DEFAULT 'sgp',
+        fluxo_atual     TEXT DEFAULT 'menu',
+        dados_coletados JSONB DEFAULT '{}',
+        identificado    BOOLEAN DEFAULT false,
+        ultimo_intent   TEXT,
+        updated_at      TIMESTAMPTZ DEFAULT now(),
+        created_at      TIMESTAMPTZ DEFAULT now()
+      )
+    `);
+    await db.execute(`
+      CREATE INDEX IF NOT EXISTS iss_conv
+        ON isp_session_state(conversation_id)
+    `);
+    await db.execute(`
+      CREATE INDEX IF NOT EXISTS iss_tel
+        ON isp_session_state(workspace_id, telefone)
+    `);
+    await db.execute(`
+      ALTER TABLE conversation_turns DISABLE ROW LEVEL SECURITY
+    `);
+    await db.execute(`
+      ALTER TABLE isp_session_state DISABLE ROW LEVEL SECURITY
+    `);
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PASSO 2 — Criar server/services/n8nMemoryService.ts
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Crie o arquivo server/services/n8nMemoryService.ts:
+
+import { db } from '../db';
+import { sql } from 'drizzle-orm';
+
+export class N8nMemoryService {
+
+  // ── Salva um turno na memória ──────────────────────────────────────────
+  async saveTurn(params: {
+    workspaceId:    string;
+    conversationId: string;
+    telefone:       string;
+    role:           'user' | 'assistant' | 'system';
+    content:        string;
+    intent?:        string;
+  }) {
+    await db.execute(sql`
+      INSERT INTO conversation_turns
+        (workspace_id, conversation_id, telefone, role, content, intent)
+      VALUES
+        (${params.workspaceId}::uuid, ${params.conversationId},
+         ${params.telefone}, ${params.role}, ${params.content},
+         ${params.intent ?? null})
+    `);
+  }
+
+  // ── Busca os últimos N turnos ─────────────────────────────────────────
+  async getHistory(conversationId: string, limit = 10): Promise<Array<{
+    role: string; content: string; intent?: string;
+  }>> {
+    const rows = await db.execute(sql`
+      SELECT role, content, intent
+      FROM conversation_turns
+      WHERE conversation_id = ${conversationId}
+      ORDER BY created_at DESC
+      LIMIT ${limit}
+    `);
+    return (rows.rows as any[]).reverse().map(r => ({
+      role:    r.role,
+      content: r.content,
+      intent:  r.intent,
+    }));
+  }
+
+  // ── Busca ou cria estado da sessão ────────────────────────────────────
+  async getSession(conversationId: string, workspaceId: string, telefone: string) {
+    const rows = await db.execute(sql`
+      SELECT * FROM isp_session_state
+      WHERE conversation_id = ${conversationId}
+      LIMIT 1
+    `);
+    if (rows.rows.length > 0) return rows.rows[0] as any;
+
+    // Cria nova sessão
+    const created = await db.execute(sql`
+      INSERT INTO isp_session_state
+        (workspace_id, conversation_id, telefone)
+      VALUES
+        (${workspaceId}::uuid, ${conversationId}, ${telefone})
+      RETURNING *
+    `);
+    return created.rows[0] as any;
+  }
+
+  // ── Atualiza estado da sessão ─────────────────────────────────────────
+  async updateSession(conversationId: string, updates: {
+    clienteNome?:     string;
+    clienteIdErp?:    string;
+    clienteContrato?: string;
+    sistemaErp?:      string;
+    fluxoAtual?:      string;
+    dadosColetados?:  Record<string, any>;
+    identificado?:    boolean;
+    ultimoIntent?:    string;
+  }) {
+    const sets: string[] = ['updated_at = now()'];
+    const vals: any[]    = [];
+    let   i = 1;
+
+    if (updates.clienteNome     !== undefined) { sets.push(`cliente_nome = $${i++}`);     vals.push(updates.clienteNome); }
+    if (updates.clienteIdErp    !== undefined) { sets.push(`cliente_id_erp = $${i++}`);   vals.push(updates.clienteIdErp); }
+    if (updates.clienteContrato !== undefined) { sets.push(`cliente_contrato = $${i++}`); vals.push(updates.clienteContrato); }
+    if (updates.sistemaErp      !== undefined) { sets.push(`sistema_erp = $${i++}`);      vals.push(updates.sistemaErp); }
+    if (updates.fluxoAtual      !== undefined) { sets.push(`fluxo_atual = $${i++}`);      vals.push(updates.fluxoAtual); }
+    if (updates.identificado    !== undefined) { sets.push(`identificado = $${i++}`);     vals.push(updates.identificado); }
+    if (updates.ultimoIntent    !== undefined) { sets.push(`ultimo_intent = $${i++}`);    vals.push(updates.ultimoIntent); }
+    if (updates.dadosColetados  !== undefined) {
+      sets.push(`dados_coletados = dados_coletados || $${i++}::jsonb`);
+      vals.push(JSON.stringify(updates.dadosColetados));
+    }
+
+    vals.push(conversationId);
+    await db.execute(sql.raw(
+      `UPDATE isp_session_state SET ${sets.join(', ')}
+       WHERE conversation_id = $${i}`,
+      vals
+    ));
+  }
+
+  // ── Formata histórico para prompt da IA ──────────────────────────────
+  formatHistoryForPrompt(turns: Array<{ role: string; content: string }>): string {
+    if (!turns.length) return 'Primeira interação do cliente.';
+    return turns
+      .map(t => `${t.role === 'user' ? 'Cliente' : 'Agente'}: ${t.content}`)
+      .join('\n');
+  }
+}
+
+export const n8nMemoryService = new N8nMemoryService();
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PASSO 3 — Adicionar rotas de memória em server/routes/n8n.ts
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Adicione estas rotas antes do export default router:
+
+import { n8nMemoryService } from '../services/n8nMemoryService';
+
+// POST /api/n8n/memory/turn — salva um turno
+router.post('/memory/turn', async (req: Request, res: Response) => {
+  try {
+    const { workspace_id, conversation_id, telefone, role, content, intent } = req.body;
+    if (!conversation_id || !role || !content) {
+      return res.status(400).json({ error: 'conversation_id, role e content são obrigatórios' });
+    }
+    await n8nMemoryService.saveTurn({
+      workspaceId:    workspace_id ?? '',
+      conversationId: conversation_id,
+      telefone:       telefone ?? '',
+      role,
+      content,
+      intent,
+    });
+    return res.json({ ok: true });
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// GET /api/n8n/memory/history/:conversationId — busca histórico
+router.get('/memory/history/:conversationId', async (req: Request, res: Response) => {
+  try {
+    const limit   = parseInt(req.query.limit as string) || 10;
+    const history = await n8nMemoryService.getHistory(req.params.conversationId, limit);
+    return res.json({ ok: true, history });
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// POST /api/n8n/memory/session — busca ou cria sessão
+router.post('/memory/session', async (req: Request, res: Response) => {
+  try {
+    const { workspace_id, conversation_id, telefone } = req.body;
+    const session = await n8nMemoryService.getSession(
+      conversation_id, workspace_id ?? '', telefone ?? ''
+    );
+    return res.json({ ok: true, session });
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// PUT /api/n8n/memory/session/:conversationId — atualiza sessão
+router.put('/memory/session/:conversationId', async (req: Request, res: Response) => {
+  try {
+    await n8nMemoryService.updateSession(req.params.conversationId, {
+      clienteNome:     req.body.cliente_nome,
+      clienteIdErp:    req.body.cliente_id_erp,
+      clienteContrato: req.body.cliente_contrato,
+      sistemaErp:      req.body.sistema_erp,
+      fluxoAtual:      req.body.fluxo_atual,
+      dadosColetados:  req.body.dados_coletados,
+      identificado:    req.body.identificado,
+      ultimoIntent:    req.body.ultimo_intent,
+    });
+    return res.json({ ok: true });
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+Salve todos os arquivos e aguarde redeploy.

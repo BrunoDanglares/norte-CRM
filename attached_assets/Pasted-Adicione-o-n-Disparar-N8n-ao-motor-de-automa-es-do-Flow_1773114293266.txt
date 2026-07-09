@@ -1,0 +1,57 @@
+Adicione o nó "Disparar N8n" ao motor de automações do FlowCRM.
+
+## PARTE 1: Backend — executar nó n8n_trigger
+
+No arquivo da engine, adicione handler para tipo "n8n_trigger":
+
+Parâmetros do nó:
+{
+  webhook_url: string,     // URL do webhook N8n (ou deixar vazio para usar a configurada)
+  payload?: object,        // campos extras a enviar
+  wait_response?: boolean  // aguardar resposta síncrona do N8n (default: false)
+}
+
+Implementação:
+1. Se webhook_url estiver vazio, busque a URL padrão do N8n em n8n_config (tenant_id)
+2. Monte o payload:
+   {
+     event: "automation_trigger",
+     lead_id: context.leadId,
+     tenant_id: context.tenantId,
+     lead: { name, phone, email, status, stage, value },
+     variables: context.variables,
+     message: context.message,
+     timestamp: new Date().toISOString(),
+     ...node.payload  // merge com payload customizado do nó
+   }
+3. Se wait_response = false:
+   - POST fire-and-forget (não aguarda resposta)
+   - Log: { success: true, mode: "async", url: webhook_url }
+   - Continue o fluxo imediatamente
+
+4. Se wait_response = true:
+   - Aguarde a resposta com timeout de 10 segundos
+   - Se resposta JSON com { variables: {...} } → merge em context.variables
+   - Se timeout → log warning, continue o fluxo
+   - Log: { success: true, mode: "sync", response_keys: Object.keys(response) }
+
+5. Erro: log { success: false, error } e continue sem interromper
+
+## PARTE 2: Frontend — nó visual
+
+Adicione ao painel esquerdo do canvas:
+- Ícone: Webhook ou GitBranch (lucide) — cor laranja (#F97316)
+- Label: "Disparar N8n"
+- Tipo: "n8n_trigger"
+
+Painel de configuração do nó:
+- Campo: URL do Webhook N8n
+  placeholder: "Deixe vazio para usar a URL padrão configurada"
+  input text
+- Toggle: "Aguardar resposta do N8n"
+  subtítulo: "Se ativo, o fluxo pausa até 10s para receber dados do N8n"
+- Campo: Payload extra (JSON)
+  textarea, placeholder: '{ "campo": "valor" }'
+  valide se é JSON válido antes de salvar
+
+Saídas do nó: apenas 1 handle de saída ("next")

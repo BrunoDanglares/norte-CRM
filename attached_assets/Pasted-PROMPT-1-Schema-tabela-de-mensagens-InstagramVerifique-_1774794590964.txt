@@ -1,0 +1,47 @@
+PROMPT 1 — Schema: tabela de mensagens InstagramVerifique se já existe uma tabela `instagram_messages` no schema Drizzle (shared/schema.ts).
+
+Se NÃO existir, adicione ao schema:
+```tsexport const instagramMessages = pgTable('instagram_messages', {
+id: uuid('id').primaryKey().defaultRandom(),
+workspaceId: uuid('workspace_id').notNull().references(() => workspaces.id, { onDelete: 'cascade' }),
+instagramConnectionId: uuid('instagram_connection_id').notNull().references(() => instagramConnections.id, { onDelete: 'cascade' }),
+igMessageId: text('ig_message_id').notNull(),
+igConversationId: text('ig_conversation_id'),
+fromIgUserId: text('from_ig_user_id').notNull(),
+fromIgUsername: text('from_ig_username'),
+toIgUserId: text('to_ig_user_id').notNull(),
+direction: text('direction').notNull(), // 'inbound' | 'outbound'
+messageType: text('message_type').notNull().default('text'), // 'text' | 'image' | 'video' | 'audio' | 'story_mention' | 'comment'
+content: text('content'),
+mediaUrl: text('media_url'),
+metadata: jsonb('metadata'),
+leadId: uuid('lead_id').references(() => leads.id),
+automationTriggered: boolean('automation_triggered').default(false),
+readAt: timestamp('read_at'),
+createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (t) => ({
+workspaceIdx: index('ig_messages_workspace_idx').on(t.workspaceId),
+igMessageIdUniq: uniqueIndex('ig_message_id_uniq').on(t.igMessageId),
+fromUserIdx: index('ig_messages_from_user_idx').on(t.fromIgUserId),
+createdAtIdx: index('ig_messages_created_at_idx').on(t.createdAt),
+}));
+
+Verifique também se existe tabela `instagram_connections` — se sim, liste suas colunas. Se não existir, crie:
+```tsexport const instagramConnections = pgTable('instagram_connections', {
+id: uuid('id').primaryKey().defaultRandom(),
+workspaceId: uuid('workspace_id').notNull().references(() => workspaces.id, { onDelete: 'cascade' }),
+igUserId: text('ig_user_id').notNull(),
+igUsername: text('ig_username').notNull(),
+accessToken: text('access_token').notNull(),
+pageId: text('page_id'),
+pageName: text('page_name'),
+tokenExpiresAt: timestamp('token_expires_at'),
+isActive: boolean('is_active').default(true),
+webhookVerified: boolean('webhook_verified').default(false),
+dmCount: integer('dm_count').default(0),
+dmCountMonth: integer('dm_count_month').default(0),
+createdAt: timestamp('created_at').defaultNow().notNull(),
+updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+Depois rode `npm run db:push` ou o comando de migração do projeto. Reporte quais tabelas existiam e quais foram criadas.

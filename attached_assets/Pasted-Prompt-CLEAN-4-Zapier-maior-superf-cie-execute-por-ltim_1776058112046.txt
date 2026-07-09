@@ -1,0 +1,62 @@
+Prompt CLEAN-4 — Zapier (maior superfície — execute por último)
+Remove o Zapier/Make completamente do projeto ChatBanana. Esta integração tem a maior superfície — 5 arquivos backend importam triggerZapierWebhook. Remove tudo de uma vez.
+
+**1. `server/services/zapierWebhook.ts`**
+Deleta o arquivo inteiro.
+
+**2. `shared/schema.ts`**
+Remove a tabela `zapierConfig`, `insertZapierConfigSchema`, e os tipos `ZapierConfig` / `InsertZapierConfig`.
+
+**3. `server/storage.ts`**
+- Remove métodos `getZapierConfig()` e `upsertZapierConfig()`
+- Remove as declarações correspondentes na interface `IStorage`
+- Remove imports de `zapierConfig`, `ZapierConfig`, `InsertZapierConfig` do topo
+
+**4. `server/routes/campanhas.ts`**
+- Remove as 4 rotas Zapier: GET /api/zapier/events, GET /api/zapier/config, POST /api/zapier/config, POST /api/zapier/test
+- Remove import de `getZapierEvents`
+
+**5. `server/services/automationEngine.ts`**
+- Remove import de `triggerZapierWebhook`
+- Remove o case `zapier_trigger` do executor de nós
+
+**6. `server/services/message-processor.ts`**
+- Remove import de `triggerZapierWebhook`
+- Remove a chamada de disparo em mensagens recebidas (linha ~226)
+
+**7. `server/routes/leads.ts`**
+- Remove import de `triggerZapierWebhook`
+- Remove as 5 chamadas de disparo em eventos de lead (linhas ~69, 136, 139, 143, 158)
+
+**8. `server/routes/conexoes.ts`**
+- Remove import de `triggerZapierWebhook`
+- Remove chamada correspondente se houver
+
+**9. `server/routes/webhooks.ts`**
+- Remove import de `getZapierEvents`
+- Remove referências Zapier restantes
+
+**10. `client/src/components/automacoes/types.ts`**
+- Remove `zapier_trigger` de NODE_TYPES
+- Remove da lista de tipos da categoria "Integrações"
+- Remove tooltip/descrição
+
+**11. `client/src/components/automacoes/NodeConfigPanel.tsx`**
+- Remove painel de configuração do node `zapier_trigger`
+
+**12. `client/src/pages/integracoes.tsx`**
+- Remove import `ZapierIcon`
+- Remove toda a aba e config do Zapier
+- Remove "zapier" do tipo `IntegTabId`
+
+**13. `client/src/components/brand-icons.tsx`**
+- Remove `SiZapier` do import react-icons/si
+
+**14. Migração de banco**
+A tabela `zapier_config` existe no banco. Cria uma migração para removê-la:
+```sql
+DROP TABLE IF EXISTS zapier_config;
+```
+Executa via runAutoMigrations ou o padrão já estabelecido no projeto.
+
+Servidor deve subir sem erros TypeScript. Confirma.

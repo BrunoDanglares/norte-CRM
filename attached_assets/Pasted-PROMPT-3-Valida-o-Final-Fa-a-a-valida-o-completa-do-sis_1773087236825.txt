@@ -1,0 +1,45 @@
+PROMPT 3 — Validação Final
+Faça a validação completa do sistema de autenticação implementado.
+
+1. TESTE DE LOGIN:
+   [ ] POST /api/auth/login com joao@flowcrm.com / senha123 retorna token JWT real
+   [ ] Token tem formato correto (três partes separadas por ponto)
+   [ ] Campo `ok: true` e objeto `user` presentes na resposta
+   [ ] Token é salvo em localStorage com chave "flowcrm_token"
+   [ ] Dados do usuário salvos com chave "flowcrm_user"
+   [ ] Login com senha errada retorna 401 com mensagem clara
+   [ ] Login com usuário inexistente retorna 401
+   [ ] Login com usuário INACTIVE retorna 403 com mensagem clara
+   [ ] Erro é exibido na tela de login em vermelho
+
+2. PROTEÇÃO DE ROTAS:
+   [ ] Acessar / sem token redireciona para /login
+   [ ] Acessar /leads sem token redireciona para /login
+   [ ] GET /api/leads sem Authorization header retorna 401
+   [ ] GET /api/leads com Bearer token válido retorna dados normalmente
+   [ ] GET /api/leads com token inválido retorna 401
+
+3. SESSÃO PERSISTENTE:
+   [ ] Após login, recarregar a página mantém o usuário logado
+   [ ] GET /api/auth/me com token válido retorna dados do usuário
+   [ ] Token expirado redireciona automaticamente para /login
+
+4. LOGOUT:
+   [ ] Logout remove "flowcrm_token" do localStorage
+   [ ] Logout remove "flowcrm_user" do localStorage
+   [ ] Após logout, acessar qualquer rota redireciona para /login
+   [ ] Botão de voltar do browser após logout não permite acessar área privada
+
+5. INTEGRAÇÃO COM MÓDULOS EXISTENTES:
+   [ ] Módulo de Usuários: GET /api/usuarios funciona com token
+   [ ] Módulo de Automações: GET /api/automacoes funciona com token
+   [ ] Módulo N8n: GET /api/ia/prompts funciona com token JWT
+   [ ] Módulo N8n: GET /api/ia/prompts funciona com X-FlowCRM-Token (API Token)
+   [ ] Webhook Z-API: POST /api/webhook/zapi continua funcionando sem token
+
+6. UPDATED_BY NOS PROMPTS:
+   Agora que temos req.user disponível, atualize PUT /api/ia/prompts/:id
+   para salvar updated_by = req.user.id ao atualizar um prompt.
+   Confirme que o campo é gravado corretamente no banco.
+
+Relate cada item verificado e o que foi corrigido.

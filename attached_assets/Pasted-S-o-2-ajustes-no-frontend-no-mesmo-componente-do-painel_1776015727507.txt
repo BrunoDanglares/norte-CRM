@@ -1,0 +1,89 @@
+São 2 ajustes no frontend, no mesmo componente do painel direito (o que você editou no Prompt 4).
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+AJUSTE 1 — Remover o bloco EQUIPE duplicado
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Localize e REMOVA completamente o bloco que você adicionou no Prompt 4,
+Mudança 2 — o que exibe o badge com o nome da equipe (pipeline).
+Ele ficou assim:
+
+{selected.pipeline && (
+  <div style={{ marginBottom: 8 }}>
+    <div style={{ fontSize: 10, fontWeight: 700, ...}}>EQUIPE</div>
+    <div style={{ display: 'inline-flex', ... }}>
+      {conversation.pipeline}
+    </div>
+  </div>
+)}
+
+Remova esse bloco inteiro. A equipe já aparece corretamente na seção
+"ATRIBUIR / TRANSFERIR" existente com checkmark — não precisamos duplicar.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+AJUSTE 2 — Conectar "Transferir para..." ao endpoint /transfer-team
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Localize o dropdown/select/botão "Transferir para..." no painel direito.
+Leia como ele está implementado atualmente — o que acontece quando o
+atendente seleciona uma opção.
+
+O dropdown deve listar duas categorias de opções:
+  1. Equipes do workspace (para transferir a conversa para outro setor)
+  2. Atendentes do workspace (para transferir para um colega)
+
+Adicione estado e função de transferência:
+
+const [transferring, setTransferring] = useState(false);
+
+const handleTransfer = useCallback(async (type: 'team' | 'agent', id: string | number, name: string) => {
+  if (transferring) return;
+  setTransferring(true);
+  try {
+    if (type === 'team') {
+      // Transfere para outra equipe — reseta atendente, volta para fila da equipe
+      const res = await apiFetch(`/api/conversations/${conversation.id}/transfer-team`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ team_id: id, team_name: name }),
+      });
+      if (!res.ok) throw new Error('Erro ao transferir');
+    } else {
+      // Transfere para outro atendente — usa o endpoint de atribuição manual já existente
+      // (use o endpoint que já existe para atribuir atendente manualmente,
+      //  provavelmente PATCH /api/conversations/:id com { assigned_user_id, assigned_user_name })
+      const res = await apiFetch(`/api/conversations/${conversation.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ assigned_user_id: id, assigned_user_name: name }),
+      });
+      if (!res.ok) throw new Error('Erro ao transferir');
+    }
+    // Fecha o dropdown após transferência bem-sucedida
+  } catch (err) {
+    console.error('[handleTransfer]', err);
+  } finally {
+    setTransferring(false);
+  }
+}, [transferring, conversation.id]);
+
+IMPORTANTE: Para o type 'agent', use o endpoint de atualização de conversa
+que já existe no projeto (PATCH ou PUT /api/conversations/:id) — não crie
+uma nova rota. Só para 'team' use o /transfer-team novo.
+
+Conecte o handleTransfer ao dropdown existente "Transferir para...":
+- Quando o usuário selecionar uma equipe na lista: chame handleTransfer('team', team.id, team.nome)
+- Quando selecionar um atendente: chame handleTransfer('agent', user.id, user.nome)
+
+Se o dropdown atual já busca equipes e atendentes via API, mantenha
+essa lógica — só substitua a ação ao selecionar.
+Se o dropdown ainda não busca dados reais, adicione um useEffect que chame
+GET /api/teams e GET /api/users para popular as opções.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Confirme:
+1. Bloco EQUIPE duplicado removido — equipe aparece só na seção ATRIBUIR/TRANSFERIR
+2. "Transferir para..." funciona para equipes (chama /transfer-team)
+3. "Transferir para..." funciona para atendentes (chama endpoint existente de update)
+4. Nenhum erro de TypeScript ou renderização

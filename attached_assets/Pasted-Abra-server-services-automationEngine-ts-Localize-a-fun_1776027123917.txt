@@ -1,0 +1,77 @@
+Abra server/services/automationEngine.ts.
+
+Localize a função principal que executa os nodes em sequência —
+provavelmente executeFlow(), runFlow(), executeNode() ou similar.
+Leia como ela itera pelos nodes antes de editar.
+
+CORREÇÃO — adicionar limite de profundidade e detecção de ciclo:
+
+PASSO 1 — Adicione uma constante no topo do arquivo (após os imports):
+
+const MAX_NODE_EXECUTIONS = 50; // limite absoluto por execução de automação
+
+PASSO 2 — Localize onde o loop/recursão de nodes acontece.
+Adicione um contador de execuções que é passado por referência ou
+incrementado a cada node processado:
+
+// Dentro da função que executa nodes (adicione o parâmetro executionCount):
+let executionCount = 0;
+
+// A cada node executado, antes de processar:
+executionCount++;
+if (executionCount > MAX_NODE_EXECUTIONS) {
+  console.error('[automationEngine] Loop infinito detectado — execução interrompida', {
+    automacaoId,
+    conversationId,
+    executionCount,
+  });
+  await db.insert(automationNodeLogs).values({
+    automacaoId,
+    nodeId: currentNode.id,
+    status: 'error',
+    output: { error: 'Execução interrompida: limite de nodes atingido (possível loop infinito)' },
+    executedAt: new Date(),
+  });
+  break; // ou return, dependendo da estrutura
+}
+
+PASSO 3 — Adicione detecção de node já visitado (ciclo direto):
+
+const visitedNodes = new Set<string>();
+
+// A cada node, antes de executar:
+if (visitedNodes.has(currentNode.id)) {
+  console.error('[automationEngine] Ciclo detectado no node:', currentNode.id);
+  break;
+}
+visitedNodes.add(currentNode.id);
+
+PASSO 4 — Adicione timeout por execução completa de automação:
+
+Envolva a execução principal em uma Promise.race com timeout:
+
+const AUTOMATION_TIMEOUT_MS = 30_000; // 30 segundos máximo por automação
+
+await Promise.race([
+  executeFlowInternal(/* params */),
+  new Promise((_, reject) =>
+    setTimeout(() => reject(new Error('Automation timeout')), AUTOMATION_TIMEOUT_MS)
+  ),
+]).catch(async (err) => {
+  console.error('[automationEngine] Timeout ou erro fatal:', err.message);
+  // Salva log de erro sem propagar
+});
+
+Se a estrutura do código não permitir Promise.race facilmente,
+implemente apenas os Passos 1, 2 e 3 — o contador e o Set de nodes
+visitados já previnem o caso mais comum.
+
+Adapte os nomes de variáveis (automacaoId, currentNode, etc.) para
+os nomes reais usados no arquivo.
+
+Confirme:
+1. MAX_NODE_EXECUTIONS = 50 definido
+2. Contador incrementado a cada node, com break e log ao atingir limite
+3. Set de nodes visitados detecta ciclo direto
+4. Log de erro salvo na tabela de logs ao interromper
+5. Servidor sem erros de TypeScript

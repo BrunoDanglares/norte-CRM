@@ -1,0 +1,2167 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;600;700&display=swap');
+/* Redesign Norte: fonte do ERP (template Nexus) — Inclusive Sans + as demais
+   famílias do painel de Personalização do Nexus (DM Sans, Wix, AR One). */
+@import url('https://fonts.googleapis.com/css2?family=Inclusive+Sans:wght@400;500;600;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Wix+Madefor+Text:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=AR+One+Sans:wght@400;500;600;700&display=swap');
+
+/* Tailwind v4 (migração 2026-07 — redesign Norte). Mantemos o tailwind.config.ts
+   existente via @config durante a transição, então todo o mapa de cores/tokens
+   banana continua válido até a migração completa pro daisyUI. */
+@import "tailwindcss";
+@config "../../tailwind.config.ts";
+@import "tw-animate-css";
+/* Estilos derramados do template Nexus (sidebar-menu + overrides daisyUI). */
+@import "./styles/nexus.css";
+/* Layout real do Nexus (#layout-sidebar/#layout-topbar/#layout-content). */
+@import "./styles/nexus-layout.css";
+
+/* Plugins reais do Nexus: ícones iconify (lucide/hugeicons/ri) + motion. */
+@plugin "@iconify/tailwind4" {
+    prefixes: lucide, hugeicons, ri;
+}
+@plugin "tailwindcss-motion";
+
+/* ── daisyUI 5 + temas Norte (portados do ERP Nexus) ────────────────────────
+   Registrado pro redesign; ativado via data-theme no <html> (ThemeProvider).
+   Os componentes shadcn seguem via os tokens shadcn (--primary etc., re-apontados
+   pro Azul Norte em color-presets.ts); daisyUI entra na migração dos primitivos. */
+@plugin "daisyui";
+
+@plugin "daisyui/theme" {
+    name: "branco";
+    default: true;
+    color-scheme: light;
+    --root-bg: #f6f7f9;
+    --layout-sidebar-background: #ffffff;
+    --layout-topbar-background: #ffffff;
+    --color-base-100: #ffffff;
+    --color-base-200: #f2f3f5;
+    --color-base-300: #e4e6e9;
+    --color-base-content: #0a0e14;
+    --color-primary: #7c3aed;
+    --color-primary-content: #ffffff;
+    --color-secondary: #1474ff;
+    --color-secondary-content: #ffffff;
+    --color-accent: #06b6d4;
+    --color-accent-content: #ffffff;
+    --color-neutral: #0a0e14;
+    --color-neutral-content: #ffffff;
+    --color-info: #0ea5e9;
+    --color-info-content: #ffffff;
+    --color-success: #16a34a;
+    --color-success-content: #ffffff;
+    --color-warning: #f59e0b;
+    --color-warning-content: #1a1200;
+    --color-error: #dc2626;
+    --color-error-content: #ffffff;
+    --radius-selector: 0.5rem;
+    --radius-field: 0.5rem;
+    --radius-box: 0.75rem;
+    --border: 1px;
+    --depth: 0;
+    --noise: 0;
+}
+
+@plugin "daisyui/theme" {
+    name: "preto";
+    color-scheme: dark;
+    --root-bg: #000000;
+    --layout-sidebar-background: #000000;
+    --layout-topbar-background: #000000;
+    --color-base-100: #0c0c0c;
+    --color-base-200: #161616;
+    --color-base-300: #242424;
+    --color-base-content: #ffffff;
+    --color-primary: #8b5cf6;
+    --color-primary-content: #ffffff;
+    --color-secondary: #378dff;
+    --color-secondary-content: #ffffff;
+    --color-accent: #06b6d4;
+    --color-accent-content: #ffffff;
+    --color-neutral: #ffffff;
+    --color-neutral-content: #000000;
+    --color-info: #0ea5e9;
+    --color-info-content: #ffffff;
+    --color-success: #16a34a;
+    --color-success-content: #ffffff;
+    --color-warning: #f59e0b;
+    --color-warning-content: #1a1200;
+    --color-error: #dc2626;
+    --color-error-content: #ffffff;
+    --radius-selector: 0.5rem;
+    --radius-field: 0.5rem;
+    --radius-box: 0.75rem;
+    --border: 1px;
+    --depth: 0;
+    --noise: 0;
+}
+
+/* ─── Temas EXTRAS do painel de Personalização do Nexus (verbatim do template) ───
+   contrast / material / dim / material-dark. "Luz"=branco e "Escuro"=preto
+   (Azul Norte) já estão acima; estes são as opções alternativas do Nexus. */
+@plugin "daisyui/theme" {
+    name: "contrast";
+    color-scheme: light;
+    --root-bg: #f2f4f6;
+    --layout-sidebar-background: #fcfdff;
+    --layout-topbar-background: #fdfeff;
+    --color-base-100: #ffffff;
+    --color-base-200: #eef0f2;
+    --color-base-300: #dcdee0;
+    --color-base-content: #1e2328;
+    --color-primary: #7c3aed;
+    --color-primary-content: #ffffff;
+    --color-secondary: #1474ff;
+    --color-secondary-content: #ffffff;
+    --color-accent: #00d3bb;
+    --color-accent-content: #f3fbf6;
+    --color-neutral: #1e2832;
+    --color-neutral-content: #fafcff;
+    --color-info: #14b4ff;
+    --color-success: #0bbf58;
+    --color-warning: #f5a524;
+    --color-error: #f31260;
+    --radius-field: 0.25rem;
+    --radius-box: 0.25rem;
+    --radius-selector: 0.25rem;
+    --border: 1px;
+    --depth: 0;
+    --noise: 0;
+}
+@plugin "daisyui/theme" {
+    name: "material";
+    color-scheme: light;
+    --root-bg: #fdfeff;
+    --layout-sidebar-background: #f5f7ff;
+    --layout-topbar-background: #f5f7ff;
+    --color-base-100: #f6f8ff;
+    --color-base-200: #eaecfa;
+    --color-base-300: #e0e2f8;
+    --color-base-content: #191e28;
+    --color-primary: #7c3aed;
+    --color-primary-content: #ffffff;
+    --color-secondary: #1474ff;
+    --color-secondary-content: #ffffff;
+    --color-accent: #00d3bb;
+    --color-accent-content: #f3fbf6;
+    --color-neutral: #1e2832;
+    --color-neutral-content: #fafcff;
+    --color-info: #14b4ff;
+    --color-success: #0bbf58;
+    --color-warning: #f5a524;
+    --color-error: #f31260;
+    --radius-field: 20px;
+    --radius-box: 20px;
+    --radius-selector: 20px;
+    --border: 1px;
+    --depth: 0;
+    --noise: 0;
+}
+@plugin "daisyui/theme" {
+    name: "dim";
+    color-scheme: dark;
+    --root-bg: #222630;
+    --layout-sidebar-background: #2a2e38;
+    --layout-topbar-background: #2a2e38;
+    --color-base-100: #2a2e38;
+    --color-base-200: #343842;
+    --color-base-300: #3c404a;
+    --color-base-content: #f0f4f8;
+    --color-primary: #8b5cf6;
+    --color-primary-content: #ffffff;
+    --color-secondary: #378dff;
+    --color-secondary-content: #ffffff;
+    --color-accent: #00d3bb;
+    --color-accent-content: #f3fbf6;
+    --color-neutral: #dce1e6;
+    --color-neutral-content: #1e2832;
+    --color-info: #14b4ff;
+    --color-success: #0bbf58;
+    --color-warning: #f5a524;
+    --color-error: #f31260;
+    --radius-field: 0.25rem;
+    --radius-box: 0.25rem;
+    --radius-selector: 0.25rem;
+    --border: 1px;
+    --depth: 0;
+    --noise: 0;
+}
+@plugin "daisyui/theme" {
+    name: "material-dark";
+    color-scheme: dark;
+    --root-bg: #141618;
+    --layout-sidebar-background: #181c20;
+    --layout-topbar-background: #181c22;
+    --color-base-100: #181e24;
+    --color-base-200: #202830;
+    --color-base-300: #2c323a;
+    --color-base-content: #f0f4f8;
+    --color-primary: #8b5cf6;
+    --color-primary-content: #ffffff;
+    --color-secondary: #378dff;
+    --color-secondary-content: #ffffff;
+    --color-accent: #00d3bb;
+    --color-accent-content: #f3fbf6;
+    --color-neutral: #dce1e6;
+    --color-neutral-content: #1e2832;
+    --color-info: #14b4ff;
+    --color-success: #0bbf58;
+    --color-warning: #f5a524;
+    --color-error: #f31260;
+    --radius-field: 20px;
+    --radius-box: 20px;
+    --radius-selector: 20px;
+    --border: 1px;
+    --depth: 0;
+    --noise: 0;
+}
+
+/* Família de fontes (painel de Personalização do Nexus) — data-font-family no <html>.
+   Especificidade html[...] (0,1,1) VENCE o :root { --font-sans } (0,1,0) definido
+   mais abaixo, senão a escolha de fonte não pegava. */
+html[data-font-family="inclusive"], html[data-font-family="default"] { --font-sans: "Inclusive Sans", sans-serif; }
+html[data-font-family="dm-sans"] { --font-sans: "DM Sans", sans-serif; }
+html[data-font-family="wix"] { --font-sans: "Wix Madefor Text", sans-serif; }
+html[data-font-family="ar-one"] { --font-sans: "AR One Sans", sans-serif; }
+/* Força o body a seguir a família escolhida (vence o `@apply font-sans` do body). */
+html[data-font-family] body, html[data-font-family] { font-family: var(--font-sans), system-ui, sans-serif; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Design tokens — refatorados 2026-05-14 pra paleta BANANA mesclada.
+ * Princípios:
+ *   - Primary = amarelo banana (soft → mid → intenso) com texto preto FIXO
+ *   - Neutros 100% cinzas (zero azulado), escala elevada Linear/Notion no dark
+ *   - Tertiary azul só em links/info, NUNCA em CTA
+ *   - Sombras com tint banana sutil pra coesão visual
+ *   - Inter pra body, Inter Tight pra display/headings
+ *   - ink-on-banana é FIXO (não inverte com tema) — preserva legibilidade
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  --button-outline: rgba(0,0,0, .08);
+  --badge-outline: rgba(0,0,0, .04);
+  --opaque-button-border-intensity: -6;
+  --elevate-1: rgba(0,0,0, .025);
+  --elevate-2: rgba(0,0,0, .06);
+
+  /* ── Paleta BANANA (escala OFICIAL) ──────────────────────────────────
+     Bruno 2026-06-14: re-ancorada no ouro OFICIAL da logo ChätBanana
+     (#FAC209 = banana-500), amostrado dos pixels reais (wordmark/balão/
+     fundo). Escala derivada com curva perceptual: highlights puxam pro
+     verde-amarelo da mascote (#FDDE19), sombras pro âmbar (#996401).
+     Usar via Tailwind: bg-banana-400 / text-banana-700 etc. */
+  /* Redesign Norte (2026-07): a escala --banana-* foi RE-APONTADA pra uma escala
+     VIOLETA (ancorada em #7C3AED = banana-500). Bruno trocou a primária de azul
+     pra violeta; re-apontar a escala faz os ~34 arquivos que ainda usam
+     bg-banana-N/text-banana-N virarem violeta automaticamente, sem tocar cada um.
+     Nome do token mantido por histórico de uso espalhado. Fase 6 renomeia. */
+  --banana-50:  #F4F0FF;
+  --banana-100: #E9E0FF;
+  --banana-200: #D6C6FD;
+  --banana-300: #BDA2FB;   /* soft */
+  --banana-400: #9D6BF8;   /* MID */
+  --banana-500: #7C3AED;   /* ★ Violeta */
+  --banana-600: #6A24D9;   /* intenso (hover) */
+  --banana-700: #591EB5;
+  --banana-800: #481A91;
+  --banana-900: #37146E;
+
+  /* ── BRAND BROWN — cor escura da logo ChätBanana ─────────────────────
+     Marrom do contorno do balão + texto "Banana" da logo oficial.
+     Bruno 2026-05-21: era #3D2817 hardcoded marrom-banana. Refatorado pra
+     derivar de --primary + --foreground (color-mix) — assim todo lugar que
+     usa --brand-brown (modais, focus rings, toggles, textos de destaque)
+     acompanha o tema escolhido. Em banana fica tom mostarda-marrom (igual
+     antes); em lilac fica violeta escuro; em blue fica azul-marinho; etc. */
+  --brand-brown:        color-mix(in oklch, hsl(var(--primary)) 60%, hsl(var(--foreground)));
+  --brand-brown-soft:   color-mix(in oklch, hsl(var(--primary)) 50%, hsl(var(--foreground)));
+  --brand-brown-deep:   color-mix(in oklch, hsl(var(--primary)) 70%, hsl(var(--foreground)));
+  --brand-brown-tint:   hsl(var(--primary) / 0.10);
+
+  /* ── Tokens TEMA-ADAPTATIVOS de tab/tabela/hover ──────────────────────
+     Bruno 2026-05-21: estes tokens viviam atrelados à --banana-50/200 hardcoded
+     — header de tabela e hover de linha ficavam amarelos mesmo em lilac/blue/
+     orange/mono. Agora puxam de --theme-tint-50 (definido na paleta de cada
+     preset) + --primary, então acompanham o tema escolhido. Nome do token
+     ficou banana-* por histórico de uso espalhado no codebase. */
+  --banana-tab-bg:        linear-gradient(180deg, var(--theme-tint-50, var(--banana-50)) 0%, transparent 100%);
+  --banana-row-hover-bg:  var(--theme-tint-50, var(--banana-50));
+  --banana-th-bg:         linear-gradient(180deg, var(--theme-tint-50, var(--banana-50)) 0%, transparent 100%);
+  --banana-th-border:     hsl(var(--primary) / 0.22);
+  /* Tab ativa: texto e borda acompanham --primary (paleta do tenant).
+     Bruno 2026-05-21: era --brand-brown fixo; agora segue a cor escolhida
+     (banana/lilac/blue/orange). */
+  --tab-active-color:     hsl(var(--primary));
+  --tab-active-border:    hsl(var(--primary));
+
+  /* ── Texto FIXO sobre fundo banana (NÃO inverte com tema) ──────────────
+     Garante contraste WCAG AA em bubble outgoing, botão primário,
+     topbar amarela, avatar banana, tags banana. */
+  --ink-on-banana: #1A1A1A;
+  --ink-on-banana-muted: rgba(26, 26, 26, 0.70);
+  --ink-on-banana-subtle: rgba(26, 26, 26, 0.55);
+  --border-on-banana: rgba(26, 26, 26, 0.18);
+  --border-on-banana-strong: rgba(26, 26, 26, 0.30);
+
+  /* Highlight de card "pendente" na ConversationList — Bruno 2026-05-15:
+     valor original era inline 'rgba(255, 199, 0, 0.06)' sem variação por tema.
+     Em dark mode + hover, o creme ficava muito visível e quebrava a hierarquia
+     visual da sidebar. Agora é var CSS pra adaptar luz/escuro. */
+  --conv-pendente-bg: hsl(var(--primary) / 0.06);
+
+  /* Bruno 2026-05-21: soft fade adaptativo pra items ativos (lista,
+     menu, painel) acompanha --primary da paleta (banana/lilac/blue/orange). */
+  --banana-soft-fade: linear-gradient(90deg, hsl(var(--primary) / 0.10) 0%, transparent 80%);
+
+  /* Bruno 2026-05-21: tom de texto com bom contraste sobre fundos com
+     tint da paleta (ex: item ativo da sidebar, badges com bg-primary/15).
+     Light usa cor MAIS ESCURA da paleta (legível sobre tint claro);
+     dark sobrescreve pra cor MAIS CLARA (legível sobre tint escuro). */
+  --primary-tone: color-mix(in oklch, hsl(var(--primary)) 55%, black);
+  --primary-tone-bg: hsl(var(--primary) / 0.15);
+
+  /* Bruno 2026-05-15: Tokens semânticos pra chips/pills de status do header.
+     Tem que ser dark-aware porque banana-50 (#FFFCEB) em fundo escuro vira
+     branco-creme destoante. Em dark uso glow translúcido amarelo +
+     foreground claro dourado.
+     Bruno 2026-06-02: chips ficavam amarelos mesmo em lilac/blue/orange/mono —
+     estavam atrelados à escala --banana-* hardcoded (resíduo da migração de
+     2026-05-21 que esqueceu estes tokens). Agora derivam de --primary +
+     --brand-brown, então acompanham o tema escolhido. ATIVO usa o tom cheio do
+     tema; PAUSADO usa variante mais suave (brand-brown-soft + alpha menor) pra
+     ainda dar pra distinguir os dois no olhar. */
+  --chip-active-bg:     var(--theme-tint-50);
+  --chip-active-border: hsl(var(--primary) / 0.35);
+  --chip-active-fg:     var(--brand-brown-deep);
+  --chip-active-fg-num: var(--brand-brown-deep);
+  --chip-active-dot:    hsl(var(--primary));
+
+  --chip-paused-bg:     hsl(var(--primary) / 0.06);
+  --chip-paused-border: hsl(var(--primary) / 0.22);
+  --chip-paused-fg:     var(--brand-brown-soft);
+  --chip-paused-dot:    hsl(var(--primary) / 0.55);
+
+  --chip-exec-bg:       hsl(var(--secondary) / 0.4);
+  --chip-exec-border:   hsl(var(--border));
+  --chip-exec-fg:       var(--brand-brown);
+
+  /* ── Tertiary (azul) — ações de link/informação apenas ───────────────── */
+  --tertiary-500: #2563EB;
+  --tertiary-600: #1D4ED8;
+  --tertiary-50:  #EFF6FF;
+
+  --background: 0 0% 95%;             /* #F2F2F2 — paper-200 (contraste claro vs card branco) */
+  --foreground: 0 0% 10%;             /* #1A1A1A — text body */
+  --border: 0 0% 92%;                 /* #EBEBEB — quase invisível (ref neutral-200) */
+  --card: 0 0% 100%;                  /* branco puro */
+  --card-foreground: 0 0% 10%;
+  --card-border: 0 0% 92%;
+
+  --sidebar: 0 0% 100%;
+  --sidebar-foreground: 0 0% 10%;
+  --sidebar-border: 0 0% 91%;
+  --sidebar-primary: 46 96% 51%;      /* #FAC209 — ouro oficial */
+  --sidebar-primary-foreground: 0 0% 10%;
+  --sidebar-accent: 49 100% 96%;      /* banana-50 — hover sutil */
+  --sidebar-accent-foreground: 0 0% 10%;
+  --sidebar-ring: 46 96% 51%;
+
+  --popover: 0 0% 100%;
+  --popover-foreground: 0 0% 10%;
+  --popover-border: 0 0% 91%;
+
+  --primary: 46 96% 51%;               /* #FAC209 — ouro OFICIAL ChätBanana */
+  --primary-foreground: 0 0% 10%;     /* #1A1A1A — ink-on-banana FIXO (10.6:1) */
+  --secondary: 0 0% 96%;              /* #F4F4F4 — paper-100 */
+  --secondary-foreground: 0 0% 10%;
+  --muted: 0 0% 96%;
+  --muted-foreground: 0 0% 42%;        /* #6B6B6B — text muted neutro */
+  /* Bruno 2026-05-21: cor das LABELS do sidebar (PRINCIPAL, COMUNICAÇÃO, etc).
+     Default = muted-foreground (neutro). Presets lilac/blue/orange sobrescrevem
+     pra cor do tema; preset banana mantém neutro (mais discreto pro tema
+     original que já é amarelo forte). */
+  --sidebar-group-label: hsl(var(--muted-foreground));
+  /* Bruno 2026-05-21: tonalidade super clara da cor do tema (~50 Tailwind).
+     Usado em fundo de cabeçalho de tabela, banners, PageShell. Default = banana-50;
+     presets lilac/blue/orange sobrescrevem pra sua paleta. */
+  --theme-tint-50: var(--banana-50);
+  --accent: 49 100% 96%;               /* banana-50 — hover banana */
+  --accent-foreground: 0 0% 10%;
+  --destructive: 0 72% 50%;
+  --destructive-foreground: 0 0% 100%;
+  --input: 0 0% 84%;
+  --ring: 46 96% 51%;
+
+  /* ── Brand color (logo + accents pontuais) — ouro oficial ───────────── */
+  --brand: 46 96% 56%;                 /* #FBCA22 — banana-400 */
+  --brand-foreground: 0 0% 10%;
+  --brand-soft: 49 100% 96%;           /* banana-50 */
+
+  --chart-1: 46 96% 51%;
+  --chart-2: 46 96% 56%;
+  --chart-3: 142 71% 45%;
+  --chart-4: 280 60% 55%;
+  --chart-5: 0 72% 55%;
+
+  /* Fallback de glifos pra nomes "fancy" do WhatsApp (Unicode decorativo:
+     Mathematical Alphanumeric U+1D400+, fullwidth, dingbats ✿, circled, etc.).
+     Inter não cobre esses ranges → tofu (□). Fallback é POR GLIFO: texto normal
+     segue Inter, só os codepoints exóticos caem pra uma dessas fontes. Bruno
+     2026-06-04 (prints Nekt: "i□□□□t□", "Influencer □Anny L. Delim□"). Ver
+     shared/normalizeName.ts (NFKC dobra o que dá; o resto, sem decomposição,
+     precisa de fonte que renderize o glifo).
+     ORDEM IMPORTA: fontes de EMOJI COLORIDO vêm PRIMEIRO — senão as fontes de
+     símbolo (Segoe UI Symbol / Noto Sans Symbols 2 / Symbola) têm glifo MONO
+     (preto-e-branco) pra 🛑🐢🏠⚡ e sequestram o emoji, ficando feio (regressão
+     Bruno 2026-06-05). Símbolo/math só depois, pros fancy que NÃO são emoji. */
+  --font-glyph-fallback: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', 'Segoe UI Symbol', 'Apple Symbols', 'Noto Sans Math', 'Noto Sans Symbols', 'Noto Sans Symbols 2', 'Cambria Math', Symbola;
+  /* Redesign Norte: Inclusive Sans (fonte do ERP Nexus) como principal; Inter
+     mantido como fallback. --font-display idem, pesos maiores da mesma família. */
+  --font-sans: 'Inclusive Sans', 'Inter Variable', Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', var(--font-glyph-fallback), sans-serif;
+  --font-display: 'Inclusive Sans', 'Inter Tight', 'Inter Variable', Inter, system-ui, var(--font-glyph-fallback), sans-serif;
+  --font-serif: Georgia, serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+  --chat-dot-color: rgba(0, 0, 0, 0.05);
+  /* Chat doodle wallpaper – light mode (BRANCO com radial gradients banana
+     muito sutis como overlay — fiel ao mockup, não saturado). */
+  --chat-wall-bg:   #FFFFFF;
+  --chat-wall-icon: #E8E8E8;
+  --radius: .625rem;                  /* 10px — cantos mais soft (Linear-like) */
+
+  /* Sombras com tint banana sutil — coesão visual */
+  --shadow-2xs: 0 1px 1px 0 rgba(20, 18, 0, 0.04);
+  --shadow-xs:  0 1px 2px 0 rgba(20, 18, 0, 0.05);
+  --shadow-sm:  0 1px 3px 0 rgba(20, 18, 0, 0.08), 0 1px 2px 0 rgba(20, 18, 0, 0.04);
+  --shadow:     0 1px 3px 0 rgba(20, 18, 0, 0.08), 0 1px 2px -1px rgba(20, 18, 0, 0.04);
+  --shadow-md:  0 4px 12px -2px rgba(20, 18, 0, 0.08), 0 2px 4px -1px rgba(20, 18, 0, 0.04);
+  --shadow-lg:  0 12px 32px -8px rgba(20, 18, 0, 0.12), 0 4px 8px -2px rgba(20, 18, 0, 0.06);
+  --shadow-xl:  0 20px 40px -8px rgba(20, 18, 0, 0.14);
+  --shadow-2xl: 0 25px 50px -12px rgba(20, 18, 0, 0.18);
+  --shadow-banana: 0 8px 24px -6px hsl(var(--primary) / 0.35);
+
+  /* ── Gradiente PRIMÁRIO (Bruno 2026-07-04). Escolha "Violeta profundo"
+     (candidato A): mono, do violeta claro → violeta escuro. Um token só → um
+     lugar pra ajustar. Hover aprofunda ~8%; glow = sombra violeta suave. */
+  --gradient-primary:       linear-gradient(135deg, #9769F9 0%, #7C3AED 55%, #6D28D9 100%);
+  --gradient-primary-hover: linear-gradient(135deg, #8A5AF0 0%, #6E2ED8 55%, #5E1FBE 100%);
+  --shadow-primary-glow:    0 6px 18px -6px rgba(124, 58, 237, 0.5);
+
+  --tracking-normal: 0em;
+  --spacing: 0.25rem;
+
+  --sidebar-primary-border: hsl(var(--sidebar-primary));
+  --sidebar-primary-border: hsl(from hsl(var(--sidebar-primary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+  --sidebar-accent-border: hsl(var(--sidebar-accent));
+  --sidebar-accent-border: hsl(from hsl(var(--sidebar-accent)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+  --primary-border: hsl(var(--primary));
+  --primary-border: hsl(from hsl(var(--primary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+  --secondary-border: hsl(var(--secondary));
+  --secondary-border: hsl(from hsl(var(--secondary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+  --muted-border: hsl(var(--muted));
+  --muted-border: hsl(from hsl(var(--muted)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+  --accent-border: hsl(var(--accent));
+  --accent-border: hsl(from hsl(var(--accent)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+  --destructive-border: hsl(var(--destructive));
+  --destructive-border: hsl(from hsl(var(--destructive)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+}
+
+.dark {
+  --chat-dot-color: rgba(255, 255, 255, 0.03);
+  /* Chat doodle wallpaper – dark mode (cinza neutro Linear-like, sem azul) */
+  --chat-wall-bg:   #141414;
+  --chat-wall-icon: #3D3D3D;
+  --button-outline: rgba(255,255,255, .08);
+  --badge-outline: rgba(255,255,255, .04);
+  --opaque-button-border-intensity: 7;
+  --elevate-1: rgba(255,255,255, .035);
+  --elevate-2: rgba(255,255,255, .07);
+
+  /* Bruno 2026-06-14: dark = SLATE FRIO (hue 217), azul-grafite escuro inspirado
+     no dashboard de referência. Page ~6%, cards ~11% (lift da mesma família fria),
+     borders ~18%. Tom frio integra as superfícies; nada quente/marrom. */
+  --background: 217 22% 6%;            /* ≈ #0C0E13 — page azul-grafite escuro */
+  --foreground: 0 0% 96%;              /* #F5F5F5 — text strong */
+  --border: 217 15% 18%;               /* ≈ #282D35 — border sutil */
+  --card: 217 18% 11%;                 /* ≈ #171B21 — surface */
+  --card-foreground: 0 0% 96%;
+  --card-border: 217 15% 18%;
+
+  --sidebar: 217 24% 5%;               /* ≈ #090C11 — um pouco mais escuro que o page */
+  --sidebar-foreground: 0 0% 83%;      /* #D4D4D4 — body */
+  --sidebar-border: 217 15% 16%;
+  --sidebar-primary: 46 96% 51%;       /* #FAC209 — ouro oficial */
+  --sidebar-primary-foreground: 0 0% 10%;  /* preto FIXO sobre banana */
+  --sidebar-accent: 217 15% 15%;       /* hover frio */
+  --sidebar-accent-foreground: 0 0% 96%;
+  --sidebar-ring: 46 96% 51%;
+
+  --popover: 217 16% 14%;              /* surface elevado frio */
+  --popover-foreground: 0 0% 96%;
+  --popover-border: 217 15% 22%;       /* border def frio */
+
+  --primary: 46 96% 51%;               /* #FAC209 — ouro OFICIAL (mesmo do light) */
+  --primary-foreground: 0 0% 10%;     /* #1A1A1A — ink-on-banana FIXO no dark! */
+  --secondary: 217 15% 15%;
+  --secondary-foreground: 0 0% 96%;
+  --muted: 217 15% 15%;
+  --muted-foreground: 0 0% 60%;        /* #9A9A9A — text muted dark */
+  --sidebar-group-label: hsl(var(--muted-foreground));
+  /* Dark: Bruno 2026-06-12 — tint de elevação NEUTRO (branco translúcido = cinza
+     sobre o fundo escuro). Antes era banana 6% e deixava tudo com cara "marrom". */
+  --theme-tint-50: hsl(0 0% 100% / 0.045);
+  --accent: 46 96% 51%;                /* hover banana */
+  --accent-foreground: 0 0% 10%;
+  --destructive: 0 72% 55%;
+  --destructive-foreground: 0 0% 100%;
+  --input: 217 15% 18%;                /* border frio dos inputs */
+  --ring: 46 96% 51%;
+
+  --brand: 46 96% 56%;                 /* #FBCA22 — banana-400 (mesmo) */
+  --brand-foreground: 0 0% 10%;
+  --brand-soft: 48 50% 14%;            /* fundo suave dark, glow banana */
+
+  /* Bruno 2026-06-12: soft fade dark NEUTRO (cinza). A seleção da conversa
+     segue marcada pela borda-esquerda banana; o fundo não precisa ser quente. */
+  --banana-soft-fade: linear-gradient(90deg, hsl(0 0% 100% / 0.06) 0%, transparent 80%);
+
+  /* Bruno 2026-05-21: tom dark = cor MAIS CLARA da paleta (legível sobre
+     tint escuro do fundo). Sobrescreve --primary-tone definido no :root. */
+  --primary-tone: color-mix(in oklch, hsl(var(--primary)) 55%, white);
+  /* Bruno 2026-06-14: fundo do item de menu SELECIONADO = grafite neutro, não
+     ouro 18% (que virava "marrom" no preto). A seleção segue marcada pelo texto
+     dourado (--primary-tone) + a barrinha lateral gradiente. */
+  --primary-tone-bg: hsl(0 0% 100% / 0.07);
+
+  /* Highlight pendente em dark — Bruno 2026-06-12: neutro (cinza), não banana. */
+  --conv-pendente-bg: hsl(0 0% 100% / 0.03);
+
+  /* Bruno 2026-06-12: tabs/tabela/hovers no dark voltam a usar branco
+     translúcido (cinza neutro), NÃO --primary. O tint banana deixava o fundo
+     "marrom". Acentos (botão, texto ativo, borda) seguem banana à parte. */
+  --banana-tab-bg:        linear-gradient(180deg, hsl(0 0% 100% / 0.05) 0%, transparent 100%);
+  --banana-row-hover-bg:  hsl(0 0% 100% / 0.04);
+  --banana-th-bg:         linear-gradient(180deg, hsl(0 0% 100% / 0.04) 0%, transparent 100%);
+  --banana-th-border:     hsl(var(--primary) / 0.15);
+
+  /* Bruno 2026-05-15: chips dark — ouro queimado em vez de banana-50.
+     Active vira glow denso, border do tema, fg claro do tema.
+     Bruno 2026-06-02: dark também derivado de --primary/--brand-brown (era
+     ouro #F0C24B/#FFD24A/#FBBF24 hardcoded). Em dark o --brand-brown mistura
+     primary 65% + white → tom claro do tema, legível sobre fundo escuro.
+     ATIVO = glow cheio; PAUSADO = variante suave. Exec-fg segue brand-brown. */
+  --chip-active-bg:     hsl(var(--primary) / 0.12);
+  --chip-active-border: hsl(var(--primary) / 0.40);
+  --chip-active-fg:     var(--brand-brown);
+  --chip-active-fg-num: var(--brand-brown-deep);
+  --chip-active-dot:    hsl(var(--primary));
+
+  --chip-paused-bg:     hsl(var(--primary) / 0.07);
+  --chip-paused-border: hsl(var(--primary) / 0.25);
+  --chip-paused-fg:     var(--brand-brown-soft);
+  --chip-paused-dot:    hsl(var(--primary) / 0.6);
+
+  --chip-exec-bg:       rgba(255, 255, 255, 0.03);
+  --chip-exec-border:   hsl(var(--border));
+  --chip-exec-fg:       var(--brand-brown);
+
+  /* Bruno 2026-05-21: dark mode também derivado de --primary + --foreground.
+     Foreground em dark é branco-ish, então o mix vira tom mais claro do
+     primary — visível sobre fundo escuro, mantém personalidade do tema. */
+  --brand-brown:       color-mix(in oklch, hsl(var(--primary)) 65%, white);
+  --brand-brown-soft:  color-mix(in oklch, hsl(var(--primary)) 55%, white);
+  --brand-brown-deep:  color-mix(in oklch, hsl(var(--primary)) 75%, white);
+  --brand-brown-tint:  hsl(var(--primary) / 0.15);
+
+  /* Tab ativa dark: texto claro foreground — borda acompanha --primary
+     (paleta tenant: banana/lilac/blue/orange). */
+  --tab-active-color:   var(--foreground);
+  --tab-active-border:  hsl(var(--primary));
+
+  --chart-1: 46 96% 51%;
+  --chart-2: 46 96% 56%;
+  --chart-3: 142 65% 55%;
+  --chart-4: 280 60% 65%;
+  --chart-5: 0 72% 65%;
+
+  /* Sombras dark — sutis, sem preto cristalino que desaparece */
+  --shadow-2xs: 0 1px 1px 0 rgba(0, 0, 0, 0.25);
+  --shadow-xs:  0 1px 2px 0 rgba(0, 0, 0, 0.3);
+  --shadow-sm:  0 1px 3px 0 rgba(0, 0, 0, 0.35), 0 1px 2px 0 rgba(0, 0, 0, 0.2);
+  --shadow:     0 1px 3px 0 rgba(0, 0, 0, 0.4), 0 1px 2px -1px rgba(0, 0, 0, 0.25);
+  --shadow-md:  0 4px 12px -2px rgba(0, 0, 0, 0.4), 0 2px 4px -1px rgba(0, 0, 0, 0.25);
+  --shadow-lg:  0 12px 32px -8px rgba(0, 0, 0, 0.5), 0 4px 8px -2px rgba(0, 0, 0, 0.3);
+  --shadow-xl:  0 20px 40px -8px rgba(0, 0, 0, 0.55);
+  --shadow-2xl: 0 25px 50px -12px rgba(0, 0, 0, 0.65);
+  --shadow-banana: 0 8px 24px -6px hsl(var(--primary) / 0.28);
+
+  /* Gradiente primário no dark — violeta um pouco mais claro pra brilhar no preto. */
+  --gradient-primary:       linear-gradient(135deg, #A78BFA 0%, #8B5CF6 55%, #7C3AED 100%);
+  --gradient-primary-hover: linear-gradient(135deg, #9A7BF8 0%, #7E4AEE 55%, #6E2ED8 100%);
+  --shadow-primary-glow:    0 6px 20px -6px rgba(139, 92, 246, 0.5);
+
+  --sidebar-primary-border: hsl(var(--sidebar-primary));
+  --sidebar-primary-border: hsl(from hsl(var(--sidebar-primary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+  --sidebar-accent-border: hsl(var(--sidebar-accent));
+  --sidebar-accent-border: hsl(from hsl(var(--sidebar-accent)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+  --primary-border: hsl(var(--primary));
+  --primary-border: hsl(from hsl(var(--primary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+  --secondary-border: hsl(var(--secondary));
+  --secondary-border: hsl(from hsl(var(--secondary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+  --muted-border: hsl(var(--muted));
+  --muted-border: hsl(from hsl(var(--muted)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+  --accent-border: hsl(var(--accent));
+  --accent-border: hsl(from hsl(var(--accent)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+  --destructive-border: hsl(var(--destructive));
+  --destructive-border: hsl(from hsl(var(--destructive)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply font-sans antialiased bg-background text-foreground;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Tipografia display — Inter Tight com tracking negativo sutil em headers.
+     Aplicada globalmente em h1-h3 pra coesão sem precisar adicionar classes
+     em 50+ páginas. (Bruno, 2026-05-14 — UI redesign) */
+  h1, h2, h3 {
+    font-family: var(--font-display);
+    letter-spacing: -0.015em;
+  }
+  h1 { font-weight: 600; }
+  h2 { font-weight: 600; }
+  h3 { font-weight: 600; }
+
+  *:focus:not(:focus-visible) {
+    outline: none !important;
+  }
+
+  /* Foco por teclado — troca o outline PRETO padrão do navegador por um anel
+     na cor do tema (--ring). Atinge só interativos "crus" (links/botões custom
+     da app-sidebar, régua de atendimento, ChatRailNav, abas, menus) que NÃO
+     setam outline próprio. Componentes shadcn/ui já usam focus-visible:outline-none
+     + ring próprio e sobrescrevem isto por especificidade; inputs/textarea/select
+     têm foco próprio e ficam de fora deste seletor (sem anel duplo).
+     Bruno 2026-06-20: o contorno preto pulava em vários cliques pelo app
+     (agravado pelos TooltipTrigger asChild do Radix, que casam :focus-visible
+     no clique do mouse). Antes só `:focus:not(:focus-visible)` era tratado. */
+  a:focus-visible,
+  button:focus-visible,
+  summary:focus-visible,
+  [role="button"]:focus-visible,
+  [role="link"]:focus-visible,
+  [role="tab"]:focus-visible,
+  [role="menuitem"]:focus-visible,
+  [role="option"]:focus-visible {
+    outline: 2px solid hsl(var(--ring) / 0.55);
+    outline-offset: 2px;
+  }
+
+  /* ── Anel de foco SÓ no teclado ─────────────────────────────────────────
+     Bruno 2026-06-20: o anel de --ring (ouro oficial) aparecia como "borda
+     amarela" em QUALQUER clique de mouse pelo app inteiro (abas do inbox,
+     pills/selects de atendimentos, botões). Causa: o Radix restaura foco de
+     forma programática ao fechar menus/popovers e o :focus-visible casa no
+     ponteiro; a sessão anterior só havia trocado a COR (preto→ouro), o que
+     piorou. Raiz: revelar o anel só quando a última interação foi TECLADO.
+     A modalidade vem do data-input-modality setado no bundle (main.tsx).
+     Regra invertida (suprime A MENOS QUE keyboard): assim o anel fica OFF por
+     padrão — antes do JS rodar, se o JS falhar, ou em qualquer clique de mouse
+     — e SÓ aparece quando a última interação foi teclado. Zera o outline custom
+     acima E o anel do Tailwind (focus-visible:ring-*, que vira box-shadow via
+     --tw-ring-shadow) nestes controles clicáveis. Inputs de texto/textarea/
+     select NÃO entram — eles devem mostrar foco mesmo no clique (você quer ver
+     onde digita) e o navegador já trata isso via :focus-visible nativo. */
+  html:not([data-input-modality="keyboard"]) :is(
+    a, button, summary,
+    [role="button"], [role="link"], [role="tab"],
+    [role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"],
+    [role="option"], [role="switch"], [role="checkbox"], [role="radio"]
+  ):focus-visible {
+    outline: none !important;
+    --tw-ring-shadow: 0 0 #0000 !important;
+    --tw-ring-offset-shadow: 0 0 #0000 !important;
+  }
+
+  [data-radix-dialog-content],
+  [data-radix-alert-dialog-content] {
+    outline: none !important;
+  }
+
+  .dialog-center-fix {
+    top: 50% !important;
+    left: 50% !important;
+    transform: translate(-50%, -50%) !important;
+  }
+
+  ::-webkit-scrollbar {
+    width: 5px;
+    height: 7px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--border));
+    border-radius: 8px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground));
+  }
+
+  /* prefers-reduced-motion: zera transitions/animations/scroll behavior
+     pra usuários que pedem menos movimento (a11y WCAG 2.3.3). Componentes
+     que usam Motion já respeitam via useReducedMotion(); este bloco cobre
+     transições CSS escritas à mão (hover, active, focus). */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer utilities {
+  input[type="search"]::-webkit-search-cancel-button {
+    @apply hidden;
+  }
+
+  [contenteditable][data-placeholder]:empty::before {
+    content: attr(data-placeholder);
+    color: hsl(var(--muted-foreground));
+    pointer-events: none;
+  }
+
+  .no-default-hover-elevate {}
+  .no-default-active-elevate {}
+
+  .toggle-elevate::before,
+  .toggle-elevate-2::before {
+    content: "";
+    pointer-events: none;
+    position: absolute;
+    inset: 0px;
+    border-radius: inherit;
+    z-index: -1;
+  }
+
+  .toggle-elevate.toggle-elevated::before {
+    background-color: var(--elevate-2);
+  }
+
+  .border.toggle-elevate::before {
+    inset: -1px;
+  }
+
+  .hover-elevate:not(.no-default-hover-elevate),
+  .active-elevate:not(.no-default-active-elevate),
+  .hover-elevate-2:not(.no-default-hover-elevate),
+  .active-elevate-2:not(.no-default-active-elevate) {
+    position: relative;
+    z-index: 0;
+  }
+
+  .hover-elevate:not(.no-default-hover-elevate)::after,
+  .active-elevate:not(.no-default-active-elevate)::after,
+  .hover-elevate-2:not(.no-default-hover-elevate)::after,
+  .active-elevate-2:not(.no-default-active-elevate)::after {
+    content: "";
+    pointer-events: none;
+    position: absolute;
+    inset: 0px;
+    border-radius: inherit;
+    z-index: 999;
+  }
+
+  .hover-elevate:hover:not(.no-default-hover-elevate)::after,
+  .active-elevate:active:not(.no-default-active-elevate)::after {
+    background-color: var(--elevate-1);
+  }
+
+  .hover-elevate-2:hover:not(.no-default-hover-elevate)::after,
+  .active-elevate-2:active:not(.no-default-active-elevate)::after {
+    background-color: var(--elevate-2);
+  }
+
+  .border.hover-elevate:not(.no-hover-interaction-elevate)::after,
+  .border.active-elevate:not(.no-active-interaction-elevate)::after,
+  .border.hover-elevate-2:not(.no-hover-interaction-elevate)::after,
+  .border.active-elevate-2:not(.no-active-interaction-elevate)::after,
+  .border.hover-elevate:not(.no-hover-interaction-elevate)::after {
+    inset: -1px;
+  }
+
+  /* Gradiente PRIMARY mesclado (soft → mid → intenso) — base de CTAs e
+     elementos brand-driven. Bruno 2026-05-21: refatorado pra usar
+     --primary via color-mix, acompanhando a paleta escolhida pelo tenant
+     (banana/lilac/blue/orange). Texto usa --primary-foreground definido
+     na paleta (preto pra banana/laranja, branco pra lilás/azul).
+     !important sobrescreve `text-white` legado em ~10 callers. */
+  /* Redesign Norte / Nexus 4.0.0: CTA FLAT sólido (não mais gradiente — --depth:0).
+     Nome da classe mantido pros ~dezenas de callers legados; agora renderiza o
+     mesmo azul chapado do btn-primary do Nexus. */
+  /* Bruno 2026-07-04: CTA volta a ter GRADIENTE (violeta→rosa, via --gradient-primary).
+     Cobre os ~33 callers de gradient-accent de uma vez. SEM glow na base — senão
+     avatares/monogramas (App/ConversationList) e a bolha de mensagem herdariam a
+     sombra colorida e poluiriam. O glow fica na .gradient-accent-glow (opt-in). */
+  .gradient-accent {
+    background-image: var(--gradient-primary);
+    color: hsl(var(--primary-foreground)) !important;
+    border: 1px solid transparent;
+  }
+  .gradient-accent:hover {
+    background-image: var(--gradient-primary-hover);
+  }
+  .gradient-accent svg { color: hsl(var(--primary-foreground)) !important; }
+
+  /* Glow colorido suave — opt-in nos CTAs de destaque (login, novo, convidar…).
+     Mesmo token dos btn-primary/seg-tab pra manter a sombra idêntica. */
+  .gradient-accent-glow {
+    box-shadow: var(--shadow-primary-glow);
+  }
+
+  /* Superfície primária com gradiente — pra JSX que antes usava bg-primary
+     (item de menu ativo, rail de atendimento, etc). Só o fundo + glow; a cor
+     do texto fica com o caller (text-primary-content / -foreground). */
+  .grad-primary {
+    background-image: var(--gradient-primary);
+    box-shadow: var(--shadow-primary-glow);
+  }
+  .grad-primary:hover {
+    background-image: var(--gradient-primary-hover);
+  }
+
+  /* Focus ring marrom-banana — usado em inputs/selects do PageShell e em
+     qualquer interativo que precise herdar o "padrão Banana Trail" da
+     Central de Atendimentos. Aplica em `:focus-visible` pra não disparar
+     em click do mouse. Bruno 2026-05-15. */
+  .focus-banana-ring:focus-visible,
+  .focus-banana-ring:focus {
+    border-color: var(--brand-brown);
+    box-shadow: 0 0 0 3px var(--brand-brown-tint);
+  }
+
+  /* Wash banana no fundo das páginas — gradient linear topo banana-50 →
+     transparent (sensação de "carimbo identidade no topo") + radial sutil
+     no canto inferior. Replica EXATAMENTE o padrão da Central de
+     Atendimentos. Bruno 2026-05-15: intensidade aumentada de 7% pra valor
+     visível em monitor claro (banana-50 sólido ≈ #FFFCEB tem só 1% de
+     diferença pro fundo paper-50 #FAFAFA — precisava de mais saturação). */
+  /* Bruno 2026-05-21 (v2): linear-gradient e radial agora seguem o tema —
+     tint-50 (per-tema) no topo + primary translúcido no radial. Sem hardcode
+     banana. Funciona pra todos os 5 presets (banana/lilac/blue/orange/mono). */
+  .page-banana-wash {
+    position: relative;
+    background-image:
+      linear-gradient(180deg, var(--theme-tint-50, var(--banana-50)) 0%, transparent 280px),
+      radial-gradient(circle at 92% 96%, hsl(var(--primary) / 0.08) 0%, transparent 42%);
+    background-attachment: local;
+    background-repeat: no-repeat;
+  }
+  /* Dark: Bruno 2026-06-12 — wash NEUTRO (branco translúcido = cinza), não
+     banana. O tint quente deixava o topo das páginas "marrom" no dark. */
+  .dark .page-banana-wash {
+    background-image:
+      linear-gradient(180deg, hsl(0 0% 100% / 0.025) 0%, transparent 320px),
+      radial-gradient(circle at 88% 8%, hsl(0 0% 100% / 0.02) 0%, transparent 38%);
+  }
+
+  /* Bruno 2026-06-12: washes de superfície (hero / cards de destaque) —
+     banana no light, NEUTRO cinza no dark (o tom quente virava "marrom"). */
+  .surface-wash-strong {
+    background: linear-gradient(135deg, hsl(var(--primary) / 0.16) 0%, hsl(var(--primary) / 0.04) 45%, transparent 100%);
+  }
+  .dark .surface-wash-strong {
+    background: linear-gradient(135deg, hsl(0 0% 100% / 0.055) 0%, hsl(0 0% 100% / 0.015) 45%, transparent 100%);
+  }
+  .surface-wash-soft {
+    background: linear-gradient(120deg, hsl(var(--primary) / 0.07) 0%, transparent 60%);
+  }
+  .dark .surface-wash-soft {
+    background: linear-gradient(120deg, hsl(0 0% 100% / 0.04) 0%, transparent 60%);
+  }
+  .surface-wash-faint {
+    background: hsl(var(--primary) / 0.04);
+  }
+  .dark .surface-wash-faint {
+    background: hsl(0 0% 100% / 0.025);
+  }
+
+  /* Wallpaper do chat — banana faint no light, NEUTRO no dark (Bruno 2026-06-12). */
+  .chat-bg-wash {
+    background-image:
+      radial-gradient(circle at 20% 30%, hsl(var(--primary) / 0.06) 0%, transparent 50%),
+      radial-gradient(circle at 80% 70%, hsl(var(--primary) / 0.04) 0%, transparent 50%);
+  }
+  .dark .chat-bg-wash {
+    background-image:
+      radial-gradient(circle at 20% 30%, hsl(0 0% 100% / 0.03) 0%, transparent 50%),
+      radial-gradient(circle at 80% 70%, hsl(0 0% 100% / 0.02) 0%, transparent 50%);
+  }
+
+  /* Bruno 2026-06-11: removida a classe .page-banana-strip (faixa amarela
+     "beiral" abaixo do header). Estava sem uso e o pedido foi matar o beiral
+     de todas as telas. */
+
+  /* Bruno 2026-05-15: hover-elevate dos cards banana (automacoes, leads,
+     etc). Em light: lift 2px + shadow âmbar suave. Em dark: lift maior +
+     glow âmbar mais denso (porque dark precisa MAIS de feedback visual no
+     hover — o card em si já é dark sobre dark). */
+  .card-banana-hover {
+    transition: transform 200ms cubic-bezier(0.4, 0, 0.2, 1),
+                box-shadow 200ms cubic-bezier(0.4, 0, 0.2, 1),
+                border-color 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .card-banana-hover:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px -6px hsl(var(--primary) / 0.18);
+    border-color: hsl(var(--primary) / 0.40);
+  }
+
+  /* Redesign Norte: wash azul sutil no hero da home (sobre bg-base-100). */
+  .hero-norte {
+    background-image:
+      radial-gradient(900px 240px at 100% 0%, hsl(var(--primary) / 0.12), transparent 55%),
+      linear-gradient(180deg, hsl(var(--primary) / 0.05), transparent 42%);
+  }
+  .dark .card-banana-hover:hover {
+    transform: translateY(-3px);
+    box-shadow:
+      0 10px 28px -6px rgba(0, 0, 0, 0.45),
+      0 0 0 1px rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.20);
+  }
+
+  /* Texto marrom ESCURO da identidade ChätBanana — usar em headings/
+     destaques bold da landing page pra contraste com fundo creme. Usa
+     --brand-brown-deep (#2A1A0F) ao invés do principal (#3D2817) pra
+     ter peso visual real em h1/h2 (Bruno 2026-05-15: feedback "tava
+     muito claro pra header"). */
+  .text-brand-brown {
+    color: var(--brand-brown-deep);
+  }
+
+  /* ═══════════════════════════════════════════════════════════
+     UTILITY CLASSES DO MOCKUP (reconstrução UI 2026-05-14)
+     Replicar classes do mockup d:\tmp\chatbanana-ui-final.html
+     pra ter fidelidade visual total no chat banana.
+     ═══════════════════════════════════════════════════════════ */
+
+  /* Label técnico — UPPERCASE TRACKING (sidebar de painéis, eyebrow) */
+  .label-eyebrow {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: hsl(var(--muted-foreground));
+  }
+
+  /* Avatares — círculos com gradient banana (ativo) ou neutro (outros) */
+  .avatar {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    font-weight: 600;
+    font-size: 11px;
+    flex-shrink: 0;
+    user-select: none;
+  }
+  .avatar-banana {
+    background: linear-gradient(135deg, var(--banana-300) 0%, var(--banana-400) 100%);
+    color: var(--ink-on-banana);
+    border: 1.5px solid var(--ink-on-banana);
+  }
+  .dark .avatar-banana { border-color: rgba(0,0,0,0.7); }
+  .avatar-neutral {
+    background: hsl(var(--muted));
+    color: hsl(var(--foreground));
+    border: 1px solid hsl(var(--border));
+  }
+
+  /* Conv-item da sidebar — ativo acompanha --primary da paleta. */
+  .conv-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 14px;
+    cursor: pointer;
+    border-left: 3px solid transparent;
+    position: relative;
+    transition: background 150ms ease;
+  }
+  .conv-item:hover {
+    background: hsl(var(--primary) / 0.06);
+  }
+  .dark .conv-item:hover {
+    background: rgba(255, 255, 255, 0.04);
+  }
+  .conv-item.active {
+    background: linear-gradient(90deg, hsl(var(--primary) / 0.12) 0%, transparent 80%);
+    border-left-color: hsl(var(--primary));
+  }
+
+  /* Pipeline rows (radio com dot colorido no ativo) */
+  .pipe-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    color: hsl(var(--foreground));
+    transition: background 150ms ease;
+  }
+  .pipe-row:hover {
+    background: hsl(var(--muted) / 0.5);
+  }
+  .pipe-row.active {
+    background: hsl(var(--primary) / 0.10);
+    font-weight: 600;
+  }
+  .dark .pipe-row.active {
+    background: hsl(var(--primary) / 0.12);
+  }
+  .pipe-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: hsl(var(--border));
+    flex-shrink: 0;
+  }
+  .pipe-row.active .pipe-dot {
+    background: hsl(var(--primary));
+    box-shadow: 0 0 0 3px hsl(var(--primary) / 0.20);
+  }
+
+  /* Segmented control (tabs Auto/Fila/Minhas + Prioridade Alta/Média/Baixa) */
+  .seg {
+    display: inline-flex;
+    padding: 3px;
+    gap: 2px;
+    background: hsl(var(--muted) / 0.6);
+    border: 1px solid hsl(var(--border));
+    border-radius: 10px;
+  }
+  .seg-btn {
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 500;
+    color: hsl(var(--muted-foreground));
+    background: transparent;
+    border: 0;
+    border-radius: 7px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    transition: background 150ms ease, color 150ms ease, box-shadow 150ms ease;
+  }
+  .seg-btn:hover {
+    color: hsl(var(--foreground));
+  }
+  .seg-btn.active {
+    background: hsl(var(--card));
+    color: hsl(var(--foreground));
+    box-shadow: var(--shadow-xs);
+    font-weight: 600;
+  }
+
+  /* Btn-ghost (icon buttons sem fundo, hover sutil) */
+  .btn-ghost-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    background: transparent;
+    color: hsl(var(--muted-foreground));
+    border: 0;
+    cursor: pointer;
+    transition: background 150ms ease, color 150ms ease;
+  }
+  .btn-ghost-icon:hover {
+    background: hsl(var(--muted) / 0.7);
+    color: hsl(var(--foreground));
+  }
+  .btn-ghost-icon.small {
+    width: 28px;
+    height: 28px;
+  }
+
+  /* Date separator nas mensagens */
+  .msg-date-sep {
+    display: inline-flex;
+    align-items: center;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 4px 12px;
+    border-radius: 999px;
+    background: hsl(var(--card));
+    color: hsl(var(--muted-foreground));
+    border: 1px solid hsl(var(--border));
+    box-shadow: var(--shadow-xs);
+  }
+
+  /* Tags micro pra lista de conversas e situação no painel direito.
+     Backgrounds com opacity ~22% (não muito sutis pra ficar invisível, não
+     muito intensos pra cansar). Border opacity ~55% pra delimitar visualmente. */
+  .micro-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 2px 8px;
+    font-size: 10.5px;
+    font-weight: 700;
+    border-radius: 999px;
+    line-height: 1.4;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.01em;
+  }
+  /* Bruno 2026-05-21: micro-tag-banana acompanha --primary da paleta
+     (banana/lilac/blue/orange). Light usa tint claro + texto escuro,
+     dark mantém neutro pra não competir com tags semânticas (F/S/C). */
+  .micro-tag-banana {
+    background: hsl(var(--primary) / 0.15);
+    color: color-mix(in oklch, hsl(var(--primary)) 60%, black);
+    border: 1px solid hsl(var(--primary) / 0.45);
+  }
+  .dark .micro-tag-banana {
+    background: hsl(var(--primary) / 0.18);
+    color: color-mix(in oklch, hsl(var(--primary)) 50%, white);
+    border-color: hsl(var(--primary) / 0.45);
+  }
+  .micro-tag-success {
+    background: rgba(22, 163, 74, 0.18);
+    color: rgb(21, 128, 61);
+    border: 1px solid rgba(22, 163, 74, 0.55);
+  }
+  .dark .micro-tag-success {
+    color: rgb(74, 222, 128);
+  }
+  .micro-tag-warning {
+    background: rgba(245, 158, 11, 0.22);
+    color: rgb(146, 64, 14);
+    border: 1px solid rgba(245, 158, 11, 0.6);
+  }
+  .dark .micro-tag-warning {
+    background: rgba(245, 158, 11, 0.22);
+    color: rgb(252, 211, 77);
+    border-color: rgba(245, 158, 11, 0.55);
+  }
+  .micro-tag-neutral {
+    background: hsl(var(--muted));
+    color: hsl(var(--foreground));
+    border: 1px solid hsl(var(--border));
+  }
+  .dark .micro-tag-neutral {
+    background: hsl(var(--muted));
+    color: hsl(var(--foreground));
+  }
+  .micro-tag-danger {
+    background: rgba(220, 38, 38, 0.18);
+    color: rgb(185, 28, 28);
+    border: 1px solid rgba(220, 38, 38, 0.55);
+  }
+  .dark .micro-tag-danger {
+    color: rgb(252, 165, 165);
+  }
+
+  /* ─── situation-pill — tags maiores com código + descrição ──────────────
+     Usadas em TAG/SITUAÇÃO no painel direito (ActionsSidebar) e em qualquer
+     lugar que precise mostrar a tag com mais contexto, fiel ao mockup. */
+  .situation-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 9px;
+    font-size: 11px;
+    font-weight: 600;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    line-height: 1.5;
+    white-space: nowrap;
+  }
+  .situation-pill-code {
+    font-family: var(--font-mono);
+    font-weight: 700;
+    font-size: 10.5px;
+  }
+  .situation-pill-sep {
+    opacity: 0.5;
+    margin: 0 1px;
+  }
+  .situation-pill-label {
+    text-transform: capitalize;
+  }
+  /* Bruno 2026-05-21: situation-pill-banana acompanha --primary da paleta. */
+  .situation-pill-banana {
+    background: hsl(var(--primary) / 0.12);
+    color: color-mix(in oklch, hsl(var(--primary)) 60%, black);
+    border-color: hsl(var(--primary) / 0.40);
+  }
+  .dark .situation-pill-banana {
+    background: hsl(var(--primary) / 0.15);
+    color: color-mix(in oklch, hsl(var(--primary)) 50%, white);
+    border-color: hsl(var(--primary) / 0.45);
+  }
+  .situation-pill-warning {
+    background: rgba(245, 158, 11, 0.12);
+    color: rgb(146, 64, 14);
+    border-color: rgba(245, 158, 11, 0.5);
+  }
+  .dark .situation-pill-warning {
+    background: rgba(245, 158, 11, 0.16);
+    color: rgb(252, 211, 77);
+    border-color: rgba(245, 158, 11, 0.5);
+  }
+  .situation-pill-success {
+    background: rgba(22, 163, 74, 0.10);
+    color: rgb(22, 101, 52);
+    border-color: rgba(22, 163, 74, 0.5);
+  }
+  .dark .situation-pill-success {
+    color: rgb(74, 222, 128);
+  }
+  .situation-pill-neutral {
+    background: hsl(var(--muted));
+    color: hsl(var(--muted-foreground));
+    border-color: hsl(var(--border));
+  }
+  .situation-pill-danger {
+    background: rgba(220, 38, 38, 0.10);
+    color: rgb(185, 28, 28);
+    border-color: rgba(220, 38, 38, 0.5);
+  }
+  .dark .situation-pill-danger {
+    color: rgb(248, 113, 113);
+  }
+
+  /* Bruno 2026-05-21: bg-banana-soft acompanha --primary da paleta.
+     Usado em item ativo do painel (ex: "Comercial" selecionado). */
+  .bg-banana-soft-card {
+    background: hsl(var(--primary) / 0.08);
+    border: 1px solid hsl(var(--primary) / 0.40);
+  }
+  .dark .bg-banana-soft-card {
+    background: hsl(var(--primary) / 0.12);
+    border-color: hsl(var(--primary) / 0.40);
+  }
+
+  /* ═══════════════════════════════════════════════════════════
+     BOTÕES PADRONIZADOS — auditoria 2026-05-14
+     Tamanhos consistentes pra eliminar inline styles aleatórios.
+     ═══════════════════════════════════════════════════════════ */
+
+  /* Action button — outline padrão pra listagens (ex: "Conversa") */
+  .action-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 6px 12px;
+    min-height: 32px;
+    font-size: 12px;
+    font-weight: 600;
+    color: hsl(var(--foreground));
+    background: hsl(var(--card));
+    border: 1px solid hsl(var(--border));
+    border-radius: 8px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 150ms ease, border-color 150ms ease, transform 80ms ease;
+  }
+  .action-btn:hover:not(:disabled) {
+    background: hsl(var(--muted) / 0.6);
+    border-color: hsl(var(--foreground) / 0.3);
+  }
+  .action-btn:active:not(:disabled) {
+    transform: scale(0.97);
+  }
+  .action-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  /* Variante "banana" pra ações primárias inline */
+  .action-btn-banana {
+    color: var(--ink-on-banana);
+    background: linear-gradient(180deg, var(--banana-300) 0%, var(--banana-400) 100%);
+    border-color: var(--banana-600);
+  }
+  .action-btn-banana:hover:not(:disabled) {
+    background: linear-gradient(180deg, var(--banana-400) 0%, var(--banana-500) 100%);
+    border-color: var(--banana-700);
+  }
+
+  /* Icon-only buttons consistentes */
+  .icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    background: transparent;
+    color: hsl(var(--muted-foreground));
+    border: 0;
+    cursor: pointer;
+    transition: background 150ms ease, color 150ms ease, transform 80ms ease;
+  }
+  .icon-btn:hover:not(:disabled) {
+    background: hsl(var(--muted) / 0.7);
+    color: hsl(var(--foreground));
+  }
+  .icon-btn:active:not(:disabled) { transform: scale(0.94); }
+  .icon-btn-sm { width: 28px; height: 28px; border-radius: 6px; }
+  .icon-btn-lg { width: 36px; height: 36px; border-radius: 9px; }
+
+  /* Número grande / métrica destaque — usa Inter Tight + tabular */
+  .num-display {
+    font-family: var(--font-display);
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+
+  /* Card padrão — sombra coerente, sem overkill de border+shadow */
+  .card-elevated {
+    background: hsl(var(--card));
+    border: 1px solid hsl(var(--border));
+    border-radius: 12px;
+    box-shadow: var(--shadow-sm);
+  }
+  .card-elevated:hover {
+    box-shadow: var(--shadow-md);
+  }
+}
+
+@keyframes topbar-load {
+  0%   { transform: scaleX(0); opacity: 1; }
+  40%  { transform: scaleX(0.65); opacity: 1; }
+  70%  { transform: scaleX(0.85); opacity: 1; }
+  90%  { transform: scaleX(0.96); opacity: 1; }
+  100% { transform: scaleX(1); opacity: 0; }
+}
+
+.topbar-progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  z-index: 99999;
+  transform-origin: left;
+  background: hsl(var(--primary));
+  animation: topbar-load 600ms cubic-bezier(.4,.0,.2,1) forwards;
+  border-radius: 0 2px 2px 0;
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
+@keyframes topbar-shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+@keyframes page-enter {
+  0%   { opacity: 0; transform: translateY(8px) scale(0.995); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Switch (Radix) — estado ON acompanha --primary (paleta do tenant).
+   Bruno 2026-05-21: era --brand-brown fixo, mas com 4 paletas precisa
+   seguir a cor escolhida (banana/lilac/blue/orange). */
+[role="switch"][data-state="checked"] {
+  background-color: hsl(var(--primary)) !important;
+}
+[role="switch"][data-state="checked"]:hover {
+  background-color: color-mix(in oklch, hsl(var(--primary)) 88%, black) !important;
+}
+
+/* Banana mascote — braço acenando + flutuar suave */
+@keyframes banana-wave-arm {
+  0%, 100% { transform: rotate(0deg); }
+  20% { transform: rotate(-18deg); }
+  40% { transform: rotate(12deg); }
+  60% { transform: rotate(-12deg); }
+  80% { transform: rotate(6deg); }
+}
+.banana-wave .banana-arm {
+  transform-origin: 175px 90px;
+  animation: banana-wave-arm 2.4s ease-in-out infinite;
+}
+
+@keyframes banana-float {
+  0%, 100% { transform: translateY(0) rotate(-2deg); }
+  50% { transform: translateY(-12px) rotate(2deg); }
+}
+.banana-float {
+  animation: banana-float 4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .banana-wave .banana-arm,
+  .banana-float { animation: none; }
+}
+
+.page-transition-enter {
+  animation: page-enter 350ms cubic-bezier(.22,.68,.35,1) forwards;
+}
+
+@keyframes tab-fade-in {
+  0%   { opacity: 0; transform: translateY(5px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes tab-slide-right {
+  0%   { opacity: 0; transform: translateX(12px); }
+  100% { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes tab-slide-left {
+  0%   { opacity: 0; transform: translateX(-12px); }
+  100% { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes card-enter {
+  0%   { opacity: 0; transform: translateY(10px) scale(0.97); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes kanban-fadeout {
+  0%   { opacity: 1; transform: scale(1) translateY(0); border-color: hsl(var(--primary)); box-shadow: 0 0 12px hsl(var(--primary) / 0.3); }
+  30%  { opacity: 1; transform: scale(1.02) translateY(-2px); border-color: hsl(var(--primary)); box-shadow: 0 0 18px hsl(var(--primary) / 0.4); }
+  70%  { opacity: 0.7; transform: scale(0.98) translateY(0); }
+  100% { opacity: 0; transform: scale(0.9) translateY(8px); }
+}
+
+.kanban-card-fadeout {
+  animation: kanban-fadeout 2.4s ease-in-out forwards;
+  pointer-events: none;
+}
+
+/* ── Kanban drag-and-drop animations ─────────────────────────────── */
+
+/* Card source — becomes a ghost placeholder while being dragged */
+.kanban-card-dragging {
+  opacity: 0.22 !important;
+  transform: scale(0.96) !important;
+  border-style: dashed !important;
+  border-color: hsl(var(--primary) / 0.4) !important;
+  background: hsl(var(--muted) / 0.6) !important;
+  box-shadow: none !important;
+  pointer-events: none !important;
+  transition: none !important;
+}
+
+/* Column drop-zone highlight (added/removed directly via classList) */
+.kanban-col-drop-target {
+  background: hsl(var(--primary) / 0.06) !important;
+  border-color: hsl(var(--primary) / 0.5) !important;
+  border-style: dashed !important;
+  box-shadow: inset 0 0 0 2px hsl(var(--primary) / 0.12) !important;
+}
+
+@keyframes kanban-drop-pulse {
+  0%, 100% { opacity: 0.4; transform: scale(0.85); }
+  50%       { opacity: 1;   transform: scale(1.15); }
+}
+
+/* Landing bounce when a card is dropped into a column */
+@keyframes kanban-card-land {
+  0%   { transform: scale(1.06) rotate(1deg);  box-shadow: 0 16px 32px rgba(0,0,0,0.22); }
+  55%  { transform: scale(0.98) rotate(0deg);  box-shadow: 0 4px 8px rgba(0,0,0,0.08);  }
+  80%  { transform: scale(1.01) rotate(0deg);                                             }
+  100% { transform: scale(1)    rotate(0deg);  box-shadow: 0 1px 3px rgba(0,0,0,0.06);  }
+}
+
+.kanban-card-land {
+  animation: kanban-card-land 0.42s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  cursor: grab !important;
+}
+
+@keyframes fade-scale-in {
+  0%   { opacity: 0; transform: scale(0.96); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes stagger-in {
+  0%   { opacity: 0; transform: translateY(8px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes modal-enter {
+  0%   { opacity: 0; transform: scale(0.95) translateY(8px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+@keyframes modal-overlay-enter {
+  0%   { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+@keyframes sidebar-item-hover {
+  0%   { transform: translateX(0); }
+  50%  { transform: translateX(3px); }
+  100% { transform: translateX(0); }
+}
+
+.anim-tab-fade {
+  animation: tab-fade-in 300ms cubic-bezier(.22,.68,.35,1) forwards;
+}
+
+.anim-tab-slide-right {
+  animation: tab-slide-right 280ms cubic-bezier(.22,.68,.35,1) forwards;
+}
+
+.anim-tab-slide-left {
+  animation: tab-slide-left 280ms cubic-bezier(.22,.68,.35,1) forwards;
+}
+
+.anim-card-enter {
+  animation: card-enter 380ms cubic-bezier(.22,.68,.35,1) forwards;
+}
+
+.anim-fade-scale {
+  animation: fade-scale-in 300ms cubic-bezier(.22,.68,.35,1) forwards;
+}
+
+.anim-stagger-1 { animation: stagger-in 350ms 30ms cubic-bezier(.22,.68,.35,1) both; }
+.anim-stagger-2 { animation: stagger-in 350ms 70ms cubic-bezier(.22,.68,.35,1) both; }
+.anim-stagger-3 { animation: stagger-in 350ms 110ms cubic-bezier(.22,.68,.35,1) both; }
+.anim-stagger-4 { animation: stagger-in 350ms 150ms cubic-bezier(.22,.68,.35,1) both; }
+.anim-stagger-5 { animation: stagger-in 350ms 190ms cubic-bezier(.22,.68,.35,1) both; }
+.anim-stagger-6 { animation: stagger-in 350ms 230ms cubic-bezier(.22,.68,.35,1) both; }
+
+[data-state="open"] > [data-radix-dialog-content],
+[data-state="open"][role="dialog"] {
+  animation: modal-enter 280ms cubic-bezier(.22,.68,.35,1) forwards !important;
+}
+
+[data-state="open"][data-radix-dialog-overlay] {
+  animation: modal-overlay-enter 200ms ease forwards !important;
+}
+
+[data-state="closed"] > [data-radix-dialog-content],
+[data-state="closed"][role="dialog"] {
+  animation: fade-scale-in 180ms ease reverse forwards !important;
+}
+
+[data-state="open"][data-radix-popover-content],
+[data-state="open"][data-radix-dropdown-content],
+[data-state="open"][data-radix-select-content],
+[data-state="open"][role="listbox"] {
+  animation: fade-scale-in 180ms cubic-bezier(.22,.68,.35,1) forwards;
+}
+
+.sidebar-nav-item {
+  transition: transform 180ms cubic-bezier(.22,.68,.35,1), background-color 180ms ease, color 180ms ease, box-shadow 180ms ease, filter 180ms ease;
+  will-change: transform;
+}
+
+.sidebar-nav-item:hover {
+  transform: translateX(2px);
+}
+
+.sidebar-nav-item:active {
+  transform: scale(0.94) !important;
+  filter: brightness(0.88);
+  transition: transform 55ms cubic-bezier(.4,0,.2,1), filter 55ms ease, background-color 55ms ease;
+}
+
+.tab-nav-item {
+  transition: transform 180ms cubic-bezier(.22,.68,.35,1), background-color 180ms ease, color 180ms ease, box-shadow 180ms ease, filter 180ms ease;
+  will-change: transform;
+}
+
+.tab-nav-item:hover {
+  transform: translateX(2px);
+}
+
+.tab-nav-item:active {
+  transform: scale(0.94) !important;
+  filter: brightness(0.88);
+  transition: transform 55ms cubic-bezier(.4,0,.2,1), filter 55ms ease, background-color 55ms ease;
+}
+
+/* ── Padronização DUAL amarelo+marrom em tabs (Bruno 2026-05-15) ───────
+   Quando a tab está ativa (Tailwind aplica border-primary + text-primary),
+   sobrescreve pra marrom-logo com gradient banana no fundo — efeito "pill"
+   levemente arredondado. Pega TODAS as tabs do app que usam o padrão
+   .tab-nav-item + classes Tailwind, sem precisar editar componente por
+   componente. Specificity dupla (button.tab-nav-item) vence o utility. */
+button.tab-nav-item.border-primary,
+.tab-nav-item.border-primary[class*="border-b"] {
+  border-color: var(--tab-active-border);
+  background: var(--banana-tab-bg);
+}
+button.tab-nav-item.text-primary,
+.tab-nav-item.text-primary {
+  color: var(--tab-active-color);
+}
+/* Ícone dentro de tab ativa: acompanha --primary da paleta. */
+.tab-nav-item.border-primary .text-primary,
+.tab-nav-item.border-primary svg.text-primary {
+  color: hsl(var(--primary));
+}
+/* Pra tabs renderizadas como <a> ou <div> com role */
+[role="tab"].border-primary,
+[role="tab"][data-state="active"] {
+  border-color: var(--tab-active-border) !important;
+  color: var(--tab-active-color) !important;
+  background: var(--banana-tab-bg) !important;
+}
+
+/* ── Headers de tabela com bg gradient banana (Bruno 2026-05-15) ───────
+   Padrão dual amarelo+marrom dark-aware. Em light: banana-50 → transparent.
+   Em dark: glow translúcido amarelo bem sutil sobre o fundo escuro. */
+body:not(.is-landing) table thead th,
+[data-table-banana] thead th,
+table.banana-table thead th {
+  background: var(--banana-th-bg);
+  border-bottom: 1px solid var(--banana-th-border);
+}
+body:not(.is-landing) table tbody tr:hover td,
+[data-table-banana] tbody tr:hover td,
+table.banana-table tbody tr:hover td {
+  background: var(--banana-row-hover-bg);
+}
+
+.tab-indicator {
+  transition: transform 300ms cubic-bezier(.22,.68,.35,1), width 300ms cubic-bezier(.22,.68,.35,1), left 300ms cubic-bezier(.22,.68,.35,1);
+}
+
+.interactive-card {
+  transition: transform 200ms cubic-bezier(.22,.68,.35,1), box-shadow 200ms ease;
+}
+
+.interactive-card:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+.interactive-card:active {
+  transform: translateY(0) scale(0.995);
+}
+
+.btn-press {
+  transition: transform 120ms ease;
+}
+
+.btn-press:active {
+  transform: scale(0.97);
+}
+
+@keyframes page-enter-anim {
+  0%   { opacity: 0; transform: translateY(6px) scale(0.998); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes page-exit-anim {
+  0%   { opacity: 1; transform: translateY(0) scale(1); }
+  100% { opacity: 0; transform: translateY(-4px) scale(0.998); }
+}
+
+.animate-page-enter {
+  animation: page-enter-anim 160ms cubic-bezier(.22,.68,.35,1) forwards;
+}
+
+.animate-page-exit {
+  animation: page-exit-anim 60ms cubic-bezier(.4,0,1,1) forwards;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-page-enter,
+  .animate-page-exit,
+  .anim-tab-fade,
+  .anim-tab-slide-right,
+  .anim-tab-slide-left,
+  .anim-card-enter,
+  .anim-fade-scale,
+  .anim-stagger-1,
+  .anim-stagger-2,
+  .anim-stagger-3,
+  .anim-stagger-4,
+  .anim-stagger-5,
+  .anim-stagger-6,
+  .page-transition-enter {
+    animation: none !important;
+    opacity: 1 !important;
+  }
+  [data-radix-dialog-overlay],
+  [data-radix-popover-content],
+  [data-radix-dropdown-content],
+  [data-radix-select-content],
+  [role="listbox"] {
+    animation: none !important;
+  }
+  [data-radix-popover-content],
+  [data-radix-dropdown-content],
+  [data-radix-select-content],
+  [role="listbox"] {
+    opacity: 1 !important;
+  }
+  .interactive-card:hover,
+  .sidebar-nav-item:hover,
+  .tab-nav-item:hover {
+    transform: none !important;
+  }
+}
+
+@keyframes spin-ring {
+  0%   { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+@keyframes led-glow-shift {
+  0%, 100% { filter: hue-rotate(0deg) brightness(1.2); }
+  33%      { filter: hue-rotate(90deg) brightness(1.4); }
+  66%      { filter: hue-rotate(200deg) brightness(1.3); }
+}
+@keyframes core-breathe {
+  0%, 100% { opacity: 0.9; transform: scale(1); }
+  50%      { opacity: 1; transform: scale(1.15); }
+}
+
+.automation-active-indicator {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.automation-active-indicator .dot-core {
+  display: none;
+}
+
+.automation-active-indicator .dot-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 6px solid transparent;
+  border-top-color: #ffffff;
+  border-right-color: rgba(255, 255, 255, 0.6);
+  border-bottom-color: rgba(255, 255, 255, 0.3);
+  border-left-color: transparent;
+  animation: spin-ring 1.2s linear infinite;
+  z-index: 1;
+  filter: drop-shadow(0 0 4px rgba(255,255,255,0.9)) drop-shadow(0 0 8px rgba(255,255,255,0.5)) drop-shadow(0 0 12px rgba(255,255,255,0.3));
+}
+
+.automation-active-indicator .dot-ring-2 {
+  display: none;
+}
+
+.automation-active-indicator-sm .dot-core {
+  width: 4px;
+  height: 4px;
+}
+.automation-active-indicator-sm .dot-ring {
+  inset: -1.5px;
+  border-width: 1.5px;
+}
+.automation-active-indicator-sm .dot-ring-2 {
+  inset: -4px;
+  border-width: 1px;
+}
+
+.automation-active-indicator-pink .dot-ring {
+  border-top-color: #E1306C;
+  border-right-color: rgba(225, 48, 108, 0.6);
+  border-bottom-color: rgba(225, 48, 108, 0.3);
+  border-left-color: transparent;
+  filter: drop-shadow(0 0 4px rgba(225,48,108,0.9)) drop-shadow(0 0 8px rgba(225,48,108,0.5)) drop-shadow(0 0 12px rgba(225,48,108,0.3));
+}
+
+/* ═══════════════════════════════════════
+   CHAT MESSAGE AREA STYLES
+   ═══════════════════════════════════════ */
+
+.msg-scroll-area {
+  overflow-y: auto;
+  scroll-behavior: smooth;
+}
+
+.msg-scroll-area [data-radix-scroll-area-viewport]::-webkit-scrollbar {
+  width: 4px;
+}
+.msg-scroll-area [data-radix-scroll-area-viewport]::-webkit-scrollbar-track {
+  background: transparent;
+}
+.msg-scroll-area [data-radix-scroll-area-viewport]::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+  border-radius: 4px;
+}
+.msg-scroll-area [data-radix-scroll-area-viewport]::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--primary) / 0.4);
+}
+
+.msg-bubble-wrapper {
+  min-width: 80px;
+}
+
+.msg-bubble {
+  font-size: 0.8875rem;     /* 14.2px — medida real do WhatsApp Web */
+  line-height: 1.32;
+  letter-spacing: -0.005em;
+  display: block;           /* permite float:right do timestamp ocupar o fim da última linha (padrão WhatsApp) */
+  /* Bruno 2026-05-21: texto da bolha precisa ser selecionável/copiável.
+     Sem isso, wrappers vizinhos com `select-none` (MiniAudioPlayer, menus)
+     e o cursor default deixavam o atendente sem conseguir marcar e copiar
+     trechos do diálogo. Cursor `text` dá a affordance visual. */
+  -webkit-user-select: text;
+  user-select: text;
+  cursor: text;
+}
+/* Botões/links dentro da bolha mantêm cursor pointer. Sem essa override,
+   o cursor: text da bolha pai vence em filhos clicáveis (quote reply,
+   download de arquivo, etc). */
+.msg-bubble button,
+.msg-bubble a,
+.msg-bubble [role="button"] {
+  cursor: pointer;
+}
+/* Clear no fim — caso o conteúdo seja menor que o timestamp flutuante,
+   garante que a bolha cresça pra abraçá-lo. */
+.msg-bubble::after {
+  content: "";
+  display: block;
+  clear: both;
+}
+
+.msg-bubble-out {
+  /* Bruno 2026-05-21 (v3 light): usuário pediu pra escurecer levemente em
+     todos os 5 temas no light mode — antes 45% primary + 55% branco ficava
+     pálido demais (lilás virava lavanda quase invisível). Aumentado pra 60%
+     primary + 40% branco; borda subiu de 58% pra 72% pra manter delimitação.
+     Dark mode segue regra própria abaixo (mais saturado, menos card-bias). */
+  background: color-mix(in oklch, hsl(var(--primary)) 60%, hsl(var(--card))) !important;
+  border-color: color-mix(in oklch, hsl(var(--primary)) 72%, hsl(var(--card))) !important;
+  color: hsl(var(--foreground));
+}
+
+/* Bruno 2026-05-21 (v3): dark estava marrom escuro saturado (mix de
+   primary 45% + card #1E1E1E ficava muito puxado pro escuro). Trocado
+   por mix com cinza médio (28% lightness) — clareia e dessatura a cor
+   pra um pastel-dark suave em qualquer tema (banana/lilac/blue/orange/
+   mono). Borda mais saturada pra ainda delimitar a bolha. */
+.dark .msg-bubble-out {
+  background: color-mix(in oklch, hsl(var(--primary)) 28%, hsl(0 0% 28%)) !important;
+  border-color: color-mix(in oklch, hsl(var(--primary)) 45%, hsl(0 0% 28%)) !important;
+  color: hsl(var(--foreground));
+}
+
+.msg-bubble-in {
+  color: hsl(var(--foreground));
+}
+
+.dark .msg-bubble-in {
+  color: hsl(var(--foreground));
+}
+
+.msg-emoji-only {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.msg-emoji-text {
+  font-size: 2rem;
+  line-height: 1.3;
+}
+
+.msg-timestamp-inline {
+  /* Padrão WhatsApp: timestamp flutua à direita e se encaixa no fim da
+     última linha do texto. Se texto for curto, fica adjacente; se texto
+     wrappar várias linhas, fica no canto inferior direito. */
+  float: right;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.6875rem;     /* 11px — fiel ao WhatsApp Web */
+  opacity: 0.6;
+  white-space: nowrap;
+  user-select: none;
+  margin: 4px 0 -2px 8px;
+  position: relative;
+  top: 4px;                  /* alinha baseline ao texto */
+}
+
+.msg-bubble-out .msg-timestamp-inline {
+  /* Bruno 2026-05-21 (v2): foreground translúcido — combina com o text color
+     pastel da bolha. Funciona em light (preto translúcido) e dark (branco
+     translúcido) sem branch. */
+  color: hsl(var(--foreground) / 0.65);
+}
+
+.msg-bubble-in .msg-timestamp-inline {
+  /* Bruno 2026-06-04: faltava o hsl() — `var(--muted-foreground)` é um triplet
+     (0 0% 42%), inválido como cor crua. Igual à regra do outbound acima. */
+  color: hsl(var(--muted-foreground));
+}
+
+.wa-code-inline {
+  background: rgba(0,0,0,0.08);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-family: monospace;
+  font-size: 0.82rem;
+}
+
+.dark .wa-code-inline {
+  background: rgba(255,255,255,0.15);
+}
+
+.msg-bubble-out .wa-code-inline {
+  background: rgba(255,255,255,0.15);
+}
+
+.wa-code-block {
+  display: block;
+  background: rgba(0,0,0,0.06);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-family: monospace;
+  font-size: 0.82rem;
+  white-space: pre-wrap;
+  margin: 4px 0;
+}
+
+.dark .wa-code-block {
+  background: rgba(255,255,255,0.10);
+}
+
+.msg-bubble-out .wa-code-block {
+  background: rgba(255,255,255,0.10);
+}
+
+.msg-status-icon {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+}
+
+.msg-status-sent {
+  opacity: 0.5;
+}
+
+.msg-status-delivered {
+  opacity: 0.8;
+}
+
+.msg-status-read {
+  color: #4CB8F0;
+  opacity: 1;
+}
+
+.msg-audio-player {
+  background: rgba(255,255,255,0.08);
+  border-radius: 20px;
+  padding: 5px 10px;
+  height: 38px;
+  min-width: 160px;
+  max-width: 220px;
+}
+
+.msg-textarea {
+  background: hsl(var(--secondary));
+  border: 1.5px solid hsl(var(--border));
+  border-radius: 16px;
+  padding: 10px 16px;
+  min-height: 68px;
+  max-height: 160px;
+  overflow-y: auto;
+  transition: border-color 0.2s ease;
+}
+
+.dark .msg-textarea {
+  background: rgba(255,255,255,0.05);
+  border-color: rgba(255,255,255,0.08);
+}
+
+.msg-textarea:focus {
+  border-color: hsl(var(--primary));
+  box-shadow: 0 0 0 3px hsl(var(--primary) / 0.18);
+}
+
+.msg-send-btn {
+  min-width: 40px;
+  min-height: 40px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  transition: transform 120ms cubic-bezier(0.22, 1, 0.36, 1), opacity 120ms ease;
+}
+
+.msg-send-btn:hover:not(:disabled) {
+  transform: scale(1.08);
+}
+
+.msg-send-btn:active:not(:disabled) {
+  transform: scale(0.94);
+}
+
+.msg-action-icon {
+  opacity: 0.6;
+  transition: opacity 0.2s ease, background-color 0.2s ease;
+}
+
+.msg-action-icon:hover {
+  opacity: 1;
+}
+
+@media (max-width: 768px) {
+  .msg-bubble-wrapper {
+    max-width: 82% !important;
+  }
+}
+
+/* ═══════════════════════════════════════
+   INBOX — TRANSITION & ANIMATION SYSTEM
+   ═══════════════════════════════════════ */
+
+/* Conversation area: fade + slight upward slide when switching conversations */
+@keyframes conv-area-enter {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.conv-area-enter {
+  animation: conv-area-enter 240ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  will-change: opacity, transform;
+}
+
+/* Message bubbles: slide in from right (outgoing) */
+@keyframes msg-slide-out {
+  from { opacity: 0; transform: translateX(12px) scale(0.97); }
+  to   { opacity: 1; transform: translateX(0) scale(1); }
+}
+.msg-enter-out {
+  animation: msg-slide-out 200ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  will-change: opacity, transform;
+}
+
+/* Message bubbles: slide in from left (incoming) */
+@keyframes msg-slide-in {
+  from { opacity: 0; transform: translateX(-12px) scale(0.97); }
+  to   { opacity: 1; transform: translateX(0) scale(1); }
+}
+.msg-enter-in {
+  animation: msg-slide-in 200ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  will-change: opacity, transform;
+}
+
+/* System messages: simple fade */
+@keyframes msg-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.msg-enter-system {
+  animation: msg-fade 220ms ease both;
+}
+
+/* Flash highlight ao clicar num quote-preview pra ir até a mensagem original.
+   Mesmo efeito do WhatsApp: a bolha de destino "pulsa" amarelo por ~1.5s. */
+@keyframes msg-flash {
+  0%   { background-color: rgba(250, 194, 9, 0.35); }
+  60%  { background-color: rgba(250, 194, 9, 0.18); }
+  100% { background-color: transparent; }
+}
+.msg-flash-highlight {
+  animation: msg-flash 1500ms ease-out both;
+}
+
+/* ActionsSidebar: slide from right */
+@keyframes sidebar-slide-in {
+  from { opacity: 0; transform: translateX(18px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.sidebar-enter {
+  animation: sidebar-slide-in 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  will-change: opacity, transform;
+}
+
+/* Conversation list item: subtle fade+slide */
+@keyframes conv-item-enter {
+  from { opacity: 0; transform: translateX(-5px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.conv-item-enter {
+  animation: conv-item-enter 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  will-change: opacity, transform;
+}
+
+/* Unread badge pop */
+@keyframes badge-pop {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(1.3); }
+  70%  { transform: scale(0.9); }
+  100% { transform: scale(1); }
+}
+.badge-pop {
+  animation: badge-pop 380ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Empty state: float + fade */
+@keyframes empty-float {
+  0%, 100% { transform: translateY(0px); }
+  50%       { transform: translateY(-6px); }
+}
+.empty-state-float {
+  animation: empty-float 3.2s ease-in-out infinite;
+}
+
+/* New message pulse ring for unread indicator. Bruno 2026-05-21: era azul
+   hardcoded rgba(88,180,242); agora pulsa na cor do tema via --primary. */
+@keyframes pulse-ring {
+  0%   { transform: scale(1); box-shadow: 0 0 0 0 hsl(var(--primary) / 0.5); }
+  70%  { transform: scale(1); box-shadow: 0 0 0 6px hsl(var(--primary) / 0); }
+  100% { transform: scale(1); box-shadow: 0 0 0 0 hsl(var(--primary) / 0); }
+}
+.unread-pulse {
+  animation: pulse-ring 2s cubic-bezier(0.455, 0.03, 0.515, 0.955) infinite;
+}
+
+/* Respect reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .conv-area-enter,
+  .msg-enter-out,
+  .msg-enter-in,
+  .msg-enter-system,
+  .sidebar-enter,
+  .conv-item-enter,
+  .empty-state-float {
+    animation: none !important;
+  }
+}
+
+/* Highlight pulsante de campo recém-alterado pelo agente automatizado.
+ * Usado pelo useFieldHighlight() em PIPELINE/PRIORIDADE/TAG/SITUAÇÃO/EQUIPE
+ * quando WS event chega — feedback visual sutil que se desfaz sozinho. */
+@keyframes field-highlight-pulse {
+  0%   { box-shadow: 0 0 0 0   hsl(var(--primary) / 0.55), 0 0 0 0 hsl(var(--primary) / 0.30); }
+  60%  { box-shadow: 0 0 0 4px hsl(var(--primary) / 0.00), 0 0 0 8px hsl(var(--primary) / 0.00); }
+  100% { box-shadow: 0 0 0 0   hsl(var(--primary) / 0.00), 0 0 0 0 hsl(var(--primary) / 0.00); }
+}
+.field-highlight {
+  animation: field-highlight-pulse 1s ease-out 2;
+  border-radius: 0.5rem;
+  transition: background-color 200ms ease-out;
+  background-color: hsl(var(--primary) / 0.06);
+}
+@media (prefers-reduced-motion: reduce) {
+  .field-highlight { animation: none !important; }
+}

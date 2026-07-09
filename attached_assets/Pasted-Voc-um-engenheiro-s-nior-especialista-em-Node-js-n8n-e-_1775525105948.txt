@@ -1,0 +1,185 @@
+Você é um engenheiro sênior especialista em Node.js, n8n e UX conversacional para WhatsApp.
+
+CONTEXTO:
+Existe um node no n8n responsável por enviar menu interativo (tipo lista) para o usuário.
+
+O payload atual já está FUNCIONANDO em produção:
+
+{
+conversation_id,
+workspace_id,
+type: "list",
+body,
+footer,
+button_label,
+sections
+}
+
+IMPORTANTE:
+
+* NÃO pode haver breaking changes
+* NÃO pode remover campos existentes
+* NÃO pode alterar nomes atuais
+* Apenas EXTENDER com melhorias
+
+---
+
+OBJETIVO:
+
+Tornar o envio do menu:
+
+* mais seguro
+* mais robusto
+* mais controlado
+* preparado para escala SaaS
+
+---
+
+IMPLEMENTAÇÕES OBRIGATÓRIAS:
+
+1. VALIDAÇÃO DO BODY (CRÍTICO)
+
+Criar variável:
+
+const bodyMensagem = ...
+
+Garantir:
+
+* sempre string
+* trim()
+* fallback se vazio:
+
+"Como posso te ajudar hoje?"
+
+---
+
+2. CONTROLE DE TAMANHO
+
+Limitar:
+
+* máximo 500 caracteres
+
+---
+
+3. VALIDAÇÃO DE SECTIONS
+
+Garantir:
+
+* sempre array válido
+* se vazio → criar menu padrão fallback
+
+Exemplo fallback:
+
+[
+{
+title: "Atendimento",
+rows: [
+{ id: "SUPORTE", title: "Suporte Técnico" },
+{ id: "FINANCEIRO", title: "Financeiro" },
+{ id: "COMERCIAL", title: "Comercial" }
+]
+}
+]
+
+---
+
+4. FALLBACK COMPLETO
+
+Se sections inválido:
+
+* usar menu padrão
+* evitar quebra do fluxo
+
+---
+
+5. IDENTIFICAÇÃO DA RESPOSTA
+
+Adicionar:
+
+tipo_resposta: "menu_lista"
+
+---
+
+6. METADADOS (IMPORTANTE)
+
+Adicionar:
+
+meta: {
+origem: "sistema",
+tipo: "menu",
+timestamp: new Date().toISOString()
+}
+
+---
+
+7. CONTROLE DE DUPLICIDADE (PREPARAÇÃO)
+
+Adicionar campo:
+
+evitar_repeticao: true
+
+(Não implementar lógica complexa, apenas preparar campo)
+
+---
+
+8. NÃO ALTERAR ESTRUTURA ATUAL
+
+Preservar:
+
+* conversation_id
+* workspace_id
+* type
+* body
+* footer
+* button_label
+* sections
+
+---
+
+9. CÓDIGO DEFENSIVO
+
+Garantir:
+
+* null safety
+* fallback seguro
+* nenhuma exceção
+
+---
+
+10. ESTRUTURA FINAL (REFERÊNCIA)
+
+{
+conversation_id,
+workspace_id,
+type: "list",
+body,
+footer,
+button_label,
+sections,
+
+tipo_resposta,
+evitar_repeticao,
+
+meta
+}
+
+---
+
+IMPORTANTE:
+
+Se houver dúvida:
+
+* NÃO simplificar
+* NÃO refatorar estrutura existente
+* NÃO remover campos
+
+Apenas EXTENDER com segurança
+
+---
+
+RESULTADO ESPERADO:
+
+* menu sempre funcional
+* melhor experiência do usuário
+* menos erros de envio
+* base pronta para analytics

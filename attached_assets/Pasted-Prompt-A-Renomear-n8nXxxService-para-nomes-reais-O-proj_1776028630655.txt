@@ -1,0 +1,48 @@
+Prompt A — Renomear n8nXxxService para nomes reais
+O projeto tem serviços com prefixo "n8n" que não usam mais N8N externo.
+Vamos renomear para refletir a realidade sem quebrar nada.
+
+MAPEAMENTO DE RENOMEAÇÃO:
+  n8nAiService.ts      → ispAiService.ts
+  n8nErpService.ts     → ispErpService.ts
+  n8nSendService.ts    → ispSendService.ts
+  n8nMemoryService.ts  → ispMemoryService.ts
+
+PASSO 1 — Renomeie os 4 arquivos:
+  mv server/services/n8nAiService.ts server/services/ispAiService.ts
+  mv server/services/n8nErpService.ts server/services/ispErpService.ts
+  mv server/services/n8nSendService.ts server/services/ispSendService.ts
+  mv server/services/n8nMemoryService.ts server/services/ispMemoryService.ts
+
+PASSO 2 — Atualize todos os imports no projeto:
+Execute no terminal:
+
+  find server -name "*.ts" | xargs sed -i \
+    -e "s|from './n8nAiService'|from './ispAiService'|g" \
+    -e "s|from './n8nErpService'|from './ispErpService'|g" \
+    -e "s|from './n8nSendService'|from './ispSendService'|g" \
+    -e "s|from './n8nMemoryService'|from './ispMemoryService'|g" \
+    -e "s|from '../services/n8nAiService'|from '../services/ispAiService'|g" \
+    -e "s|from '../services/n8nErpService'|from '../services/ispErpService'|g" \
+    -e "s|from '../services/n8nSendService'|from '../services/ispSendService'|g" \
+    -e "s|from '../services/n8nMemoryService'|from '../services/ispMemoryService'|g"
+
+PASSO 3 — Verifique que não sobrou nenhuma referência antiga:
+
+  grep -rn "n8nAiService\|n8nErpService\|n8nSendService\|n8nMemoryService" server/
+
+Se retornar algo, mostre — corrigimos manualmente.
+
+PASSO 4 — Dentro dos arquivos renomeados, atualize os prefixos
+de log para refletir o novo nome:
+
+  sed -i "s|\[n8nAiService\]|\[ispAiService\]|g" server/services/ispAiService.ts
+  sed -i "s|\[n8nErpService\]|\[ispErpService\]|g" server/services/ispErpService.ts
+  sed -i "s|\[n8nSendService\]|\[ispSendService\]|g" server/services/ispSendService.ts
+  sed -i "s|\[n8nMemoryService\]|\[ispMemoryService\]|g" server/services/ispMemoryService.ts
+
+Confirme:
+1. 4 arquivos renomeados
+2. grep não retorna mais referências aos nomes antigos
+3. Logs internos atualizados
+4. Servidor sem erros de TypeScript

@@ -1,0 +1,33 @@
+Transcribe] Result: "Oi, tudo bom? Minha internet não tá funcionando aqui em casa."
+[N8N_TRIGGER] Audio transcribed: "Oi, tudo bom? Minha internet não tá funcionando aqui em casa."
+[N8N_TRIGGER] Saved transcription to message #1653
+[ISP Agent] ▶ conv=213, phone=559192424228, msg="Oi, tudo bom? Minha internet não tá funcionando aqui em casa"
+[ISP Agent] 🔁 Ja cliente (button=null, keyword=true)
+[N8N_TRIGGER] ISP Agent: intent=TRIAGEM_EXISTENTE, success=true
+[N8N_TRIGGER] ISP Agent handled message — skipping N8N webhook (prevents duplicate responses)
+[MetaWebhook] processIncoming: phone=559192424228, conv=213, automacaoId=8771ba08-e6e0-4b06-b386-3dc7a79f1ce3, msgType=audio, phoneLocked=false
+[MessageProcessor] Automation check: phone=559192424228, conexaoAutomacaoId=8771ba08-e6e0-4b06-b386-3dc7a79f1ce3, content_len=7, mediaType=audio
+[MessageProcessor] debounce decision: firstNode=n8n_trigger, hasN8nOrAi=true, needsDebounce=true
+[MessageProcessor] DEBOUNCE: scheduling automation for conv=213 (10s window)
+[N8N_TRIGGER] Audio detected — transcribing before sending to N8N...
+[Transcribe] Audio format: ogg, size: 16975 bytes
+[Transcribe] Calling OpenAI whisper-1...
+[Transcribe] Result: "Meu CPF é 832-953-211-91."
+[N8N_TRIGGER] Audio transcribed: "Meu CPF é 832-953-211-91."
+[N8N_TRIGGER] Saved transcription to message #1655
+[ISP Agent] ▶ conv=213, phone=559192424228, msg="Meu CPF é 832-953-211-91."
+[ISP Agent] ⏳ Sem CPF — pedindo ao cliente
+[N8N_TRIGGER] ISP Agent: intent=AGUARDANDO_CPF, success=true
+[N8N_TRIGGER] ISP Agent handled message — skipping N8N webhook (prevents duplicate responses)
+[MetaWebhook] processIncoming: phone=559192424228, conv=213, automacaoId=8771ba08-e6e0-4b06-b386-3dc7a79f1ce3, msgType=text, phoneLocked=false
+[MessageProcessor] Automation check: phone=559192424228, conexaoAutomacaoId=8771ba08-e6e0-4b06-b386-3dc7a79f1ce3, content_len=14, mediaType=text
+[MessageProcessor] debounce decision: firstNode=n8n_trigger, hasN8nOrAi=true, needsDebounce=true
+[MessageProcessor] DEBOUNCE: scheduling automation for conv=213 (10s window)
+[ISP Agent] ▶ conv=213, phone=559192424228, msg="832.953.211-91"
+[ISP Agent] 💾 CPF salvo: 832***
+[ISP Agent] 🔍 ERP: found=true, suspended=false, invoices=1, offline=false
+[ISP Agent] 🏢 Mostrando seleção de departamento (first=true, contract=false)
+[N8N AI] Nome resolution: sessao.cliente_nome='undefined', cliente.nome='undefined', contact_name='', resolved='Bruno Danglares'
+[N8N AI] isFirstMessage=true, historico_len=0
+[ISP Agent] 🎭 Orquestrador (dept): "Vou precisar de algumas informações para te direcionar ao departamento correto. Por favor, me informe qual é a sua neces."
+[N8N Send List] OK conv=213, sections=1

@@ -1,0 +1,105 @@
+No backend ChatBanana (Node/Express/TypeScript/Drizzle), precisa de 3 endpoints para o dashboard de métricas ISP. Cria o arquivo `server/routes/isp-metrics.ts`:
+
+```typescript
+import { Router } from 'express';
+import { db } from '../db';
+import { ispSessionMetrics, ispSystemEvents } from '../db/schema';
+import { eq, gte, desc, sql, and } from 'drizzle-orm';
+import { requireAuth } from '../middleware/auth'; // adapta para o middleware real
+
+const router = Router();
+
+// GET /api/isp/metrics/summary?workspaceId=xxx&since=2024-01-01
+// Cards do dashboard: totais, taxas, latências
+router.get('/summary', requireAuth, async (req, res) => {
+  try {
+    const { workspaceId, since } = req.query as Record<string, string>;
+    const sinceDate = since ? new Date(since) : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+    const [sessions] = await db
+      .select({
+        total:       sql<number>`count(*)`,
+        resolved:    sql<number>`count(*) filter (where resolution_type = 'resolved')`,
+        escalated:   sql<number>`count(*) filter (where resolution_type = 'escalated')`,
+        maxTurns:    sql<number>`count(*) filter (where resolution_type = 'max_turns')`,
+        avgTurns:    sql<number>`round(avg(total_turns), 1)`,
+        avgLatencyMs:sql<number>`round(avg(total_latency_ms), 0)`,
+        p95LatencyMs:sql<number>`percentile_disc(0.95) within group (order by total_latency_ms)`,
+        erpDegraded: sql<number>`count(*) filter (where erp_unavailable = true)`,
+      })
+      .from(ispSessionMetrics)
+      .where(and(
+        eq(ispSessionMetrics.workspaceId, workspaceId),
+        gte(ispSessionMetrics.startedAt, sinceDate)
+      ));
+
+    const [events] = await db
+      .select({
+        circuitBreakerOpens: sql<number>`count(*) filter (where event_type = 'CIRCUIT_BREAKER_OPEN')`,
+        timeoutsErp:         sql<number>`count(*) filter (where event_type = 'TIMEOUT_ERP')`,
+        timeoutsGpt:         sql<number>`count(*) filter (where event_type = 'TIMEOUT_GPT')`,
+        phoneLockDiscards:   sql<number>`count(*) filter (where event_type = 'PHONE_LOCK_DISCARD')`,
+      })
+      .from(ispSystemEvents)
+      .where(and(
+        eq(ispSystemEvents.workspaceId, workspaceId),
+        gte(ispSystemEvents.createdAt, sinceDate)
+      ));
+
+    res.json({ sessions, events });
+  } catch (err) {
+    console.error('[ISP Metrics] summary error:', err);
+    res.status(500).json({ error: 'Erro ao buscar métricas' });
+  }
+});
+
+// GET /api/isp/metrics/events?workspaceId=xxx&limit=50
+// Log de eventos do sistema (circuit breaker, timeouts, etc.)
+router.get('/events', requireAuth, async (req, res) => {
+  try {
+    const { workspaceId, limit = '50' } = req.query as Record<string, string>;
+
+    const events = await db
+      .select()
+      .from(ispSystemEvents)
+      .where(eq(ispSystemEvents.workspaceId, workspaceId))
+      .orderBy(desc(ispSystemEvents.createdAt))
+      .limit(Number(limit));
+
+    res.json({ events });
+  } catch (err) {
+    console.error('[ISP Metrics] events error:', err);
+    res.status(500).json({ error: 'Erro ao buscar eventos' });
+  }
+});
+
+// GET /api/isp/metrics/sessions?workspaceId=xxx&limit=100
+// Lista de sessões recentes com detalhes
+router.get('/sessions', requireAuth, async (req, res) => {
+  try {
+    const { workspaceId, limit = '100' } = req.query as Record<string, string>;
+
+    const sessions = await db
+      .select()
+      .from(ispSessionMetrics)
+      .where(eq(ispSessionMetrics.workspaceId, workspaceId))
+      .orderBy(desc(ispSessionMetrics.startedAt))
+      .limit(Number(limit));
+
+    res.json({ sessions });
+  } catch (err) {
+    console.error('[ISP Metrics] sessions error:', err);
+    res.status(500).json({ error: 'Erro ao buscar sessões' });
+  }
+});
+
+export default router;
+```
+
+Registra o router no servidor principal (onde os outros routers ISP já estão registrados):
+```typescript
+import ispMetricsRouter from './routes/isp-metrics';
+app.use('/api/isp/metrics', ispMetricsRouter);
+```
+
+Testa os 3 endpoints no Postman ou curl e confirma que retornam 200 (mesmo que com dados zerados ainda).

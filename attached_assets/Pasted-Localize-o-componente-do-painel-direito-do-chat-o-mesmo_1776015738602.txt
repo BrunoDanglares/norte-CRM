@@ -1,0 +1,79 @@
+Localize o componente do painel direito do chat — o mesmo editado nos prompts anteriores.
+
+Encontre o bloco que renderiza as etapas do pipeline, algo como:
+
+  PIPELINE — FINANCEIRO
+  ○ Contato Inicial
+  ○ Consulta de Fatura
+  ○ Promessa de Pagamento
+  ...
+
+Leia como esse bloco está implementado. Provavelmente é um .map() sobre
+um array de stages, com um círculo/ícone colorido antes de cada nome.
+
+O problema: nenhuma etapa está destacada como "ativa" porque o componente
+não compara o nome da etapa com conversation.pipeline_etapa.
+
+CORREÇÃO:
+
+No .map() que renderiza cada etapa, adicione uma comparação para saber
+se aquela etapa é a atual:
+
+const isActive = stage.nome === (selected.pipeline_etapa ?? selected.pipelineEtapa);
+
+Use o nome do campo exatamente como ele aparece no objeto conversation/selected
+do componente — pode ser pipeline_etapa ou pipelineEtapa dependendo de como
+o backend serializa.
+
+Para a etapa ativa, aplique estilo diferenciado. Use o padrão visual
+já existente no componente (checkmark, cor de destaque, fundo, etc).
+Se ainda não houver padrão, use:
+
+- Ícone: troque ○ por ● (ou adicione um checkmark ✓)
+- Texto: fontWeight 600 e color: 'var(--color-text-primary)' em vez do secundário
+- Opcional: fundo leve na linha com borderRadius 6
+
+Exemplo mínimo:
+
+stages.map(stage => {
+  const isActive = stage.nome === selected.pipeline_etapa;
+  return (
+    <div key={stage.id} style={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: 8,
+      padding: '4px 6px',
+      borderRadius: 6,
+      background: isActive ? 'var(--color-background-secondary)' : 'transparent',
+    }}>
+      <span style={{ color: stage.cor ?? 'var(--color-text-secondary)', fontSize: 10 }}>
+        {isActive ? '●' : '○'}
+      </span>
+      <span style={{
+        fontSize: 13,
+        fontWeight: isActive ? 600 : 400,
+        color: isActive ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
+      }}>
+        {stage.nome}
+      </span>
+      {isActive && (
+        <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--color-text-info)' }}>✓</span>
+      )}
+    </div>
+  );
+})
+
+ATENÇÃO: Não altere como os stages são buscados — só adicione a comparação
+isActive e o estilo condicional. Mantenha o onClick existente se houver
+(para mover a etapa manualmente).
+
+Além disso, verifique se o evento WebSocket 'conversation_updated' que já
+existe no frontend faz merge de pipeline_etapa no estado da conversa ativa.
+Se o merge atual só atualiza campos como ultima_mensagem e status mas ignora
+pipeline_etapa, adicione pipeline_etapa (e assigned_team_id) na lista de
+campos que são mergeados ao receber conversation_updated.
+
+Confirme:
+1. Etapa atual (pipeline_etapa) aparece destacada na lista do painel
+2. Ao mover no Kanban, o painel atualiza via WebSocket sem precisar recarregar
+3. Nenhum erro de TypeScript ou de renderização

@@ -1,0 +1,94 @@
+Crie a página do dashboard de métricas ISP no frontend.
+
+PASSO 1 — Crie o arquivo client/src/pages/isp-metrics.tsx
+
+O componente deve:
+- Buscar dados de 4 endpoints em paralelo ao montar:
+  GET /api/isp/metrics/overview
+  GET /api/isp/metrics/timeline
+  GET /api/isp/metrics/situations
+  GET /api/isp/metrics/sessions?page=1&limit=20
+
+- Ter um seletor de período no topo (7d / 30d / 90d) que refaz
+  os fetches com ?days=7 etc
+
+- Exibir 4 seções:
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SEÇÃO 1 — Cards de overview (topo)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+6 cards em grid 3x2:
+- Total de sessões
+- Taxa de resolução autônoma (%) — verde se > 70%
+- Taxa de escalação humana (%) — vermelho se > 30%
+- Tempo médio de sessão (minutos)
+- SLA cumprido (%)
+- Sessões por setor (Financeiro / Suporte / Comercial) como mini-barra
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SEÇÃO 2 — Timeline (gráfico de linha)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Use recharts (já disponível no projeto):
+  import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+
+Mostre sessões por dia dos últimos N dias.
+Eixo X: data formatada (DD/MM)
+Eixo Y: número de sessões
+Uma linha para total, uma para escaladas (cor diferente)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SEÇÃO 3 — Tabela de situações
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Tabela com colunas:
+Situação | Setor | Total | Resolvidas | Escaladas | Taxa resolução
+
+Ordenada por total DESC.
+Badge colorido por setor (amarelo=Financeiro, azul=Suporte, verde=Comercial)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SEÇÃO 4 — Lista de sessões recentes
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Tabela paginada com:
+Data | Telefone (mascarado: ***1234) | Setor | Situações | Turns | Escalou? | Duração
+
+Filtros acima da tabela:
+- Dropdown: Todos os setores / Financeiro / Suporte / Comercial
+- Toggle: Mostrar só escaladas
+- Botão anterior/próximo para paginação
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ESTILO:
+- Use as classes CSS e variáveis de tema já existentes no projeto
+- Siga o padrão visual das outras páginas (headers, cards, tabelas)
+- Loading skeleton enquanto carrega (ou spinner simples)
+- Mensagem "Sem dados no período" quando arrays vierem vazios
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PASSO 2 — Registre a rota no App.tsx:
+
+Adicione o lazy import:
+  const IspMetrics = lazy(() => import('./pages/isp-metrics'));
+
+Adicione a rota:
+  <Route path="/isp/metrics" component={IspMetrics} />
+
+Coloque após as outras rotas ISP existentes.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PASSO 3 — Adicione link no menu lateral:
+
+Localize o menu de navegação lateral (Sidebar ou Nav component).
+Encontre onde ficam os itens do módulo ISP.
+Adicione:
+  { label: 'Métricas ISP', path: '/isp/metrics', icon: BarChart2 }
+
+Use o ícone BarChart2 do lucide-react (já instalado).
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Confirme:
+1. client/src/pages/isp-metrics.tsx criado
+2. Rota /isp/metrics registrada no App.tsx
+3. Link no menu lateral adicionado
+4. Página renderiza sem erros (mesmo com dados vazios)
+5. Servidor e cliente sem erros de TypeScript

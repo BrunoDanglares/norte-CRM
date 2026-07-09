@@ -1,0 +1,60 @@
+[avatarCache] Erro ao baixar avatar: HTTP 403
+[avatarCache] Erro ao baixar avatar: HTTP 403
+[avatarCache] Erro ao baixar avatar: HTTP 403
+[avatarCache] Erro ao baixar avatar: HTTP 403
+[avatarCache] Erro ao baixar avatar: HTTP 403
+[avatarCache] Erro ao baixar avatar: HTTP 403
+[avatarCache] Erro ao baixar avatar: HTTP 403
+[avatarCache] Erro ao baixar avatar: HTTP 403
+[avatarCache] Erro ao baixar avatar: HTTP 403
+[avatarCache] Erro ao baixar avatar: HTTP 403
+[avatarCache] Erro ao baixar avatar: HTTP 403
+[avatarCache] Erro ao baixar avatar: HTTP 403
+[avatarCache] Erro ao baixar avatar: HTTP 403
+[IG Profile] Got data for 2178225636316293: {"username":"dr.rallisoncosta","followers":1695,"hasProfilePic":true}
+[Boot] Instagram backfill done: 2/2 updated
+[Boot] Tenant Settings routes registered at /api/tenant-settings
+[Boot] Admin Tenant Settings routes registered at /api/admin/tenant-settings
+[Boot] Admin Capabilities routes registered at /api/admin/capabilities
+[Boot] WhatsApp Official (Meta Cloud API) routes registered at /api/whatsapp-official
+[Boot] ISP module routes registered at /api/isp
+[Boot] ISP Metrics routes registered at /api/isp/metrics
+[Boot] Instagram routes registered at /api/instagram
+[Boot] Insta Prospect routes registered at /api/insta-prospect
+[Boot] Relatórios routes registered at /api/relatorios
+[Boot] History routes registered at /api/history
+[ISP Schedulers] ✅ Billing at 08:00 BRT | Birthday at 09:00 BRT
+[Protocols] SLA checker: every 5 minutes
+[HSM Sync] Template status checker: every 30 minutes
+[avatarCache] Erro ao baixar avatar: HTTP 403
+[avatarCache] Erro ao baixar avatar: HTTP 403
+[avatarCache] Erro ao baixar avatar: HTTP 403
+[avatarCache] Erro ao baixar avatar: HTTP 403
+[avatarCache] Erro ao baixar avatar: HTTP 403
+[avatarCache] Erro ao baixar avatar: HTTP 403
+[avatarCache] Erro ao baixar avatar: HTTP 403
+[avatarCache] Erro ao baixar avatar: HTTP 403
+[avatarCache] Erro ao baixar avatar: HTTP 403
+[avatarCache] Erro ao baixar avatar: HTTP 403
+[avatarCache] Erro ao baixar avatar: HTTP 403
+[avatarCache] Erro ao baixar avatar: HTTP 403
+[avatarCache] Erro ao baixar avatar: HTTP 403
+[avatarCache] Erro ao baixar avatar: HTTP 403
+[avatarCache] Erro ao baixar avatar: HTTP 403
+[avatarCache] Erro ao baixar avatar: HTTP 403
+[avatarCache] Erro ao baixar avatar: HTTP 403
+[avatarCache] Erro ao baixar avatar: HTTP 403
+[avatarCache] Erro ao baixar avatar: HTTP 403
+[avatarCache] Erro ao baixar avatar: HTTP 403
+[avatarCache] Erro ao baixar avatar: HTTP 403
+[avatarCache] Erro ao baixar avatar: HTTP 403
+[avatarCache] Erro ao baixar avatar: HTTP 403
+[avatarCache] Erro ao baixar avatar: HTTP 403
+[avatarCache] Erro ao baixar avatar: HTTP 403
+[avatarCache] Erro ao baixar avatar: HTTP 403
+[avatarCache] Erro ao baixar avatar: HTTP 403
+[avatarCache] Erro ao baixar avatar: HTTP 403
+[avatarCache] Erro ao baixar avatar: HTTP 403
+[avatarCache] Erro ao baixar avatar: HTTP 403
+[avatarCache] Erro ao baixar avatar: HTTP 403
+[avatarCache] Erro ao baixar avatar: HTTP 403

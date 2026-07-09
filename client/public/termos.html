@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Termos e Condições — Norte Gestão</title>
+  <style>
+    :root {
+      --bg:          #0f0c1a;
+      --card:        #1c1830;
+      --card-hover:  #231e3a;
+      --purple:      #8b5cf6;
+      --purple-dark: #6d28d9;
+      --blue:        #4CB8F0;
+      --amber:       #FFB300;
+      --text:        #d1d5db;
+      --text-muted:  #94a3b8;
+      --text-white:  #f1f5f9;
+      --border:      #2d2650;
+      --radius:      12px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      font-size: 15px;
+      line-height: 1.7;
+    }
+
+    /* ── Header ── */
+    header {
+      background: var(--card);
+      border-bottom: 1px solid var(--border);
+      padding: 18px 0;
+      position: sticky; top: 0; z-index: 100;
+    }
+    .header-inner {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 0 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .logo img { height: 36px; width: auto; display: block; }
+    .header-badge {
+      background: linear-gradient(135deg, var(--purple-dark), var(--purple));
+      color: #fff;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 4px 14px;
+      border-radius: 20px;
+    }
+
+    /* ── Hero ── */
+    .hero {
+      background: linear-gradient(135deg, var(--card) 0%, #130f23 100%);
+      border-bottom: 1px solid var(--border);
+      padding: 56px 24px 48px;
+      text-align: center;
+    }
+    .hero h1 {
+      font-size: clamp(28px, 5vw, 42px);
+      font-weight: 800;
+      color: var(--text-white);
+      margin-bottom: 12px;
+    }
+    .hero h1 span { color: var(--purple); }
+    .hero p { color: var(--text-muted); font-size: 15px; }
+    .hero .date-badge {
+      display: inline-block;
+      margin-top: 14px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      font-size: 12px;
+      padding: 5px 16px;
+      border-radius: 20px;
+    }
+
+    /* ── Layout ── */
+    .layout {
+      max-width: 900px;
+      margin: 48px auto;
+      padding: 0 24px;
+      display: grid;
+      grid-template-columns: 220px 1fr;
+      gap: 40px;
+      align-items: start;
+    }
+    @media (max-width: 700px) {
+      .layout { grid-template-columns: 1fr; }
+      .toc { display: none; }
+    }
+
+    /* ── TOC ── */
+    .toc {
+      position: sticky;
+      top: 80px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+    }
+    .toc h3 {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--purple);
+      margin-bottom: 14px;
+    }
+    .toc a {
+      display: block;
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 13px;
+      padding: 5px 0;
+      border-left: 2px solid transparent;
+      padding-left: 10px;
+      transition: all 0.15s;
+    }
+    .toc a:hover, .toc a.active {
+      color: var(--purple);
+      border-left-color: var(--purple);
+    }
+
+    /* ── Content ── */
+    .content section {
+      margin-bottom: 40px;
+      scroll-margin-top: 80px;
+    }
+    .section-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .section-num {
+      width: 36px; height: 36px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, var(--purple-dark), var(--purple));
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px; font-weight: 700; color: #fff;
+      flex-shrink: 0;
+    }
+    .section-header h2 {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text-white);
+    }
+    .divider {
+      height: 1px;
+      background: var(--border);
+      margin-bottom: 16px;
+    }
+
+    p { margin-bottom: 12px; color: var(--text); }
+    ul { list-style: none; padding: 0; margin-bottom: 12px; }
+    ul li {
+      padding: 6px 0 6px 20px;
+      position: relative;
+      color: var(--text);
+      border-bottom: 1px solid var(--border);
+    }
+    ul li:last-child { border-bottom: none; }
+    ul li::before {
+      content: '▸';
+      color: var(--purple);
+      position: absolute; left: 0;
+      font-size: 12px; top: 9px;
+    }
+    strong { color: var(--text-white); font-weight: 600; }
+
+    .callout {
+      background: var(--card);
+      border-left: 3px solid var(--purple);
+      border-radius: 0 8px 8px 0;
+      padding: 14px 18px;
+      margin: 16px 0;
+      font-size: 14px;
+      color: var(--text-muted);
+    }
+
+    .warning-callout {
+      background: rgba(139, 92, 246, 0.08);
+      border: 1px solid rgba(139, 92, 246, 0.25);
+      border-radius: 8px;
+      padding: 14px 18px;
+      margin: 16px 0;
+      font-size: 14px;
+    }
+    .warning-callout strong {
+      color: var(--purple);
+      display: block;
+      margin-bottom: 6px;
+    }
+
+    /* ── Footer ── */
+    footer {
+      background: var(--card);
+      border-top: 1px solid var(--border);
+      text-align: center;
+      padding: 32px 24px;
+      color: var(--text-muted);
+      font-size: 13px;
+    }
+    footer .logo { margin-bottom: 8px; display: flex; justify-content: center; }
+    footer .logo img { height: 28px; width: auto; }
+    footer a { color: var(--purple); text-decoration: none; }
+
+    .policy-links {
+      display: flex;
+      justify-content: center;
+      gap: 24px;
+      margin-top: 16px;
+      flex-wrap: wrap;
+    }
+    .policy-links a {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 13px;
+      transition: color 0.15s;
+    }
+    .policy-links a:hover { color: var(--purple); }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <a href="/" class="logo" aria-label="Norte Gestão CRM"><img src="/chatbanana-logo.png" alt="Norte Gestão CRM" /></a>
+    <span class="header-badge">Termos e Condições</span>
+  </div>
+</header>
+
+<div class="hero">
+  <h1>Termos e <span>Condições</span> de Uso</h1>
+  <p>Plataforma Norte Gestão — CRM WhatsApp para Empresas Brasileiras</p>
+  <div class="date-badge">📅 Última atualização: <span id="data-atual"></span></div>
+</div>
+
+<div class="layout">
+  <!-- TOC -->
+  <nav class="toc">
+    <h3>Neste documento</h3>
+    <a href="#s1">1. Aceitação dos Termos</a>
+    <a href="#s2">2. Descrição do Serviço</a>
+    <a href="#s3">3. Cadastro e Conta</a>
+    <a href="#s4">4. Uso Aceitável</a>
+    <a href="#s5">5. Assinatura e Pagamento</a>
+    <a href="#s6">6. Cancelamento</a>
+    <a href="#s7">7. Propriedade Intelectual</a>
+    <a href="#s8">8. Limitação de Responsabilidade</a>
+    <a href="#s9">9. Disponibilidade</a>
+    <a href="#s10">10. Alterações nos Termos</a>
+    <a href="#s11">11. Lei Aplicável</a>
+    <a href="#s12">12. Contato</a>
+  </nav>
+
+  <!-- Content -->
+  <main class="content">
+
+    <section id="s1">
+      <div class="section-header">
+        <div class="section-num">1</div>
+        <h2>Aceitação dos Termos</h2>
+      </div>
+      <div class="divider"></div>
+      <p>Ao acessar ou utilizar a plataforma Norte Gestão <strong>("Serviço")</strong>, você <strong>("Usuário" ou "Cliente")</strong> concorda com estes Termos e Condições de Uso <strong>("Termos")</strong>. Se você estiver aceitando estes Termos em nome de uma empresa ou outra entidade legal, declara ter poderes para fazê-lo.</p>
+      <p>Caso não concorde com qualquer disposição destes Termos, não utilize o Serviço. O uso continuado após alterações nos Termos implica aceitação das novas condições.</p>
+    </section>
+
+    <section id="s2">
+      <div class="section-header">
+        <div class="section-num">2</div>
+        <h2>Descrição do Serviço</h2>
+      </div>
+      <div class="divider"></div>
+      <p>O Norte Gestão é uma plataforma SaaS (Software como Serviço) de CRM com integração nativa ao WhatsApp, voltada para pequenas e médias empresas brasileiras. O Serviço oferece:</p>
+      <ul>
+        <li>Gerenciamento de leads, contatos e conversas via WhatsApp</li>
+        <li>Automações de mensagens com inteligência artificial (IA)</li>
+        <li>Funil de vendas (pipeline) e relatórios de desempenho</li>
+        <li>Disparos programados e campanhas de mensagens em massa</li>
+        <li>Integrações com ferramentas de terceiros (N8n, Zapier, Make, Stripe)</li>
+        <li>Caixa de entrada unificada para equipes</li>
+      </ul>
+      <div class="callout">O Serviço é fornecido no modelo multi-tenant, onde cada empresa possui um workspace isolado e independente.</div>
+    </section>
+
+    <section id="s3">
+      <div class="section-header">
+        <div class="section-num">3</div>
+        <h2>Cadastro e Conta</h2>
+      </div>
+      <div class="divider"></div>
+      <p>Para utilizar o Norte Gestão, é necessário criar uma conta fornecendo informações verdadeiras, precisas e atualizadas. O Usuário é responsável por:</p>
+      <ul>
+        <li>Manter a confidencialidade de suas credenciais de acesso (login e senha)</li>
+        <li>Todas as atividades realizadas sob sua conta</li>
+        <li>Notificar imediatamente a Norte Gestão em caso de acesso não autorizado</li>
+      </ul>
+      <p>É proibido criar contas com informações falsas, compartilhar credenciais entre múltiplos usuários não autorizados ou criar contas para fins ilícitos.</p>
+    </section>
+
+    <section id="s4">
+      <div class="section-header">
+        <div class="section-num">4</div>
+        <h2>Uso Aceitável</h2>
+      </div>
+      <div class="divider"></div>
+      <p>O Usuário concorda em utilizar o Serviço exclusivamente para fins legítimos e em conformidade com a legislação brasileira vigente, incluindo o Marco Civil da Internet (Lei nº 12.965/2014) e o Código de Defesa do Consumidor.</p>
+      <div class="warning-callout">
+        <strong>⚠️ São expressamente proibidos:</strong>
+        <ul>
+          <li>Envio de mensagens não solicitadas (spam) em desacordo com as políticas do WhatsApp</li>
+          <li>Uso do Serviço para práticas fraudulentas, enganosas ou ilegais</li>
+          <li>Tentativas de acesso não autorizado a sistemas ou dados de outros Clientes</li>
+          <li>Revenda, sublicenciamento ou transferência do Serviço sem autorização prévia e escrita</li>
+          <li>Uso de automações para assédio, discriminação ou violação de direitos de terceiros</li>
+          <li>Coleta de dados pessoais sem a devida base legal exigida pela LGPD</li>
+        </ul>
+      </div>
+      <p>A Norte Gestão reserva-se o direito de suspender ou encerrar contas que violem estas regras, sem aviso prévio e sem direito a reembolso.</p>
+    </section>
+
+    <section id="s5">
+      <div class="section-header">
+        <div class="section-num">5</div>
+        <h2>Assinatura e Pagamento</h2>
+      </div>
+      <div class="divider"></div>
+      <p>O Norte Gestão opera no modelo de assinatura mensal recorrente. O plano, preço e recursos contratados são definidos no momento da adesão.</p>
+      <ul>
+        <li><strong>Cobrança:</strong> O valor da assinatura é cobrado mensalmente via Stripe, por cartão de crédito ou outros meios disponíveis.</li>
+        <li><strong>Renovação Automática:</strong> A assinatura renova-se automaticamente ao final de cada período, salvo cancelamento prévio.</li>
+        <li><strong>Reajuste:</strong> Valores podem ser reajustados com notificação prévia de 30 dias. O Cliente que não concordar poderá cancelar sem penalidade.</li>
+        <li><strong>Inadimplência:</strong> Em caso de falha no pagamento, o acesso poderá ser suspenso após 7 dias corridos. Dados são preservados por 30 dias adicionais.</li>
+        <li><strong>Impostos:</strong> Os preços exibidos podem não incluir tributos aplicáveis, que serão informados na contratação.</li>
+      </ul>
+    </section>
+
+    <section id="s6">
+      <div class="section-header">
+        <div class="section-num">6</div>
+        <h2>Cancelamento e Rescisão</h2>
+      </div>
+      <div class="divider"></div>
+      <ul>
+        <li><strong>Pelo Cliente:</strong> Cancelamento a qualquer momento pelo painel. O acesso permanece ativo até o fim do período pago. Sem reembolso proporcional.</li>
+        <li><strong>Pela Norte Gestão:</strong> Rescisão com aviso prévio de 30 dias, ou imediato em caso de violação grave destes Termos.</li>
+        <li><strong>Exportação de Dados:</strong> Após o cancelamento, o Cliente tem 30 dias para exportar seus dados. Após esse prazo, os dados poderão ser eliminados.</li>
+      </ul>
+    </section>
+
+    <section id="s7">
+      <div class="section-header">
+        <div class="section-num">7</div>
+        <h2>Propriedade Intelectual</h2>
+      </div>
+      <div class="divider"></div>
+      <p>Todos os direitos sobre a plataforma Norte Gestão, incluindo código-fonte, interface, marca, logotipo, documentação e conteúdo proprietário, são de titularidade exclusiva da Norte Gestão ou de seus licenciantes.</p>
+      <p>Ao utilizar o Serviço, o Cliente recebe uma licença limitada, não exclusiva, intransferível e revogável para acessar e utilizar a plataforma durante o período de assinatura vigente.</p>
+      <div class="callout">O Cliente mantém todos os direitos sobre os dados inseridos na plataforma — dados de leads, contatos e mensagens de seus clientes finais.</div>
+    </section>
+
+    <section id="s8">
+      <div class="section-header">
+        <div class="section-num">8</div>
+        <h2>Limitação de Responsabilidade</h2>
+      </div>
+      <div class="divider"></div>
+      <p>O Serviço é fornecido "como está" e "conforme disponível". A Norte Gestão não será responsável por:</p>
+      <ul>
+        <li>Perdas decorrentes de interrupções causadas por terceiros (WhatsApp/Meta, operadoras, Z-API)</li>
+        <li>Conteúdo das mensagens enviadas pelos Clientes através da plataforma</li>
+        <li>Danos indiretos, lucros cessantes ou danos consequenciais</li>
+        <li>Bloqueios ou restrições impostas pelo WhatsApp/Meta às contas dos Clientes</li>
+      </ul>
+      <p>A responsabilidade total da Norte Gestão fica limitada ao valor pago pelo Cliente no mês em que ocorreu o evento danoso.</p>
+    </section>
+
+    <section id="s9">
+      <div class="section-header">
+        <div class="section-num">9</div>
+        <h2>Disponibilidade e Manutenção</h2>
+      </div>
+      <div class="divider"></div>
+      <p>A Norte Gestão se compromete a manter disponibilidade mínima de <strong>99% ao mês</strong> (excluídas manutenções programadas). Manutenções programadas serão comunicadas com antecedência mínima de 24 horas.</p>
+      <p>Interrupções causadas por força maior, falhas de infraestrutura de terceiros ou ataques cibernéticos não serão computadas para fins de SLA.</p>
+    </section>
+
+    <section id="s10">
+      <div class="section-header">
+        <div class="section-num">10</div>
+        <h2>Alterações nos Termos</h2>
+      </div>
+      <div class="divider"></div>
+      <p>A Norte Gestão poderá modificar estes Termos a qualquer momento. Alterações relevantes serão comunicadas por e-mail e/ou notificação na plataforma com antecedência mínima de <strong>15 dias</strong>.</p>
+      <p>O uso continuado do Serviço após o prazo de notificação implica aceitação das modificações.</p>
+    </section>
+
+    <section id="s11">
+      <div class="section-header">
+        <div class="section-num">11</div>
+        <h2>Lei Aplicável e Foro</h2>
+      </div>
+      <div class="divider"></div>
+      <p>Estes Termos são regidos pelas leis da República Federativa do Brasil. Para dirimir quaisquer controvérsias, fica eleito o foro da <strong>Comarca de Belém, Estado do Pará</strong>, com renúncia expressa a qualquer outro, por mais privilegiado que seja.</p>
+    </section>
+
+    <section id="s12">
+      <div class="section-header">
+        <div class="section-num">12</div>
+        <h2>Contato</h2>
+      </div>
+      <div class="divider"></div>
+      <ul>
+        <li><strong>E-mail:</strong> legal@nortegestao.com.br</li>
+        <li><strong>Site:</strong> www.nortegestao.com.br</li>
+      </ul>
+    </section>
+
+  </main>
+</div>
+
+<footer>
+  <div class="logo"><img src="/chatbanana-logo.png" alt="Norte Gestão CRM" /></div>
+  <p>© <span id="ano"></span> Norte Gestão. Todos os direitos reservados.</p>
+  <div class="policy-links">
+    <a href="termos.html">Termos e Condições</a>
+    <a href="privacidade.html">Política de Privacidade</a>
+    <a href="mailto:legal@nortegestao.com.br">legal@nortegestao.com.br</a>
+  </div>
+</footer>
+
+<script>
+  // Set current date
+  const now = new Date();
+  document.getElementById('data-atual').textContent =
+    now.toLocaleDateString('pt-BR', { day:'2-digit', month:'long', year:'numeric' });
+  document.getElementById('ano').textContent = now.getFullYear();
+
+  // Active TOC link on scroll
+  const sections = document.querySelectorAll('section[id]');
+  const links = document.querySelectorAll('.toc a');
+  window.addEventListener('scroll', () => {
+    let current = '';
+    sections.forEach(s => {
+      if (window.scrollY >= s.offsetTop - 120) current = s.id;
+    });
+    links.forEach(a => {
+      a.classList.toggle('active', a.getAttribute('href') === '#' + current);
+    });
+  });
+</script>
+</body>
+</html>

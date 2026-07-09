@@ -1,0 +1,194 @@
+Criar a estrutura de prompts por situação baseada no mapeamento
+do PDF de agentes (F1–F10, S1–S13, C1–C10).
+
+══ PASSO 1 — Migration: nova tabela isp_situation_prompts ══
+
+Adicione ao schema Drizzle (server/db/schema.ts ou equivalente):
+
+  export const ispSituationPrompts = pgTable('isp_situation_prompts', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    workspace_id: uuid('workspace_id').notNull(),
+    situation_code: varchar('situation_code', { length: 10 }).notNull(),
+    situation_name: varchar('situation_name', { length: 100 }).notNull(),
+    agent: varchar('agent', { length: 30 }).notNull(),
+    context_template: text('context_template').notNull(),
+    escalate_always: boolean('escalate_always').default(false),
+    is_active: boolean('is_active').default(true),
+    created_at: timestamp('created_at').defaultNow(),
+    updated_at: timestamp('updated_at').defaultNow(),
+  });
+
+Índice único em (workspace_id, situation_code).
+Rode a migration via POST /api/n8n/setup-db.
+
+══ PASSO 2 — Seed das situações ══
+
+Crie uma função seedSituationPrompts(workspaceId) que popula a
+tabela acima com as situações abaixo (upsert por situation_code).
+
+FINANCEIRO:
+F1 | Promessa de pagamento | escalate_always: false
+context: "Cliente quer pagar em data futura ou pede desbloqueio
+antecipado. Valor em aberto: {{valor_divida}}. Dias de desbloqueio
+disponíveis: {{dias_desbloqueio}}. Promessas ativas: {{promessas_ativas}}.
+Confirme a data antes de qualquer confirmação ao cliente."
+
+F2 | Suspensão temporária | escalate_always: false
+context: "Cliente quer pausar o serviço temporariamente.
+Prazo mínimo: {{prazo_minimo}}. Prazo máximo: {{prazo_maximo}}.
+Cobrança durante suspensão: {{cobranca_suspensao}}.
+Aguarde confirmação antes de registrar."
+
+F3 | Reativação após pagamento | escalate_always: false
+context: "Cliente afirma ter pago. Status ERP: {{status_pagamento}}.
+Prazo de compensação do provedor: {{prazo_reativacao}}.
+Se confirmado: informe o prazo. Se não confirmado: oriente
+sobre compensação bancária."
+
+F4 | Segunda via / PIX | escalate_always: false
+context: "Cliente precisa de segunda via ou chave PIX.
+Faturas em aberto: {{faturas_abertas}}.
+Forma de pagamento disponível: {{formas_pagamento}}."
+
+F5 | Consulta de débitos | escalate_always: false
+context: "Cliente quer saber quanto deve.
+Faturas: {{faturas_abertas}}. Status da linha: {{status_linha}}."
+
+F6 | Status da linha | escalate_always: false
+context: "Cliente relata linha cortada ou sem sinal.
+Status ERP: {{status_linha}}. Motivo: {{motivo_bloqueio}}."
+
+F7 | Negociação de dívida | escalate_always: true
+context: "Cliente não consegue pagar o total e pede desconto
+ou parcelamento. Dívida total: {{valor_divida}}.
+ENCAMINHAR PARA FINANCEIRO HUMANO — agente não tem
+autonomia para oferecer condições especiais."
+
+F8 | Contestação de cobrança | escalate_always: true
+context: "Cliente contesta uma cobrança. Descrição: {{descricao_problema}}.
+SEMPRE ESCALA — sem autoridade para estornar ou cancelar cobranças."
+
+F9 | Cancelamento com débito | escalate_always: true
+context: "Cliente quer cancelar mas tem débito em aberto.
+Valor pendente: {{valor_divida}}.
+Informar sobre necessidade de regularizar. Acionar Comercial/Retenção."
+
+F10 | Downgrade por custo | escalate_always: true
+context: "Cliente acha o plano caro e quer opção mais barata.
+Acionar Comercial/Retenção com contexto financeiro completo."
+
+SUPORTE:
+S1 | Sem acesso — triagem | escalate_always: false
+context: "Cliente sem acesso. Status financeiro: {{status_financeiro}}.
+Status ONU: {{onu_status}}. Direcionar conforme resultado da triagem."
+
+S2 | Sem acesso — ONU online | escalate_always: false
+context: "ONU online mas cliente sem acesso. Problema no lado cliente.
+Equipamento cadastrado: {{tipo_equipamento}}.
+Guiar checklist: roteador → cabo → outro dispositivo → cabo direto na ONU."
+
+S3 | Sem acesso — ONU offline | escalate_always: true
+context: "ONU offline — falha na rede do provedor.
+Endereço: {{endereco_cliente}}. ABRIR OS DE EMERGÊNCIA e escalar."
+
+S4 | Internet lenta — geral | escalate_always: false
+context: "Cliente relata lentidão. Plano contratado: {{plano_nome}}.
+Velocidade: {{velocidade_contratada}}. Solicitar teste em fast.com."
+
+S5 | Sinal instável | escalate_always: false
+context: "Conexão cai e volta. Histórico de eventos ONU: {{historico_onu}}.
+Coletar horários de maior ocorrência."
+
+S6 | Lentidão em horário específico | escalate_always: false
+context: "Lentidão em horário específico.
+Horários relatados: {{horarios_problema}}.
+Utilização de banda na região: {{utilizacao_banda}}."
+
+S7 | Lentidão em site específico | escalate_always: false
+context: "Lentidão apenas em um site/serviço.
+Outros sites funcionam normalmente: {{outros_sites_ok}}.
+Orientar verificação em downdetector.com.br."
+
+S8 | OS — abertura e acompanhamento | escalate_always: false
+context: "Cliente consulta OS existente. Protocolo: {{os_protocolo}}.
+Status: {{os_status}}. Previsão: {{os_previsao}}."
+
+S9 | Troca de equipamento | escalate_always: true
+context: "Equipamento com defeito físico.
+Equipamento cadastrado: {{equipamento_cadastrado}}.
+SEMPRE ESCALA — exige técnico de campo."
+
+S10 | Troca de senha WiFi | escalate_always: true
+context: "Cliente quer alterar senha ou nome da rede WiFi.
+Rede: {{rede_wifi}}. ESCALA — alteração via software do provedor."
+
+S11 | WiFi não aparece | escalate_always: false
+context: "Rede WiFi sumiu da lista de redes disponíveis.
+Verificar se outros dispositivos enxergam. Orientar reinicialização."
+
+S12 | Mover roteador | escalate_always: false
+context: "Cliente quer mudar roteador de cômodo.
+Orientar sobre limitação de cabo e alternativas (repetidor, mesh)."
+
+S13 | Consulta de plano contratado | escalate_always: false
+context: "Cliente quer saber qual plano tem.
+Plano: {{plano_nome}}. Velocidade: {{velocidade_contratada}}.
+Vencimento: {{vencimento}}. Valor: {{valor_plano}}."
+
+COMERCIAL:
+C1 | Upgrade ou downgrade | escalate_always: false
+context: "Cliente quer mudar de plano. Plano atual: {{plano_atual}}.
+Planos disponíveis: {{planos_disponiveis}}.
+Diferença de valor: {{diferenca_valor}}."
+
+C2 | Agendamento de instalação | escalate_always: false
+context: "Cliente quer agendar instalação. Datas disponíveis: {{agenda_disponivel}}.
+Confirmar e registrar após escolha."
+
+C3 | Verificação de cobertura | escalate_always: false
+context: "Cliente quer saber se há cobertura. Endereço: {{endereco}}.
+Cobertura: {{tem_cobertura}}. Planos disponíveis: {{planos_area}}."
+
+C4 | Consulta de fidelidade e multa | escalate_always: false
+context: "Cliente quer saber sobre fidelidade.
+Término da fidelidade: {{fim_fidelidade}}. Multa proporcional: {{valor_multa}}."
+
+C5 | Venda nova contratação | escalate_always: false
+context: "Cliente quer contratar. Cobertura verificada: {{tem_cobertura}}.
+Planos disponíveis: {{planos_area}}."
+
+C6 | Retenção | escalate_always: true
+context: "Cliente quer cancelar. Motivo coletado: {{motivo_cancelamento}}.
+Débitos: {{valor_divida}}. Fidelidade: {{fim_fidelidade}}.
+SEMPRE ESCALA — sem autonomia para oferecer condições de retenção."
+
+C7 | Alteração de titularidade | escalate_always: true
+context: "Cliente quer trocar o titular do contrato.
+SEMPRE ESCALA — envolve validação de documentos e alteração contratual."
+
+C8 | Consulta de planos | escalate_always: false
+context: "Cliente quer ver planos disponíveis.
+Planos ativos na área: {{planos_area}}."
+
+C9 | Mudança de endereço | escalate_always: false
+context: "Cliente vai mudar de endereço. Novo endereço: {{novo_endereco}}.
+Cobertura no novo endereço: {{tem_cobertura_novo}}."
+
+C10 | Indicação / Referral | escalate_always: false
+context: "Cliente indica alguém. Contato do indicado: {{contato_indicado}}.
+Programa de indicação ativo: {{programa_indicacao}}."
+
+══ PASSO 3 — Rotas API para situações ══
+
+Em server/routes/isp.ts, adicione:
+
+GET  /api/isp/agent/situations
+  → lista todas as situações do workspace (filtradas por workspace_id)
+
+PUT  /api/isp/agent/situations/:situationCode
+  → atualiza context_template ou is_active de uma situação
+
+POST /api/isp/agent/situations/seed
+  → executa seedSituationPrompts para o workspace logado
+
+Rode o seed para o workspace da ConexãoNet após a migration.

@@ -1,0 +1,286 @@
+BLOCO 16 — GERAR DOCUMENTO (PDF / CONTRATO)
+🎯 Objetivo
+
+Gerar documentos dinâmicos com dados do lead (contrato, proposta, orçamento).
+
+🧠 PROMPT BASE (ARQUITETURA)
+Crie um bloco chamado "Gerar Documento".
+
+Esse bloco deve:
+
+1. Permitir escolher um template (HTML ou texto estruturado)
+2. Substituir variáveis dinâmicas:
+   {{nome}}, {{cpf}}, {{valor}}, {{data}}, etc
+
+3. Gerar um arquivo PDF automaticamente
+
+4. Salvar o documento no sistema (storage interno ou S3)
+
+5. Retornar:
+   - URL do documento
+   - ID do documento
+
+6. Permitir ações seguintes:
+   - enviar via WhatsApp
+   - enviar por email
+   - salvar no CRM
+
+7. Permitir múltiplos templates reutilizáveis
+🔧 PROMPT FRONT-END
+Crie interface do bloco "Gerar Documento":
+
+Campos:
+- Nome do documento
+- Selecionar template
+- Editor de template (WYSIWYG ou HTML)
+- Variáveis disponíveis (sidebar)
+- Botão: "Gerar preview"
+
+Extras:
+- botão "duplicar template"
+- botão "testar com dados fictícios"
+⚙️ PROMPT BACK-END
+Implemente:
+
+1. Motor de renderização (Handlebars ou similar)
+2. Conversão HTML → PDF (puppeteer ou pdfkit)
+3. Upload do PDF para storage
+4. Retorno:
+{
+  url: "...",
+  document_id: "...",
+  size: "...",
+  created_at: "..."
+}
+💳 BLOCO 17 — PAGAMENTO
+🎯 Objetivo
+
+Cobrar direto no fluxo.
+
+🧠 PROMPT BASE
+Crie um bloco "Pagamento" com suporte a:
+
+- Pix
+- Cartão
+- Link de pagamento
+- Assinatura
+
+Funcionalidades:
+
+1. Gerar cobrança dinâmica:
+   valor = {{valor}}
+   descrição = {{produto}}
+
+2. Criar checkout
+3. Retornar:
+   - link_pagamento
+   - status
+
+4. Aguardar confirmação automática
+
+5. Disparar próximo passo quando:
+   status = aprovado
+🔧 PROMPT FRONT
+Interface:
+
+- Tipo de pagamento (Pix, cartão, etc)
+- Valor (fixo ou variável)
+- Descrição
+- Tempo de expiração
+
+Exibir:
+- link gerado
+- QR Code Pix
+⚙️ PROMPT BACK
+Implementar:
+
+1. Integração com Stripe / Mercado Pago
+2. Criar payment intent
+3. Criar webhook listener:
+   eventos:
+   - pagamento aprovado
+   - falha
+   - expirado
+
+4. Atualizar status no CRM
+5. Retornar evento para o fluxo
+🚨 BLOCO 20 — ALERTA INTERNO
+🎯 Objetivo
+
+Notificar equipe em tempo real.
+
+🧠 PROMPT BASE
+Criar bloco "Alerta Interno":
+
+Funções:
+- Enviar notificação para usuário/equipe
+- Condicional (ex: lead quente)
+
+Canais:
+- dentro do sistema
+- email
+- webhook
+🔧 PROMPT FRONT
+Campos:
+
+- Tipo de alerta
+- Destinatário (usuário ou equipe)
+- Mensagem (com variáveis)
+- Prioridade (baixa, média, alta)
+⚙️ PROMPT BACK
+Implementar:
+
+1. Sistema de notificações
+2. Fila (queue)
+3. Registro no banco:
+   - lida / não lida
+
+4. Disparo em tempo real (websocket)
+🔁 BLOCO 9 — LOOP
+🎯 Objetivo
+
+Repetição automática até condição.
+
+🧠 PROMPT BASE
+Criar bloco "Loop":
+
+Funções:
+- Executar fluxo repetidamente
+
+Configurações:
+- intervalo (ex: 1h, 1 dia)
+- condição de parada
+
+Exemplo:
+repetir até:
+- cliente responder
+- pagamento aprovado
+⚙️ PROMPT BACK
+Implementar:
+
+1. Scheduler (cron ou fila)
+2. Controle de estado:
+   loop_id
+   tentativas
+   status
+
+3. Evitar loop infinito
+⏱ BLOCO 8 — ESPERAR EVENTO
+🎯 Objetivo
+
+Pausar fluxo até algo acontecer.
+
+🧠 PROMPT BASE
+Criar bloco "Esperar Evento":
+
+Tipos:
+- resposta do cliente
+- pagamento
+- webhook externo
+- clique em link
+
+Quando evento ocorrer:
+→ continuar fluxo
+⚙️ PROMPT BACK
+Implementar:
+
+1. Sistema de escuta de eventos
+2. Associação:
+   evento → fluxo_id
+
+3. Timeout opcional
+🤖 BLOCO 3 — SPLIT COM IA
+🎯 Objetivo
+
+IA decide o caminho.
+
+🧠 PROMPT BASE
+Criar bloco "Split IA":
+
+Entrada:
+- mensagem do cliente
+
+A IA deve classificar em categorias:
+
+Ex:
+- vendas
+- suporte
+- financeiro
+
+Saída:
+→ direcionar fluxo automaticamente
+⚙️ PROMPT IA
+Você é um classificador de intenção.
+
+Classifique a mensagem do cliente em uma das opções:
+
+[SUPORTE, VENDAS, FINANCEIRO]
+
+Mensagem:
+{{mensagem}}
+
+Responda apenas com a categoria.
+🔀 BLOCO 2 — CONDIÇÃO AVANÇADA
+🎯 Objetivo
+
+Regras complexas.
+
+🧠 PROMPT BASE
+Criar bloco "Condição":
+
+Permitir:
+
+- AND / OR
+- múltiplas variáveis
+- operadores:
+  =, !=, >, <, contém
+
+Exemplo:
+SE score > 50 E cidade = "SP"
+⚙️ PROMPT BACK
+Implementar engine de regras:
+
+Input:
+{
+  variavel: "score",
+  operador: ">",
+  valor: 50
+}
+
+Suporte a múltiplas condições
+🧠 BLOCO 1 — VARIÁVEIS
+🎯 Objetivo
+
+Memória do sistema.
+
+🧠 PROMPT BASE
+Criar sistema de variáveis:
+
+Tipos:
+- texto
+- número
+- booleano
+- data
+
+Escopo:
+- sessão
+- lead
+- global
+⚙️ PROMPT BACK
+Implementar:
+
+1. Armazenamento por lead_id
+2. Atualização dinâmica
+3. Recuperação em tempo real
+
+Formato:
+{
+  nome: "cidade",
+  valor: "São Paulo"
+}
+🔧 PROMPT FRONT
+Interface:
+
+- Criar variável
+- Selecionar variável
+- Inserir no texto (autocomplete {{}})

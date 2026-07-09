@@ -1,0 +1,209 @@
+Situação clara. O bloqueio é do Replit (ambiente de dev) → N8N, não do ChatBanana (produção) → N8N. Isso abre uma solução melhor do que importar manualmente.
+
+O que podemos fazer agora
+O ChatBanana em produção consegue chamar o N8N — eles estão no mesmo EasyPanel. Então criamos um endpoint /api/n8n/deploy no ChatBanana que usa as credenciais salvas para gerenciar workflows direto do painel.
+
+PROMPT 4 — Gerenciador de Workflows N8N
+Crie o endpoint de gerenciamento de workflows N8N no ChatBanana.
+Usa as variáveis de ambiente N8N_API_KEY e N8N_BASE_URL já salvas no Replit.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PASSO 1 — Criar server/services/n8nManagerService.ts
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+import fetch from 'node-fetch';
+
+const N8N_BASE_URL = process.env.N8N_BASE_URL ?? '';
+const N8N_API_KEY  = process.env.N8N_API_KEY  ?? '';
+
+if (!N8N_BASE_URL || !N8N_API_KEY) {
+  console.warn('[N8N Manager] N8N_BASE_URL ou N8N_API_KEY não configurados');
+}
+
+// Headers padrão para todas as chamadas à API do N8N
+const n8nHeaders = () => ({
+  'X-N8N-API-KEY': N8N_API_KEY,
+  'Content-Type':  'application/json',
+  'Accept':        'application/json',
+});
+
+async function n8nFetch(path: string, options: RequestInit = {}) {
+  const url = `${N8N_BASE_URL}/api/v1${path}`;
+  const res  = await fetch(url, { ...options, headers: n8nHeaders() });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.message ?? `N8N API error ${res.status}`);
+  return data;
+}
+
+export class N8nManagerService {
+
+  // ── LISTAR workflows ─────────────────────────────────────────────────────
+  async listarWorkflows(): Promise<any[]> {
+    const data = await n8nFetch('/workflows?limit=100');
+    return data.data ?? data ?? [];
+  }
+
+  // ── BUSCAR workflow por nome ─────────────────────────────────────────────
+  async buscarPorNome(nome: string): Promise<any | null> {
+    const workflows = await this.listarWorkflows();
+    return workflows.find((w: any) =>
+      w.name?.toLowerCase() === nome.toLowerCase()
+    ) ?? null;
+  }
+
+  // ── CRIAR workflow ───────────────────────────────────────────────────────
+  async criarWorkflow(workflowJson: any): Promise<any> {
+    // Remove o id para forçar criação (não update)
+    const { id: _id, ...payload } = workflowJson;
+    return n8nFetch('/workflows', {
+      method: 'POST',
+      body:   JSON.stringify(payload),
+    });
+  }
+
+  // ── ATUALIZAR workflow existente ─────────────────────────────────────────
+  async atualizarWorkflow(id: string, workflowJson: any): Promise<any> {
+    return n8nFetch(`/workflows/${id}`, {
+      method: 'PUT',
+      body:   JSON.stringify(workflowJson),
+    });
+  }
+
+  // ── DEPLOY inteligente (cria ou atualiza) ────────────────────────────────
+  async deploy(workflowJson: any): Promise<{
+    action:      'created' | 'updated';
+    workflow_id: string;
+    name:        string;
+  }> {
+    const existente = await this.buscarPorNome(workflowJson.name);
+
+    if (existente) {
+      const updated = await this.atualizarWorkflow(existente.id, workflowJson);
+      return { action: 'updated', workflow_id: existente.id, name: workflowJson.name };
+    }
+
+    const created = await this.criarWorkflow(workflowJson);
+    return { action: 'created', workflow_id: created.id, name: workflowJson.name };
+  }
+
+  // ── ATIVAR / DESATIVAR workflow ──────────────────────────────────────────
+  async ativar(id: string): Promise<any> {
+    return n8nFetch(`/workflows/${id}/activate`, { method: 'POST' });
+  }
+
+  async desativar(id: string): Promise<any> {
+    return n8nFetch(`/workflows/${id}/deactivate`, { method: 'POST' });
+  }
+
+  // ── STATUS de um workflow ────────────────────────────────────────────────
+  async status(id: string): Promise<any> {
+    return n8nFetch(`/workflows/${id}`);
+  }
+
+  // ── ÚLTIMAS execuções ────────────────────────────────────────────────────
+  async execucoes(workflowId: string, limit = 10): Promise<any[]> {
+    const data = await n8nFetch(
+      `/executions?workflowId=${workflowId}&limit=${limit}`
+    );
+    return data.data ?? data ?? [];
+  }
+
+  // ── TESTAR conexão ───────────────────────────────────────────────────────
+  async testarConexao(): Promise<{ ok: boolean; version?: string; error?: string }> {
+    try {
+      const data = await n8nFetch('/workflows?limit=1');
+      return { ok: true, version: data.version };
+    } catch (err: any) {
+      return { ok: false, error: err.message };
+    }
+  }
+}
+
+export const n8nManagerService = new N8nManagerService();
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PASSO 2 — Adicionar rotas em server/routes/n8n.ts
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Adicione no server/routes/n8n.ts, antes do export default router:
+
+import { n8nManagerService } from '../services/n8nManagerService';
+
+// ─────────────────────────────────────────────────────────────
+// GET /api/n8n/manager/status
+// Testa conexão com o N8N e lista workflows
+// ─────────────────────────────────────────────────────────────
+router.get('/manager/status', async (req: Request, res: Response) => {
+  try {
+    const conexao    = await n8nManagerService.testarConexao();
+    const workflows  = conexao.ok ? await n8nManagerService.listarWorkflows() : [];
+    return res.json({
+      ok: conexao.ok,
+      error: conexao.error,
+      workflows: workflows.map((w: any) => ({
+        id:     w.id,
+        name:   w.name,
+        active: w.active,
+      })),
+    });
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────
+// POST /api/n8n/manager/deploy
+// Body: { workflow: { ...json do workflow... } }
+// Cria ou atualiza o workflow no N8N (idempotente)
+// ─────────────────────────────────────────────────────────────
+router.post('/manager/deploy', async (req: Request, res: Response) => {
+  try {
+    const { workflow } = req.body as { workflow: any };
+    if (!workflow || !workflow.name) {
+      return res.status(400).json({
+        error: 'Body deve conter { workflow: { name, nodes, connections, ... } }'
+      });
+    }
+    const result = await n8nManagerService.deploy(workflow);
+    return res.json({ ok: true, ...result });
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────
+// POST /api/n8n/manager/ativar/:id
+// POST /api/n8n/manager/desativar/:id
+// ─────────────────────────────────────────────────────────────
+router.post('/manager/ativar/:id', async (req: Request, res: Response) => {
+  try {
+    const result = await n8nManagerService.ativar(req.params.id);
+    return res.json({ ok: true, ...result });
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+router.post('/manager/desativar/:id', async (req: Request, res: Response) => {
+  try {
+    const result = await n8nManagerService.desativar(req.params.id);
+    return res.json({ ok: true, ...result });
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────
+// GET /api/n8n/manager/execucoes/:id
+// Últimas execuções do workflow
+// ─────────────────────────────────────────────────────────────
+router.get('/manager/execucoes/:id', async (req: Request, res: Response) => {
+  try {
+    const limit  = parseInt(req.query.limit as string) || 10;
+    const result = await n8nManagerService.execucoes(req.params.id, limit);
+    return res.json({ ok: true, execucoes: result });
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});

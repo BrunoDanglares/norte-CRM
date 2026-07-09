@@ -1,0 +1,156 @@
+Add the isp_action node to the ChatBanana automation engine and canvas.
+
+## Context
+- Follow exact same patterns as existing automation nodes
+- Node executes in the automation engine switch/case
+- Canvas panel is built in React
+- Variables set by this node are available in subsequent nodes via {{variable_name}}
+
+## Backend: Add to automation engine
+
+In the automation engine execution handler (find the switch/case for node types):
+```typescriptcase 'isp_action': {
+const workspaceId = context.workspaceId;
+const action = node.config.action;const ispConfig = await db.query.isp_configs.findFirst({
+where: and(
+eq(isp_configs.workspace_id, workspaceId),
+eq(isp_configs.is_active, true)
+)
+});if (!ispConfig) {
+context.variables.isp_error = 'Módulo ISP não configurado';
+context.variables.isp_success = false;
+break;
+}const credentials = { baseUrl: ispConfig.sgp_base_url, apiToken: ispConfig.sgp_api_token };
+const resolve = (val: string) => val?.replace(/{{(\w+)}}/g, (_, k) => context.variables[k] ?? '');try {
+switch (action) {  case 'search_customer': {
+    const cpf = resolve(node.config.cpf_variable || '{{cpf}}');
+    const customer = await sgpAdapter.searchCustomerByCPF(credentials, cpf);
+    if (customer) {
+      context.variables.isp_success = true;
+      context.variables.isp_customer_nome = customer.nome;
+      context.variables.isp_customer_id = customer.id;
+      context.variables.isp_customer_plano = customer.plano;
+      context.variables.isp_customer_status = customer.status;
+      context.variables.isp_customer_telefone = customer.telefone;
+    } else {
+      context.variables.isp_success = false;
+      context.variables.isp_error = 'Cliente não encontrado no SGP';
+    }
+    break;
+  }  case 'get_invoices': {
+    const customerId = resolve(node.config.customer_id_variable || '{{isp_customer_id}}');
+    const invoices = await sgpAdapter.getOpenInvoices(credentials, customerId);
+    context.variables.isp_success = true;
+    context.variables.isp_invoices_count = invoices.length;
+    context.variables.isp_has_debt = invoices.length > 0;
+    if (invoices.length > 0) {
+      const inv = invoices[0];
+      context.variables.isp_invoice_id = inv.id;
+      context.variables.isp_invoice_valor = `R$ ${Number(inv.valor).toFixed(2)}`;
+      context.variables.isp_invoice_vencimento = new Date(inv.vencimento).toLocaleDateString('pt-BR');
+      context.variables.isp_invoice_status = inv.status;
+      context.variables.isp_invoice_dias_atraso = inv.diasAtraso;
+      context.variables.isp_linha_digitavel = inv.linhaDigitavel || '';
+      context.variables.isp_link_boleto = inv.linkBoleto || '';
+      context.variables.isp_pix = inv.pix || '';
+    }
+    break;
+  }  case 'second_copy': {
+    const invoiceId = resolve(node.config.invoice_id_variable || '{{isp_invoice_id}}');
+    const copy = await sgpAdapter.generateSecondCopy(credentials, invoiceId);
+    context.variables.isp_success = true;
+    context.variables.isp_linha_digitavel = copy.linhaDigitavel;
+    context.variables.isp_link_boleto = copy.linkBoleto;
+    context.variables.isp_pix = copy.pix || '';
+    context.variables.isp_invoice_valor = `R$ ${Number(copy.valor).toFixed(2)}`;
+    context.variables.isp_invoice_vencimento = new Date(copy.vencimento).toLocaleDateString('pt-BR');
+    break;
+  }  case 'create_ticket': {
+    const customerId = resolve(node.config.customer_id_variable || '{{isp_customer_id}}');
+    const tipo = resolve(node.config.ticket_type || 'sem_sinal');
+    const descricao = resolve(node.config.description || '{{ticket_description}}');
+    const ticket = await sgpAdapter.createSupportTicket(credentials, { customerId, tipo, descricao });    // Save locally
+    await db.insert(isp_support_tickets).values({
+      workspace_id: workspaceId,
+      sgp_ticket_id: ticket.id,
+      sgp_customer_id: customerId,
+      customer_phone: context.variables.customerPhone || '',
+      customer_name: context.variables.isp_customer_nome || '',
+      customer_cpf: context.variables.cpf || '',
+      ticket_type: tipo,
+      description: descricao,
+      status: 'aberto'
+    }).catch(() => {});    context.variables.isp_success = true;
+    context.variables.isp_ticket_id = ticket.id;
+    context.variables.isp_ticket_protocolo = ticket.protocolo;
+    break;
+  }  case 'get_ticket_status': {
+    const ticketId = resolve(node.config.ticket_id_variable || '{{isp_ticket_id}}');
+    const ticket = await sgpAdapter.getTicketStatus(credentials, ticketId);
+    context.variables.isp_success = true;
+    context.variables.isp_ticket_status = ticket.status;
+    context.variables.isp_ticket_protocolo = ticket.protocolo;
+    break;
+  }
+}
+} catch (err: any) {
+context.variables.isp_success = false;
+context.variables.isp_error = err.sgpMessage || err.message || 'Erro ao consultar SGP';
+console.error('[ISP Node] Error:', err.message);
+}
+break;
+}
+
+## Frontend: Node definition
+
+Add to the node types/configs array:
+```typescript{
+type: 'isp_action',
+label: 'Ação ISP',
+icon: 'Wifi',
+color: '#0ea5e9',
+category: 'Integrações',
+description: 'Consulta dados do provedor: clientes, boletos, chamados técnicos',
+defaultConfig: {
+action: 'search_customer',
+cpf_variable: '{{cpf}}',
+customer_id_variable: '{{isp_customer_id}}',
+invoice_id_variable: '{{isp_invoice_id}}',
+ticket_type: 'sem_sinal',
+description: '',
+ticket_id_variable: '{{isp_ticket_id}}'
+}
+}
+
+## Frontend: Config panel component
+
+Create client/src/components/automation/nodes/ISPActionNodeConfig.tsx:
+
+Show a Select for "Ação":
+- search_customer → "🔍 Buscar Cliente por CPF"
+- get_invoices → "📄 Listar Boletos em Aberto"
+- second_copy → "🧾 Gerar 2ª Via de Boleto"
+- create_ticket → "🔧 Abrir Chamado Técnico"
+- get_ticket_status → "📊 Consultar Status do Chamado"
+
+Conditional fields per action:
+- search_customer: text input "Variável do CPF" default {{cpf}}
+- get_invoices: text input "Variável do ID do cliente" default {{isp_customer_id}}
+- second_copy: text input "Variável do ID da fatura" default {{isp_invoice_id}}
+- create_ticket: select tipo (sem_sinal/lentidao/sem_wifi/financeiro/outros) + textarea descrição
+- get_ticket_status: text input "ID do chamado" default {{isp_ticket_id}}
+
+Info box showing variables this node sets:
+- search_customer sets: {{isp_customer_nome}}, {{isp_customer_id}}, {{isp_customer_plano}}, {{isp_customer_status}}, {{isp_success}}
+- get_invoices sets: {{isp_invoices_count}}, {{isp_has_debt}}, {{isp_invoice_valor}}, {{isp_invoice_vencimento}}, {{isp_linha_digitavel}}, {{isp_link_boleto}}, {{isp_pix}}, {{isp_success}}
+- second_copy sets: {{isp_linha_digitavel}}, {{isp_link_boleto}}, {{isp_pix}}, {{isp_invoice_valor}}, {{isp_success}}
+- create_ticket sets: {{isp_ticket_protocolo}}, {{isp_ticket_id}}, {{isp_success}}
+- get_ticket_status sets: {{isp_ticket_status}}, {{isp_ticket_protocolo}}, {{isp_success}}
+
+Register ISPActionNodeConfig in the node panel registry alongside existing nodes.
+
+## After implementing
+1. Open the automation canvas
+2. Confirm the "Ação ISP" node appears in the node picker under "Integrações"
+3. Drag it onto canvas and confirm the config panel opens correctly
+4. Confirm TypeScript compiles without errors

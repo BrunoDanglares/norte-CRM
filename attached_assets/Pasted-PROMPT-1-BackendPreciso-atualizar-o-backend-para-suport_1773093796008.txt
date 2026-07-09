@@ -1,0 +1,119 @@
+PROMPT 1 — BackendPreciso atualizar o backend para suportar o módulo de Perfil completo.
+
+CONTEXTO:
+- Tabela `users` já existe com: id, nome, email, password, role, cargo,
+  telefone, avatar, avatarUrl, status, online, metaMensal
+- PUT /api/usuarios/:id já existe mas aceita apenas:
+  nome, cargo, telefone, avatarUrl, role, metaMensal
+- GET /api/auth/me já existe mas não retorna: telefone, bio, empresa, website
+- Não existe rota de alterar senha
+- Não existe infraestrutura de upload de arquivo
+
+---
+
+PASSO 1 — Adicionar colunas faltantes na tabela `users`
+
+Adicione as colunas que ainda não existem:
+- bio: TEXT, opcional
+- empresa: TEXT, opcional
+- website: TEXT, opcional
+- linkedin: TEXT, opcional
+- twitter: TEXT, opcional
+- instagram: TEXT, opcional
+- github: TEXT, opcional
+- tema: TEXT, default 'dark' — valores: 'dark', 'light', 'system'
+- notif_novos_leads: BOOLEAN, default true
+- notif_mensagens: BOOLEAN, default true
+- notif_tarefas: BOOLEAN, default true
+- notif_relatorios: BOOLEAN, default false
+- notif_email: BOOLEAN, default true
+
+Se usar Prisma, atualize schema.prisma e rode migration.
+Se usar SQL puro, execute ALTER TABLE diretamente.
+
+---
+
+PASSO 2 — Atualizar GET /api/auth/me
+
+Atualize o retorno para incluir TODOS os campos do perfil:
+{ id, nome, email, role, cargo, telefone, avatar, avatarUrl,
+  status, online, bio, empresa, website,
+  linkedin, twitter, instagram, github,
+  tema, notif_novos_leads, notif_mensagens,
+  notif_tarefas, notif_relatorios, notif_email,
+  metaMensal, createdAt }
+
+---
+
+PASSO 3 — Criar rota dedicada GET /api/perfil/me
+
+- Protegida com requireAuth
+- Usa req.user.id para buscar o usuário no banco
+- Retorna todos os campos acima
+- Resposta: { ok: true, data: { ...todosOsCampos } }
+
+---
+
+PASSO 4 — Criar rota PUT /api/perfil/me
+
+- Protegida com requireAuth
+- Usa req.user.id (não aceita :id por parâmetro — usuário só edita a si mesmo)
+- Aceita: nome, cargo, telefone, bio, empresa, website,
+  linkedin, twitter, instagram, github, tema,
+  notif_novos_leads, notif_mensagens, notif_tarefas,
+  notif_relatorios, notif_email
+- NÃO aceita: email, password, role, status
+  (esses campos são protegidos e não podem ser alterados por esta rota)
+- Atualiza updated_at automaticamente
+- Resposta: { ok: true, data: usuarioAtualizado }
+
+---
+
+PASSO 5 — Criar rota POST /api/perfil/alterar-senha
+
+- Protegida com requireAuth
+- Body: { senhaAtual, novaSenha, confirmarSenha }
+- Validações:
+  - Se qualquer campo faltando: status 400,
+    { error: "Todos os campos são obrigatórios" }
+  - Se novaSenha !== confirmarSenha: status 400,
+    { error: "A nova senha e a confirmação não coincidem" }
+  - Se novaSenha.length < 6: status 400,
+    { error: "A nova senha deve ter pelo menos 6 caracteres" }
+  - Busca usuário no banco pelo req.user.id
+  - Chama verifyPassword(senhaAtual, user.password)
+  - Se senha atual incorreta: status 401,
+    { error: "Senha atual incorreta" }
+- Gera hash da nova senha com hashPassword(novaSenha)
+- Atualiza password no banco
+- Resposta: { ok: true, message: "Senha alterada com sucesso" }
+
+---
+
+PASSO 6 — Criar rota POST /api/perfil/avatar
+
+- Protegida com requireAuth
+- Como não há infraestrutura de upload, aceita URL via body:
+  Body: { avatarUrl: "https://..." }
+- Valida que avatarUrl começa com http/https
+- Atualiza campos avatar e avatarUrl no banco para req.user.id
+- Resposta: { ok: true, data: { avatarUrl } }
+
+---
+
+PASSO 7 — Criar rota DELETE /api/perfil/conta
+
+- Protegida com requireAuth
+- Body: { senha } — confirma senha antes de excluir
+- Verifica senha com verifyPassword
+- Se senha incorreta: status 401, { error: "Senha incorreta" }
+- Não permite excluir se role === 'admin' e for o único admin:
+  status 403, { error: "Não é possível excluir o único administrador da conta" }
+- Marca usuário como INACTIVE em vez de excluir fisicamente
+  (preserva histórico de leads e conversas)
+- Resposta: { ok: true, message: "Conta desativada com sucesso" }
+
+---
+
+Registre as rotas em /api/perfil no arquivo principal.
+Confirme ao final todas as rotas criadas e colunas adicionadas.

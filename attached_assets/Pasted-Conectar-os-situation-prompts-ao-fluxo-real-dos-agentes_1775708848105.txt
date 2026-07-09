@@ -1,0 +1,66 @@
+Conectar os situation prompts ao fluxo real dos agentes e
+adicionar edição na tela /isp/prompts.
+
+══ PASSO 1 — Carregar situation prompt quando situação é detectada ══
+
+Em server/services/n8nAiService.ts, atualize a função gerarResposta
+para aceitar um parâmetro opcional situationCode?: string.
+
+Quando situationCode for fornecido:
+1. Busque o registro em isp_situation_prompts onde
+   workspace_id = workspaceId AND situation_code = situationCode
+2. Se encontrado e is_active = true:
+   - Substitua as variáveis {{placeholder}} do context_template
+     com os dados disponíveis no objeto context
+   - Prefixe o context existente com:
+     "SITUAÇÃO IDENTIFICADA: [situation_name]\n[context_template_resolvido]\n\n"
+3. Se escalate_always = true no registro:
+   - Adicione ao context: "\nIMPORTANTE: Esta situação requer escalonamento
+     para atendente humano após coleta do contexto necessário."
+
+══ PASSO 2 — Passar situationCode nos agentes ══
+
+Em cada agente especializado, quando uma situação é identificada,
+passe o código para a chamada de IA:
+
+financeiroAgent.ts:
+  - Detectou fluxo 'faturas' + inadimplente → situationCode: 'F5'
+  - Detectou pedido de desbloqueio antecipado → situationCode: 'F1'
+  - Detectou "já paguei" → situationCode: 'F3'
+  - Detectou pedido de segunda via / PIX → situationCode: 'F4'
+  - Detectou contestação → situationCode: 'F8'
+  - Detectou negociação de dívida → situationCode: 'F7'
+
+suporteAgent.ts:
+  - ONU offline → situationCode: 'S3'
+  - ONU online, sem acesso → situationCode: 'S2'
+  - Lentidão geral → situationCode: 'S4'
+  - Consulta OS → situationCode: 'S8'
+
+comercialAgent.ts:
+  - nova_instalacao → situationCode: 'C5'
+  - upgrade → situationCode: 'C1'
+  - cobertura → situationCode: 'C3'
+  - duvidas → situationCode: 'C8'
+
+══ PASSO 3 — Frontend: aba Situações na tela /isp/prompts ══
+
+Em client/src/pages/isp-prompts.tsx:
+
+Adicione uma segunda aba "Situações" ao lado da aba atual "Agentes".
+
+Na aba Situações:
+- Mostre as situações agrupadas por agente (Financeiro / Suporte / Comercial)
+- Cada situação tem: nome, código (ex: F1), toggle is_active, e textarea
+  para editar o context_template
+- Badge vermelho "Sempre escala" nas situações com escalate_always = true
+- Botão "Salvar" individual por situação (PUT /api/isp/agent/situations/:code)
+- Botão global "Restaurar padrões" que chama POST /api/isp/agent/situations/seed
+
+O layout segue o mesmo padrão visual da aba de Agentes existente
+(sidebar com lista de situações à esquerda, editor à direita).
+
+Após implementar, teste enviando uma mensagem "já paguei o PIX
+agora" para o bot da ConexãoNet e verifique nos logs que o
+situationCode 'F3' está sendo passado para a IA e o context
+está incluindo o template da situação F3.

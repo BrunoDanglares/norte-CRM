@@ -1,0 +1,87 @@
+ projeto tem uma dependência circular:
+server/index.ts → routes → automationEngine.ts → import('../index')
+
+Isso funciona em runtime via import dinâmico mas é frágil e impede
+tree-shaking e testes unitários.
+
+CORREÇÃO — extrair broadcastToWorkspace para módulo independente:
+
+PASSO 1 — Crie server/services/broadcast.ts:
+
+import { WebSocket } from 'ws';
+
+type SSEClient = { res: any; workspaceId: string };
+
+// Estas Maps serão populadas pelo index.ts via initBroadcast()
+let wsClients: Map<string, Set<WebSocket>> = new Map();
+let sseClients: Map<string, Set<SSEClient>> = new Map();
+
+export function initBroadcast(
+  ws: Map<string, Set<WebSocket>>,
+  sse: Map<string, Set<SSEClient>>
+) {
+  wsClients = ws;
+  sseClients = sse;
+}
+
+export function broadcastToWorkspace(
+  workspaceId: string,
+  event: string,
+  data: unknown
+) {
+  const payload = JSON.stringify({ type: event, data });
+
+  // WebSocket clients
+  const wsSet = wsClients.get(workspaceId);
+  if (wsSet) {
+    for (const client of wsSet) {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(payload);
+      }
+    }
+  }
+
+  // SSE clients
+  const sseSet = sseClients.get(workspaceId);
+  if (sseSet) {
+    for (const client of sseSet) {
+      try {
+        client.res.write(`data: ${payload}\n\n`);
+      } catch {
+        sseSet.delete(client);
+      }
+    }
+  }
+}
+
+Adapte os tipos SSEClient e a estrutura de envio para bater exatamente
+com o que já existe em server/index.ts — leia o index antes de criar
+o arquivo para copiar os tipos corretos.
+
+PASSO 2 — Em server/index.ts:
+- Importe initBroadcast e broadcastToWorkspace de './services/broadcast'
+- Após criar as Maps de wsClients e sseClients, chame:
+    initBroadcast(wsClients, sseClients);
+- Remova a definição local de broadcastToWorkspace (ela passa a vir do módulo)
+- Mantenha o export: export { broadcastToWorkspace } para compatibilidade
+  com quem ainda importa de '../index'
+
+PASSO 3 — Em automationEngine.ts e qualquer outro arquivo que faz:
+  const { broadcastToWorkspace } = await import('../index');
+
+Substitua por import estático no topo:
+  import { broadcastToWorkspace } from './broadcast';
+
+Faça o mesmo em todos os arquivos que importam broadcastToWorkspace
+dinamicamente de '../index'.
+
+PASSO 4 — Verifique que não há mais imports dinâmicos de '../index'
+no projeto:
+  grep -rn "import('../index')\|require('../index')" server/
+
+Confirme:
+1. server/services/broadcast.ts criado
+2. index.ts chama initBroadcast() após criar as Maps
+3. Todos os imports dinâmicos substituídos por import estático de broadcast.ts
+4. grep não retorna mais imports dinâmicos de index
+5. Servidor sem erros de TypeScript

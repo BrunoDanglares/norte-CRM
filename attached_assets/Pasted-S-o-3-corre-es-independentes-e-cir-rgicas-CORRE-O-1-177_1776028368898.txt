@@ -1,0 +1,110 @@
+São 3 correções independentes e cirúrgicas.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CORREÇÃO 1 — dispatchWebhook com log estruturado de falha
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Abra server/services/webhookDispatcher.ts.
+
+Localize o bloco fire-and-forget com catch vazio:
+  dispatchWebhook(...).catch(() => {})
+ou
+  } catch (err) {
+    // silencioso
+  }
+
+Substitua o catch vazio por log estruturado:
+
+  } catch (err: any) {
+    console.error('[webhookDispatcher] falha no envio', {
+      url: endpoint.url,
+      event: eventType,
+      status: err?.response?.status ?? null,
+      message: err?.message ?? 'unknown',
+      workspaceId,
+    });
+    // Continua fire-and-forget — não propaga o erro
+  }
+
+Se já existir um log de falha na tabela webhook_logs, verifique
+se ele está sendo salvo mesmo quando o catch ocorre. Se não estiver,
+adicione o save dentro do catch também:
+
+  await db.insert(webhookLogs).values({
+    endpointId: endpoint.id,
+    workspaceId,
+    event: eventType,
+    status: 'error',
+    responseCode: err?.response?.status ?? null,
+    responseBody: err?.message ?? 'Erro desconhecido',
+    sentAt: new Date(),
+  }).catch(() => {}); // catch secundário para não quebrar
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CORREÇÃO 2 — limite de conexões WebSocket por workspace
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Abra server/services/broadcast.ts (o que criamos no H1).
+
+Adicione uma constante no topo:
+  const MAX_WS_PER_WORKSPACE = 50;
+
+Na função initBroadcast ou onde novas conexões WebSocket são
+adicionadas ao Map wsClients, adicione verificação antes de inserir:
+
+No server/index.ts, localize onde wsClients.get(workspaceId).add(ws)
+é chamado ao aceitar nova conexão WebSocket.
+
+Adicione antes do .add():
+
+  const existing = wsClients.get(workspaceId) ?? new Set();
+  if (existing.size >= MAX_WS_PER_WORKSPACE) {
+    console.warn('[ws] limite de conexões atingido para workspace:', workspaceId);
+    ws.close(1008, 'Limite de conexões atingido');
+    return;
+  }
+  existing.add(ws);
+  wsClients.set(workspaceId, existing);
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CORREÇÃO 3 — seedDefaultPipelines idempotente
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Localize a função seedDefaultPipelines() no projeto
+(provavelmente em server/index.ts ou server/utils/helpers.ts).
+
+Deve ter algo como:
+  try {
+    await db.insert(pipeline_stages).values([...]);
+  } catch {
+    // silencioso na colisão
+  }
+
+Substitua por verificação explícita antes de inserir:
+
+  async function seedDefaultPipelines(workspaceId: string) {
+    // Verifica se já existem stages para esse workspace
+    const existing = await db
+      .select({ id: pipelineStages.id })
+      .from(pipelineStages)
+      .where(eq(pipelineStages.workspaceId, workspaceId))
+      .limit(1);
+
+    if (existing.length > 0) return; // já seeded, não duplicar
+
+    // Insere os stages padrão
+    await db.insert(pipelineStages).values([
+      // ... stages existentes no código atual
+    ]);
+  }
+
+Isso elimina o try/catch silencioso e torna o seed explicitamente
+idempotente — roda N vezes sem efeito colateral.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Confirme:
+1. webhookDispatcher tem log estruturado no catch (não mais silencioso)
+2. WebSocket recusa conexão ao atingir 50 por workspace
+3. seedDefaultPipelines verifica existência antes de inserir
+4. Servidor sem erros de TypeScript

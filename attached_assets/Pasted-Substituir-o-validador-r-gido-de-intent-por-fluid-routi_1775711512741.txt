@@ -1,0 +1,136 @@
+Substituir o validador rígido de intent por fluid routing com
+threshold configurável. Mexe apenas em ispAgentEngine.ts e
+orchestrator.ts.
+
+══ PASSO 1 — Novo schema em tenant_settings ══
+
+Em server/services/tenantSettingsService.ts (ou onde BusinessRules
+é definido), adicione os campos ao tipo/interface:
+
+  agent_priorities?: Record<string, number>;
+  fluid_routing_threshold?: number;
+
+Com defaults:
+  agent_priorities: {}          // usa DEFAULT_PRIORITIES do resolver
+  fluid_routing_threshold: 0.65
+
+Se tenant_settings usa uma coluna JSONB no banco, esses campos
+já são suportados sem migration. Apenas garanta que o getter
+de tenant settings retorne esses campos quando presentes.
+
+══ PASSO 2 — Criar função avaliarSwap em ispAgentEngine.ts ══
+
+REMOVA ou desative a função validarIntentComContexto atual
+(renomeie para _validarIntentLegado para não perder o código).
+
+Adicione no lugar:
+
+  interface SwapDecision {
+    swap: boolean;
+    transitionMessage?: string;
+  }
+
+  const FLOW_NAMES: Record<string, string> = {
+    FINANCEIRO: 'financeiro',
+    SUPORTE_TECNICO: 'suporte técnico',
+    VENDAS: 'comercial',
+    CANCELAMENTO: 'cancelamento',
+    HUMANO: 'atendimento humano',
+    GERAL: 'atendimento geral',
+  };
+
+  function avaliarSwap(
+    currentFlow: string | null,
+    newIntent: string,
+    confidence: number,
+    threshold: number,
+    allowSwitch: boolean
+  ): SwapDecision {
+    if (!allowSwitch)
+      return { swap: false };
+
+    if (!currentFlow || currentFlow === 'TRIAGEM' || currentFlow === 'GERAL')
+      return { swap: true };
+
+    if (currentFlow === newIntent)
+      return { swap: false };
+
+    if (newIntent === 'HUMANO')
+      return { swap: true };
+
+    if (confidence >= threshold) {
+      const de = FLOW_NAMES[currentFlow] ?? currentFlow.toLowerCase();
+      const para = FLOW_NAMES[newIntent] ?? newIntent.toLowerCase();
+      return {
+        swap: true,
+        transitionMessage:
+          `Entendido! Vou te ajudar com ${para}. ` +
+          `Se precisar retomar o assunto de ${de}, é só avisar.`,
+      };
+    }
+
+    return { swap: false };
+  }
+
+══ PASSO 3 — Integrar no fluxo principal do motor ══
+
+Ainda em ispAgentEngine.ts, localize o ponto onde o resultado
+do orquestrador é usado para decidir o próximo agente.
+
+Substitua o bloco que chama validarIntentComContexto pelo
+seguinte padrão:
+
+  // 1. Buscar configurações de roteamento do tenant
+  const threshold = businessRules.fluid_routing_threshold ?? 0.65;
+  const tenantPriorities = businessRules.agent_priorities ?? {};
+  const allowSwitch = businessRules.allowDepartmentSwitch ?? true;
+
+  // 2. Resolver intent dominante considerando prioridades
+  const intentVector = await orchestrator.decidirProximoPasso(
+    textoEfetivo, sessionState, contexto
+  );
+  const intentResolvido = resolveIntent(intentVector, tenantPriorities);
+  const intentContext = buildIntentContext(intentVector);
+
+  // 3. Avaliar se troca de fluxo é permitida
+  const swap = avaliarSwap(
+    sessionState.fluxo_atual,
+    intentResolvido,
+    intentVector.intents[0]?.confidence ?? 0,
+    threshold,
+    allowSwitch
+  );
+
+  // 4. Se swap aprovado, atualizar fluxo
+  if (swap.swap) {
+    sessionState.fluxo_atual = intentResolvido;
+    if (swap.transitionMessage) {
+      // Enviar mensagem de transição ANTES da resposta do agente
+      await n8nSendService.sendText(
+        conversaId, swap.transitionMessage, workspaceId
+      );
+    }
+  }
+  // Se swap negado, manter fluxo_atual e usar intentResolvido
+  // apenas como contexto adicional (não muda o agente ativo)
+
+  // 5. Adicionar contexto de intents secundários ao contexto da IA
+  if (intentContext) {
+    contexto.intentsSecundarios = intentContext;
+  }
+
+══ PASSO 4 — Garantir backward compatibility ══
+
+Em todos os pontos do motor que antes chamavam:
+  orchestrator.decidirProximoPasso(...)
+  e esperavam { intent, fluxo, acao, confidence }
+
+Adicione uma camada de compatibilidade: o IntentVector retornado
+pelo orquestrador agora deve também expor:
+  .intent   → vector.dominant
+  .fluxo    → vector.fluxo
+  .acao     → vector.intents[0]?.action ?? null
+  .confidence → vector.intents[0]?.confidence ?? 0
+
+Isso evita quebrar qualquer código que ainda use o formato antigo
+enquanto o wiring completo não é feito.

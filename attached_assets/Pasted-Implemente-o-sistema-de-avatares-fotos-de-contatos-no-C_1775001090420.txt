@@ -1,0 +1,113 @@
+Implemente o sistema de avatares/fotos de contatos no ChatBanana. O objetivo é que cada contato no inbox e nas listas tenha uma imagem visual — seja foto real, avatar gerado ou inicial colorida como fallback final.
+
+--- PASSO 1: SCHEMA ---
+
+No arquivo de schema Drizzle, adicione os seguintes campos na tabela `contacts` (se ainda não existirem):
+- foto_url: text nullable — URL da foto salva (pode ser URL externa ou path interno)
+- foto_origem: text nullable — valores: 'manual', 'meta_api', 'dicebear', null
+- foto_tentativa_em: timestamp nullable — última vez que tentamos buscar via Meta API
+
+Rode a migração: npx drizzle-kit push
+
+--- PASSO 2: SERVIÇO DE AVATAR ---
+
+Crie o arquivo server/services/avatar.service.ts com as seguintes funções:
+
+FUNÇÃO 1 — tryFetchMetaProfilePicture(phoneNumberId: string, contactPhone: string, accessToken: string): Promise<string | null>
+
+Faz uma requisição GET para:
+https://graph.facebook.com/v19.0/{phoneNumberId}/contacts?phone={contactPhone}&fields=profile_picture_url
+Headers: Authorization: Bearer {accessToken}
+
+Se retornar uma URL válida na resposta, retorna essa URL. Se retornar erro ou campo vazio, retorna null. Envolva em try/catch — nunca lance erro, sempre retorne null em caso de falha.
+
+FUNÇÃO 2 — getDicebearUrl(name: string): string
+
+Gera uma URL de avatar do DiceBear usando o estilo "initials":
+https://api.dicebear.com/7.x/initials/svg?seed={encodeURIComponent(name)}&backgroundColor=8b5cf6,4CB8F0,FFB300,5DCAA5,E24B4A&backgroundType=solid&fontSize=38&bold=true
+
+Retorna a URL como string. Não faz requisição HTTP — só monta a URL.
+
+FUNÇÃO 3 — resolveContactAvatar(contact: { id: string, nome: string, telefone: string, foto_url: string | null, foto_origem: string | null, foto_tentativa_em: Date | null }, workspaceId: string): Promise<string>
+
+Lógica:
+1. Se contact.foto_url já existe e foto_origem === 'manual', retorna contact.foto_url imediatamente
+2. Se contact.foto_url existe e foto_origem === 'meta_api', retorna contact.foto_url
+3. Se foto_tentativa_em é null OU foi há mais de 7 dias:
+   a. Busca as credenciais Meta do workspace na tabela whatsapp_official_connections (campo access_token e phone_number_id)
+   b. Chama tryFetchMetaProfilePicture
+   c. Atualiza contacts SET foto_tentativa_em = now() WHERE id = contact.id
+   d. Se veio URL: atualiza contacts SET foto_url = url, foto_origem = 'meta_api' e retorna a URL
+   e. Se não veio: retorna getDicebearUrl(contact.nome)
+4. Se já tentou recentemente e não tem foto, retorna getDicebearUrl(contact.nome)
+
+--- PASSO 3: INTEGRAR NO WEBHOOK ---
+
+No arquivo server/services/message-processor.ts (ou onde os contatos são criados/atualizados ao receber mensagem):
+
+Após criar ou encontrar o contato, chame resolveContactAvatar em background (sem await, para não bloquear o processamento):
+
+resolveContactAvatar(contact, workspaceId).catch(() => {})
+
+--- PASSO 4: ROTA DE UPLOAD MANUAL ---
+
+Adicione a rota POST /api/contacts/:id/foto no arquivo de rotas de contatos.
+
+A rota deve:
+1. Usar multer para receber um arquivo de imagem (campo: "foto", max 2MB, tipos: image/jpeg, image/png, image/webp)
+2. Salvar o arquivo em /uploads/avatars/{workspace_id}/{contact_id}.{ext}
+3. Atualizar contacts SET foto_url = '/uploads/avatars/...', foto_origem = 'manual' WHERE id = :id AND workspace_id = resolveWorkspaceId(req)
+4. Retornar { foto_url: '...' }
+
+Configure o express para servir arquivos estáticos da pasta /uploads com: app.use('/uploads', express.static('uploads'))
+
+--- PASSO 5: ROTA GET AVATAR ---
+
+Adicione a rota GET /api/contacts/:id/avatar que:
+1. Busca o contato pelo id (filtrando por workspace_id)
+2. Chama resolveContactAvatar
+3. Retorna { avatar_url: string }
+
+--- PASSO 6: FRONTEND ---
+
+Em todos os lugares do frontend onde aparece o avatar do contato (inbox, lista de contatos, card do lead, cabeçalho da conversa):
+
+Substitua o componente de inicial colorida atual por este componente ContactAvatar:
+```tsx
+interface ContactAvatarProps {
+  contactId: string
+  nome: string
+  fotoUrl?: string | null
+  size?: number
+}
+
+function ContactAvatar({ contactId, nome, fotoUrl, size = 36 }: ContactAvatarProps) {
+  const [src, setSrc] = useState<string>(
+    fotoUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(nome)}&backgroundColor=8b5cf6,4CB8F0,FFB300,5DCAA5&backgroundType=solid&fontSize=38&bold=true`
+  )
+
+  return (
+    <img
+      src={src}
+      alt={nome}
+      width={size}
+      height={size}
+      style={{ borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }}
+      onError={() => {
+        setSrc(`https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(nome)}&backgroundColor=8b5cf6&backgroundType=solid&fontSize=38&bold=true`)
+      }}
+    />
+  )
+}
+```
+
+Use fotoUrl passando o campo foto_url do contato que já vem nas queries existentes. O componente tenta carregar a foto real e faz fallback automático para DiceBear se falhar.
+
+--- PASSO 7: BOTÃO DE UPLOAD NO PERFIL DO CONTATO ---
+
+Na página/modal de perfil do contato, adicione um botão "Trocar foto" que:
+1. Abre um <input type="file" accept="image/*"> oculto
+2. Ao selecionar arquivo, faz POST /api/contacts/:id/foto com FormData
+3. Após sucesso, atualiza o src do avatar na tela
+
+Confirme quando tudo estiver implementado e funcionando, listando os arquivos criados ou modificados.

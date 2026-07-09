@@ -1,0 +1,179 @@
+PROMPT 2 — Backend: instagramService.ts + webhook handler
+Crie o arquivo `server/services/instagramService.ts` com o seguinte conteúdo:
+```ts
+import { db } from '../db';
+import { instagramConnections, instagramMessages, leads, contacts } from '../../shared/schema';
+import { eq, and } from 'drizzle-orm';
+
+const GRAPH_API = 'https://graph.facebook.com/v19.0';
+
+// Enviar DM de texto para um usuário do Instagram
+export async function sendInstagramDM(
+  accessToken: string,
+  igUserId: string, // o nosso IG user ID (remetente)
+  recipientIgUserId: string,
+  text: string
+): Promise<{ messageId?: string; error?: string }> {
+  try {
+    const res = await fetch(`${GRAPH_API}/${igUserId}/messages`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({
+        recipient: { id: recipientIgUserId },
+        message: { text },
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) return { error: JSON.stringify(data) };
+    return { messageId: data.message_id };
+  } catch (err: any) {
+    return { error: err.message };
+  }
+}
+
+// Enviar resposta a um comentário de post
+export async function replyInstagramComment(
+  accessToken: string,
+  commentId: string,
+  message: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const res = await fetch(`${GRAPH_API}/${commentId}/replies`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ access_token: accessToken, message }),
+    });
+    const data = await res.json();
+    if (!res.ok) return { success: false, error: JSON.stringify(data) };
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+// Buscar conexão ativa pelo workspace
+export async function getActiveInstagramConnection(workspaceId: string) {
+  const [conn] = await db
+    .select()
+    .from(instagramConnections)
+    .where(and(eq(instagramConnections.workspaceId, workspaceId), eq(instagramConnections.isActive, true)))
+    .limit(1);
+  return conn || null;
+}
+
+// Buscar ou criar lead a partir de um usuário do Instagram
+export async function upsertInstagramLead(workspaceId: string, igUserId: string, igUsername: string) {
+  const existing = await db
+    .select()
+    .from(leads)
+    .where(and(eq(leads.workspaceId, workspaceId), eq(leads.instagramId as any, igUserId)))
+    .limit(1);
+
+  if (existing[0]) return existing[0];
+
+  const [newLead] = await db
+    .insert(leads)
+    .values({
+      workspaceId,
+      nome: igUsername || `ig_${igUserId}`,
+      canal: 'instagram',
+      instagramId: igUserId,
+      instagramUsername: igUsername,
+      status: 'novo',
+    } as any)
+    .returning();
+
+  return newLead;
+}
+```
+
+Agora crie o arquivo `server/routes/instagram.ts` com o webhook handler:
+```ts
+import { Router } from 'express';
+import { db } from '../db';
+import { instagramConnections, instagramMessages } from '../../shared/schema';
+import { eq, and } from 'drizzle-orm';
+import { processInstagramMessage } from '../services/instagramMessageProcessor';
+
+const router = Router();
+
+// Verificação do webhook Meta (GET)
+router.get('/webhook', (req, res) => {
+  const mode = req.query['hub.mode'];
+  const token = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
+
+  const verifyToken = process.env.INSTAGRAM_WEBHOOK_VERIFY_TOKEN || process.env.META_WEBHOOK_VERIFY_TOKEN;
+
+  if (mode === 'subscribe' && token === verifyToken) {
+    console.log('[Instagram] Webhook verificado com sucesso');
+    return res.status(200).send(challenge);
+  }
+  return res.status(403).json({ error: 'Token inválido' });
+});
+
+// Receber eventos do Instagram (POST)
+router.post('/webhook', async (req, res) => {
+  res.status(200).send('EVENT_RECEIVED'); // responde rápido para Meta
+
+  const body = req.body;
+  if (body.object !== 'instagram') return;
+
+  for (const entry of body.entry || []) {
+    const igUserId = entry.id; // nosso IG Business account ID
+
+    // Encontrar workspace pela conexão
+    const [conn] = await db
+      .select()
+      .from(instagramConnections)
+      .where(eq(instagramConnections.igUserId, igUserId))
+      .limit(1);
+
+    if (!conn) {
+      console.warn('[Instagram] Webhook sem conexão cadastrada para igUserId:', igUserId);
+      continue;
+    }
+
+    // Processar eventos de mensagem (DMs)
+    for (const messaging of entry.messaging || []) {
+      const { sender, recipient, message, read, delivery } = messaging;
+
+      // Ignorar mensagens enviadas por nós mesmos
+      if (sender.id === igUserId) continue;
+      // Ignorar eventos de read/delivery sem mensagem
+      if (!message) continue;
+
+      await processInstagramMessage({
+        workspaceId: conn.workspaceId,
+        connectionId: conn.id,
+        igAccountUserId: igUserId,
+        accessToken: conn.accessToken,
+        senderIgUserId: sender.id,
+        recipientIgUserId: recipient.id,
+        message,
+      });
+    }
+
+    // Processar comentários (comment_to_dm)
+    for (const change of entry.changes || []) {
+      if (change.field === 'comments' && change.value) {
+        // TODO: Fase 3 - Comment-to-DM trigger
+        console.log('[Instagram] Comentário recebido:', change.value);
+      }
+    }
+  }
+});
+
+export default router;
+```
+
+Registre a rota em `server/index.ts` ou no arquivo principal de rotas:
+```ts
+import instagramRouter from './routes/instagram';
+app.use('/api/instagram', instagramRouter);
+```
+
+Reporte se houve erros de importação ou de tipos TypeScript.

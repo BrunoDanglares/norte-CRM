@@ -1,0 +1,153 @@
+PROMPT 2 — Migrar automationEngine + messages.ts para Channel Router
+Migrate all WhatsApp sending in automationEngine.ts and messages.ts
+to use the unified channel-router instead of calling Z-API or Web.js directly.
+
+## Context
+After Prompt 1, channel-router handles Meta → Web.js → Z-API automatically.
+The goal now is to remove direct provider calls from the business logic layer.
+
+## Files to update:
+1. server/services/automationEngine.ts
+2. server/routes/messages.ts (inbox manual send)
+3. server/routes/webhooks.ts (n8n integration)
+
+## File 1: server/services/automationEngine.ts
+
+### Current problem:
+Three direct Z-API functions are called directly:
+- sendMessageViaZAPI() — lines ~329-457
+- sendImageViaZAPI() — lines ~106-219  
+- sendDocumentViaZAPI() — lines ~221-327
+
+Plus Web.js is called directly in some paths.
+
+### Solution:
+Replace ALL direct provider calls with channel-router sendMessage():
+```typescript
+import { sendMessage } from './channel-router';
+
+// FIND all calls to sendMessageViaZAPI, sendImageViaZAPI, sendDocumentViaZAPI
+// and the Web.js direct calls in the send_message node handler.
+
+// REPLACE with:
+
+// For text messages:
+const result = await sendMessage({
+  workspaceId: ctx.workspaceId,
+  to: ctx.customerPhone,
+  type: 'text',
+  content: resolvedMessage,
+  conversationId: ctx.conversationId,
+  conexaoId: ctx.conexaoId,           // pass Web.js session hint
+  preferredChannel: ctx.channel as any // pass channel preference
+});
+
+// For image messages:
+const result = await sendMessage({
+  workspaceId: ctx.workspaceId,
+  to: ctx.customerPhone,
+  type: 'image',
+  mediaUrl: imageUrl,
+  mediaCaption: caption,
+  conversationId: ctx.conversationId,
+  conexaoId: ctx.conexaoId
+});
+
+// For document messages:
+const result = await sendMessage({
+  workspaceId: ctx.workspaceId,
+  to: ctx.customerPhone,
+  type: 'document',
+  mediaUrl: documentUrl,
+  filename: fileName,
+  conversationId: ctx.conversationId,
+  conexaoId: ctx.conexaoId
+});
+
+// For audio messages:
+const result = await sendMessage({
+  workspaceId: ctx.workspaceId,
+  to: ctx.customerPhone,
+  type: 'audio',
+  mediaUrl: audioUrl,
+  conversationId: ctx.conversationId,
+  conexaoId: ctx.conexaoId
+});
+```
+
+After replacing, the functions sendMessageViaZAPI, sendImageViaZAPI,
+sendDocumentViaZAPI become UNUSED. Mark them with a comment:
+// TODO: Remove in Z-API cleanup sprint
+Do NOT delete them yet — that's Prompt 3's job.
+
+Also: ensure ctx (automation context) includes conexaoId and channel fields.
+Find where ctx is initialized and add:
+```typescript
+conexaoId: conexao?.id,        // Web.js session ID
+channel: conexao?.provider     // 'wweb', 'zapi', or 'meta'
+```
+
+## File 2: server/routes/messages.ts
+
+### Current problem (inbox manual send):
+Lines ~77-81 call zapiFetch() directly:
+```typescript
+// CURRENT (wrong):
+if (provider === 'zapi') {
+  await zapiFetch(`/send-text?instanceId=${instanceId}&token=${token}`, ...)
+} else if (provider === 'wweb') {
+  // direct Web.js call
+}
+```
+
+### Solution:
+Replace with channel-router:
+```typescript
+import { sendMessage } from '../services/channel-router';
+
+// In the POST /api/conversations/:id/messages handler:
+const result = await sendMessage({
+  workspaceId,
+  to: conversation.contactPhone, // get from conversation/contact
+  type: messageType,
+  content: messageText,
+  mediaUrl: mediaUrl || undefined,
+  mediaCaption: caption || undefined,
+  filename: fileName || undefined,
+  conversationId: conversation.id,
+  conexaoId: conversation.conexaoId || undefined
+});
+
+if (!result.success) {
+  return res.status(500).json({ error: result.error || 'Falha ao enviar mensagem' });
+}
+```
+
+## File 3: server/routes/webhooks.ts
+
+### Current problem:
+POST /api/n8n/mensagem uses Z-API directly.
+
+### Solution:
+```typescript
+import { sendMessage } from '../services/channel-router';
+
+// Replace the zapiFetch call with:
+const result = await sendMessage({
+  workspaceId,
+  to: phone,
+  type: 'text',
+  content: message
+});
+```
+
+## After implementing:
+1. TypeScript compiles without errors
+2. Test inbox: send a manual message from the inbox UI
+   → Confirm it routes correctly via channel-router
+   → Logs should show "[ChannelRouter] ✅ Sent via Web.js" or Meta
+3. Test automation: trigger a flow that sends a message
+   → Same check
+4. Test: workspace with Web.js → message goes via Web.js
+5. Test: workspace with Meta → message goes via Meta
+6. Confirm sendMessageViaZAPI is now unused (but not deleted yet)

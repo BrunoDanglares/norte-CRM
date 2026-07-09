@@ -1,0 +1,330 @@
+Excelente. Agora o Prompt 3 — o endpoint de envio com humanização usando a Meta Cloud API que já está no ChatBanana.
+
+PROMPT 3 — Send + Humanização /api/n8n/send
+Adicione o endpoint de envio de mensagem ao projeto ChatBanana.
+Ele humaniza a resposta (divide em blocos naturais com delay), envia via
+Meta Cloud API já configurada e salva no banco de conversas.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PASSO 1 — Criar server/services/n8nSendService.ts
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+import { db } from '../db';
+import { conversations, messages, contacts } from '../../shared/schema';
+import { eq, and } from 'drizzle-orm';
+
+// Reutiliza o serviço de envio WhatsApp já existente no projeto.
+// Ajuste o import abaixo para o caminho real do seu whatsappService:
+import { sendWhatsAppTextMessage } from './whatsappService';
+
+// ── Utilitários ──────────────────────────────────────────────────────────────
+
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+/**
+ * Humaniza a resposta da IA dividindo em blocos naturais.
+ * Simula o ritmo de um humano digitando no WhatsApp.
+ */
+function humanizeMessage(text: string): string[] {
+  // Normaliza quebras de linha triplas ou mais
+  const normalized = text.replace(/\n{3,}/g, '\n\n');
+
+  // Split primário: parágrafos (dupla quebra de linha)
+  const paragraphs = normalized.split(/\n\n/).map(p => p.trim()).filter(Boolean);
+
+  const parts: string[] = [];
+
+  for (const para of paragraphs) {
+    // Parágrafos longos (> 280 chars): divide por linha simples
+    if (para.length > 280) {
+      const lines = para.split(/\n/).map(l => l.trim()).filter(Boolean);
+      // Agrupa linhas curtas consecutivas (≤ 80 chars) para não mandar uma por uma
+      let buffer = '';
+      for (const line of lines) {
+        if (buffer && (buffer.length + line.length) > 200) {
+          parts.push(buffer.trim());
+          buffer = line;
+        } else {
+          buffer = buffer ? `${buffer}\n${line}` : line;
+        }
+      }
+      if (buffer) parts.push(buffer.trim());
+    } else {
+      parts.push(para);
+    }
+  }
+
+  return parts.filter(p => p.length > 0);
+}
+
+/**
+ * Calcula delay proporcional ao tamanho da mensagem (simula digitação).
+ * Entre 800ms e 2500ms.
+ */
+function calcDelay(text: string): number {
+  const baseDelay = 800;
+  const perChar   = 18; // ms por caractere
+  return Math.min(baseDelay + text.length * perChar, 2500);
+}
+
+// ── Serviço principal ────────────────────────────────────────────────────────
+
+export class N8nSendService {
+
+  /**
+   * Envia resposta da IA para o cliente via WhatsApp.
+   * Humaniza automaticamente dividindo em blocos com delay proporcional.
+   */
+  async enviarResposta(params: {
+    workspaceId:    string;
+    conversationId: string;
+    message:        string;
+    humanize?:      boolean; // default: true
+  }): Promise<{
+    success:     boolean;
+    parts_sent:  number;
+    parts:       string[];
+    error?:      string;
+  }> {
+
+    const { workspaceId, conversationId, message, humanize = true } = params;
+
+    // ── 1. Busca dados da conversa ─────────────────────────────────────────
+    const convRows = await db
+      .select()
+      .from(conversations)
+      .where(
+        and(
+          eq(conversations.id, conversationId),
+          eq(conversations.workspace_id, workspaceId)
+        )
+      )
+      .limit(1);
+
+    if (!convRows[0]) {
+      return {
+        success:    false,
+        parts_sent: 0,
+        parts:      [],
+        error:      `Conversa ${conversationId} não encontrada no workspace`,
+      };
+    }
+
+    const conversation = convRows[0];
+
+    // ── 2. Busca telefone do contato ──────────────────────────────────────
+    const contactRows = await db
+      .select()
+      .from(contacts)
+      .where(
+        and(
+          eq(contacts.id, conversation.contact_id),
+          eq(contacts.workspace_id, workspaceId)
+        )
+      )
+      .limit(1);
+
+    if (!contactRows[0]?.phone) {
+      return {
+        success:    false,
+        parts_sent: 0,
+        parts:      [],
+        error:      'Telefone do contato não encontrado',
+      };
+    }
+
+    const phone = contactRows[0].phone
+      .replace('@s.whatsapp.net', '')
+      .replace('@lid', '');
+
+    // ── 3. Humaniza (ou mantém como bloco único) ──────────────────────────
+    const parts = humanize ? humanizeMessage(message) : [message];
+
+    if (parts.length === 0) {
+      return { success: true, parts_sent: 0, parts: [] };
+    }
+
+    // ── 4. Envia cada bloco com delay proporcional ────────────────────────
+    let partsSent = 0;
+    const errors: string[] = [];
+
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+
+      try {
+        // Usa o serviço WhatsApp já existente no ChatBanana
+        await sendWhatsAppTextMessage({
+          workspaceId,
+          phone,
+          text: part,
+        });
+
+        // Salva a mensagem no banco
+        await db.insert(messages).values({
+          conversation_id: conversationId,
+          workspace_id:    workspaceId,
+          content:         part,
+          direction:       'outbound',
+          channel:         'whatsapp',
+          status:          'sent',
+          sender_type:     'bot',
+          metadata:        JSON.stringify({ source: 'n8n_agent', part_index: i }),
+        });
+
+        partsSent++;
+
+        // Delay entre mensagens (exceto na última)
+        if (i < parts.length - 1) {
+          await sleep(calcDelay(parts[i + 1]));
+        }
+
+      } catch (err: any) {
+        console.error(`[N8N SEND] Erro ao enviar parte ${i + 1}:`, err.message);
+        errors.push(`Parte ${i + 1}: ${err.message}`);
+      }
+    }
+
+    return {
+      success:    errors.length === 0,
+      parts_sent: partsSent,
+      parts,
+      error:      errors.length > 0 ? errors.join(' | ') : undefined,
+    };
+  }
+
+  /**
+   * Preview da humanização — mostra como a mensagem será dividida
+   * sem enviar de fato. Útil para testar no Postman.
+   */
+  previewHumanizacao(message: string): {
+    parts:       string[];
+    parts_count: number;
+    total_chars: number;
+    delays_ms:   number[];
+  } {
+    const parts = humanizeMessage(message);
+    const delays = parts.slice(0, -1).map((_, i) => calcDelay(parts[i + 1]));
+    return {
+      parts,
+      parts_count: parts.length,
+      total_chars: message.length,
+      delays_ms:   delays,
+    };
+  }
+}
+
+export const n8nSendService = new N8nSendService();
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PASSO 2 — Adicionar rotas /send em server/routes/n8n.ts
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Adicione no server/routes/n8n.ts existente, ANTES do export default router:
+
+import { n8nSendService } from '../services/n8nSendService';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/n8n/send
+// Body: { conversation_id, message, humanize? }
+// Envia resposta IA ao cliente via WhatsApp com humanização
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/send', async (req: Request, res: Response) => {
+  try {
+    const workspaceId = resolveWorkspaceId(req);
+    const {
+      conversation_id,
+      message,
+      humanize = true,
+    } = req.body as {
+      conversation_id: string;
+      message:         string;
+      humanize?:       boolean;
+    };
+
+    if (!conversation_id || !message) {
+      return res.status(400).json({
+        error: 'Campos obrigatórios: conversation_id, message',
+      });
+    }
+
+    const result = await n8nSendService.enviarResposta({
+      workspaceId,
+      conversationId: conversation_id,
+      message,
+      humanize,
+    });
+
+    const statusCode = result.success ? 200 : 207; // 207 = partial success
+    return res.status(statusCode).json({ ok: result.success, ...result });
+
+  } catch (err: any) {
+    console.error('[N8N SEND]', err);
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/n8n/send/preview
+// Body: { message }
+// Preview de como a mensagem será dividida (sem enviar)
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/send/preview', async (req: Request, res: Response) => {
+  try {
+    const { message } = req.body as { message: string };
+    if (!message) return res.status(400).json({ error: 'Campo message obrigatório' });
+
+    const preview = n8nSendService.previewHumanizacao(message);
+    return res.json({ ok: true, ...preview });
+
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+VERIFICAÇÃO APÓS IMPLEMENTAR
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Teste 1 — Preview de humanização (não envia nada):
+
+POST /api/n8n/send/preview
+Authorization: Bearer {jwt}
+Content-Type: application/json
+
+{
+  "message": "João, identifiquei aqui que sua conexão está suspensa.\n\nIsso acontece quando há uma pendência financeira em aberto.\n\nPosso te ajudar agora! Você prefere:\n\n1️⃣ Receber a fatura para pagar agora\n2️⃣ Fazer uma promessa de pagamento e liberar sua internet por 48h"
+}
+
+Resposta esperada:
+{
+  "ok": true,
+  "parts": [
+    "João, identifiquei aqui que sua conexão está suspensa.",
+    "Isso acontece quando há uma pendência financeira em aberto.",
+    "Posso te ajudar agora! Você prefere:\n\n1️⃣ Receber a fatura para pagar agora\n2️⃣ Fazer uma promessa de pagamento e liberar sua internet por 48h"
+  ],
+  "parts_count": 3,
+  "total_chars": 187,
+  "delays_ms": [1278, 1566]
+}
+
+Teste 2 — Envio real:
+
+POST /api/n8n/send
+Authorization: Bearer {jwt}
+Content-Type: application/json
+
+{
+  "conversation_id": "uuid-da-conversa-real",
+  "message": "Olá! Identifiquei sua pendência.\n\nPosso te enviar o PIX agora para regularizar?",
+  "humanize": true
+}
+
+Resposta esperada:
+{
+  "ok": true,
+  "parts_sent": 2,
+  "parts": ["Olá! Identifiquei sua pendência.", "Posso te enviar o PIX agora para regularizar?"]
+}

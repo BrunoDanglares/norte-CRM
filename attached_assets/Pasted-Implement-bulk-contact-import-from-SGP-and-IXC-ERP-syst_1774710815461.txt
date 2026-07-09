@@ -1,0 +1,356 @@
+Implement bulk contact import from SGP and IXC ERP systems into the ChatBanana CRM contacts tab.
+
+## Context
+- ISP module already exists with isp_configs, sgp-adapter, ixc-adapter, isp-provider-factory
+- Contacts table already exists in the schema (used throughout the CRM)
+- Multi-tenant: all operations scoped by workspace_id
+- Import runs server-side: fetches all clients from ERP in paginated batches, upserts into contacts table
+- Use getProviderFromConfig from isp-provider-factory to abstract SGP vs IXC
+
+## Step 1: Add import tracking table
+
+Add to Drizzle schema:
+
+### isp_import_logs
+Tracks each import job run.
+
+Columns:
+- id: serial primary key
+- workspace_id: uuid not null references workspaces(id) on delete cascade
+- erp_type: text not null ('sgp' | 'ixc')
+- status: text not null default 'running' ('running' | 'completed' | 'failed')
+- filter_status: text not null ('active' | 'active_overdue' | 'all')
+- total_fetched: integer not null default 0
+- total_imported: integer not null default 0
+- total_updated: integer not null default 0
+- total_skipped: integer not null default 0
+- total_errors: integer not null default 0
+- error_message: text
+- started_at: timestamp default now()
+- finished_at: timestamp
+- created_at: timestamp default now()
+
+Run migration after adding table.
+
+## Step 2: Extend ISP Provider interface
+
+In server/services/isp-provider.interface.ts, add new method to ISPProvider:
+```typescript// Add to ISPProvider interface:
+getAllCustomers(
+credentials: ISPCredentials,
+options: {
+filterStatus: 'active' | 'active_overdue' | 'all';
+page: number;
+limit: number;
+}
+): Promise<{
+customers: ISPCustomer[];
+total: number;
+hasMore: boolean;
+}>;
+
+## Step 3: Implement getAllCustomers in SGP adapter
+
+In server/services/sgp-adapter.ts, add:
+```typescriptexport async function getAllCustomers(credentials: ISPCredentials, options: {
+filterStatus: 'active' | 'active_overdue' | 'all';
+page: number;
+limit: number;
+}): Promise<{ customers: ISPCustomer[]; total: number; hasMore: boolean }> {// SGP: POST /api/ura/consultacliente/ supports pagination
+// Filter by contratoStatus:
+// active = contratoStatus 1
+// active_overdue = contratoStatus 1,4
+// all = no filterconst statusFilter: Record<string, string> = {
+active: '1',
+active_overdue: '1,4',
+all: ''
+};const formData = new FormData();
+formData.append('token', credentials.apiToken);
+formData.append('app', credentials.sgpApp || 'ChatBanana');
+formData.append('pagina', String(options.page));
+formData.append('quantidade', String(options.limit));
+if (statusFilter[options.filterStatus]) {
+formData.append('contratoStatus', statusFilter[options.filterStatus]);
+}const response = await sgpFetch(
+${credentials.baseUrl}/api/ura/consultacliente/,
+{ method: 'POST', body: formData },
+credentials
+);const contratos = response.contratos || [];
+const total = parseInt(response.total || response.totalRegistros || '0') || contratos.length;const customers: ISPCustomer[] = contratos.map((c: any) => ({
+id: String(c.clienteId),
+contratoId: String(c.contratoId || ''),
+nome: c.razaoSocial || '',
+cpf: c.cpfCnpj || '',
+telefone: c.telefones?.[0]?.replace(/\D/g, '') || '',
+email: c.emails?.[0] || '',
+plano: c.servico_plano || c.planointernet || '',
+dataNascimento: c.dataNascimento || null,
+status: mapSGPStatus(c.contratoStatus),
+endereco: ${c.endereco_logradouro || ''}, ${c.endereco_numero || ''} - ${c.endereco_bairro || ''},
+clienteSince: c.dataCadastro || null
+}));return {
+customers,
+total,
+hasMore: (options.page * options.limit) < total
+};
+}function mapSGPStatus(contratoStatus: number): ISPCustomer['status'] {
+const map: Record<number, ISPCustomer['status']> = {
+1: 'ativo',
+2: 'suspenso',
+3: 'cancelado',
+4: 'inadimplente'
+};
+return map[contratoStatus] || 'ativo';
+}
+
+## Step 4: Implement getAllCustomers in IXC adapter
+
+In server/services/ixc-adapter.ts, add:
+```typescriptexport async function getAllCustomers(credentials: ISPCredentials, options: {
+filterStatus: 'active' | 'active_overdue' | 'all';
+page: number;
+limit: number;
+}): Promise<{ customers: ISPCustomer[]; total: number; hasMore: boolean }> {// IXC: GET /cliente with ativo filter
+// active = ativo=S
+// active_overdue = ativo=S (IXC doesn't distinguish overdue at client level — filter at invoice level)
+// all = no ativo filterlet url = ${credentials.baseUrl}/cliente?page=${options.page}&rp=${options.limit}&ixcsoft=listar;if (options.filterStatus === 'active' || options.filterStatus === 'active_overdue') {
+url += &qtype=ativo&query=S&oper=%3D;
+}const response = await ixcFetch(url, {
+method: 'GET',
+headers: { ...getIXCHeaders(credentials), 'ixcsoft': 'listar' }
+});if (response.type === 'error') return { customers: [], total: 0, hasMore: false };const registros = response.registros || [];
+const total = parseInt(response.total || '0') || registros.length;const customers: ISPCustomer[] = registros.map((c: any) => ({
+id: String(c.id),
+contratoId: '',
+nome: c.razao || c.fantasia || '',
+cpf: c.cpf_cnpj || '',
+telefone: (c.whatsapp || c.celular || c.fone || '').replace(/\D/g, ''),
+email: c.email || '',
+plano: '',
+dataNascimento: c.data_nascimento || null,
+status: c.ativo === 'S' ? 'ativo' : 'cancelado',
+endereco: ${c.endereco || ''}, ${c.numero || ''} - ${c.bairro || ''} - ${c.cidade || ''},
+clienteSince: c.data_cadastro || null
+}));return {
+customers,
+total,
+hasMore: (options.page * options.limit) < total
+};
+}
+
+## Step 5: Add clienteSince to ISPCustomer interface
+
+In isp-provider.interface.ts, add to ISPCustomer:
+```typescriptclienteSince?: string | null; // date string — when customer became a client
+
+## Step 6: Create import service
+
+File to create: server/services/isp-import.ts
+```typescriptimport { db } from '../db';
+import { isp_configs, isp_import_logs, contacts } from '../db/schema';
+import { eq, and } from 'drizzle-orm';
+import { getProviderFromConfig } from './isp-provider-factory';
+import { ISPCustomer } from './isp-provider.interface';const BATCH_SIZE = 50; // fetch 50 customers per page from ERP
+const DELAY_BETWEEN_PAGES = 500; // ms — avoid rate limitingexport interface ImportOptions {
+workspaceId: string;
+filterStatus: 'active' | 'active_overdue' | 'all';
+}export interface ImportProgress {
+logId: number;
+status: 'running' | 'completed' | 'failed';
+totalFetched: number;
+totalImported: number;
+totalUpdated: number;
+totalSkipped: number;
+totalErrors: number;
+progress: number; // 0-100
+message: string;
+}// In-memory progress store (per workspace, cleared on completion)
+const importProgress = new Map<string, ImportProgress>();export function getImportProgress(workspaceId: string): ImportProgress | null {
+return importProgress.get(workspaceId) || null;
+}export async function startBulkImport(options: ImportOptions): Promise<{ logId: number }> {
+const { workspaceId, filterStatus } = options;// Check if import already running for this workspace
+const existing = importProgress.get(workspaceId);
+if (existing?.status === 'running') {
+throw new Error('Importação já está em andamento para este workspace');
+}// Load ISP config
+const config = await db.query.isp_configs.findFirst({
+where: and(eq(isp_configs.workspace_id, workspaceId), eq(isp_configs.is_active, true))
+});
+if (!config) throw new Error('Módulo ISP não configurado');// Create import log
+const [log] = await db.insert(isp_import_logs).values({
+workspace_id: workspaceId,
+erp_type: config.erp_type || 'sgp',
+status: 'running',
+filter_status: filterStatus,
+started_at: new Date()
+}).returning();// Initialize progress
+const progress: ImportProgress = {
+logId: log.id,
+status: 'running',
+totalFetched: 0,
+totalImported: 0,
+totalUpdated: 0,
+totalSkipped: 0,
+totalErrors: 0,
+progress: 0,
+message: 'Iniciando importação...'
+};
+importProgress.set(workspaceId, progress);// Run async (non-blocking)
+runImport(workspaceId, config, log.id, filterStatus, progress).catch(err => {
+console.error('[ISP Import] Fatal error:', err);
+progress.status = 'failed';
+progress.message = err.message;
+importProgress.set(workspaceId, progress);
+});return { logId: log.id };
+}async function runImport(
+workspaceId: string,
+config: any,
+logId: number,
+filterStatus: 'active' | 'active_overdue' | 'all',
+progress: ImportProgress
+) {
+const { provider, credentials } = getProviderFromConfig(config);
+let page = 1;
+let totalCustomers = 0;
+let hasMore = true;console.log([ISP Import] Starting for workspace ${workspaceId} | filter: ${filterStatus});try {
+while (hasMore) {
+progress.message = Buscando página ${page} do ${config.erp_type?.toUpperCase()}...;
+importProgress.set(workspaceId, progress);  const result = await provider.getAllCustomers(credentials, {
+    filterStatus,
+    page,
+    limit: BATCH_SIZE
+  });  if (page === 1) {
+    totalCustomers = result.total || result.customers.length;
+    console.log(`[ISP Import] Total customers to import: ${totalCustomers}`);
+  }  hasMore = result.hasMore && result.customers.length > 0;
+  progress.totalFetched += result.customers.length;  // Process this batch
+  await processBatch(workspaceId, result.customers, progress);  // Update progress percentage
+  if (totalCustomers > 0) {
+    progress.progress = Math.min(99, Math.round((progress.totalFetched / totalCustomers) * 100));
+  }
+  importProgress.set(workspaceId, progress);  page++;  // Rate limit protection
+  if (hasMore) await sleep(DELAY_BETWEEN_PAGES);
+}// Mark completed
+progress.status = 'completed';
+progress.progress = 100;
+progress.message = `Importação concluída! ${progress.totalImported} novos, ${progress.totalUpdated} atualizados.`;
+importProgress.set(workspaceId, progress);await db.update(isp_import_logs).set({
+  status: 'completed',
+  total_fetched: progress.totalFetched,
+  total_imported: progress.totalImported,
+  total_updated: progress.totalUpdated,
+  total_skipped: progress.totalSkipped,
+  total_errors: progress.totalErrors,
+  finished_at: new Date()
+}).where(eq(isp_import_logs.id, logId));console.log(`[ISP Import] Completed: ${progress.totalImported} imported, ${progress.totalUpdated} updated`);} catch (err: any) {
+progress.status = 'failed';
+progress.message = Erro: ${err.message};
+importProgress.set(workspaceId, progress);await db.update(isp_import_logs).set({
+  status: 'failed',
+  error_message: err.message,
+  total_fetched: progress.totalFetched,
+  total_imported: progress.totalImported,
+  total_updated: progress.totalUpdated,
+  finished_at: new Date()
+}).where(eq(isp_import_logs.id, logId));throw err;
+}
+}async function processBatch(
+workspaceId: string,
+customers: ISPCustomer[],
+progress: ImportProgress
+) {
+for (const customer of customers) {
+try {
+// Skip if no phone (can't create WhatsApp contact without phone)
+const phone = customer.telefone?.replace(/\D/g, '');
+if (!phone || phone.length < 10) {
+progress.totalSkipped++;
+continue;
+}  // Normalize phone: ensure starts with 55 (Brazil)
+  const normalizedPhone = phone.startsWith('55') ? phone : `55${phone}`;  // Check if contact already exists by phone in this workspace
+  const existing = await db.query.contacts.findFirst({
+    where: and(
+      eq(contacts.workspace_id, workspaceId),
+      eq(contacts.telefone, normalizedPhone)
+    )
+  });  // Build contact data
+  // Check actual column names in contacts table — adjust field names accordingly
+  const contactData = {
+    workspace_id: workspaceId,
+    nome: customer.nome || 'Sem nome',
+    telefone: normalizedPhone,
+    // Only update nome and telefone as per requirements
+    // Store ERP metadata in tags or custom fields if available
+    updated_at: new Date()
+  };  if (existing) {
+    // Update existing contact
+    await db.update(contacts)
+      .set(contactData)
+      .where(eq(contacts.id, existing.id));
+    progress.totalUpdated++;
+  } else {
+    // Create new contact
+    await db.insert(contacts).values({
+      ...contactData,
+      created_at: new Date()
+    });
+    progress.totalImported++;
+  }} catch (err: any) {
+  console.error(`[ISP Import] Error processing customer ${customer.id}:`, err.message);
+  progress.totalErrors++;
+}
+}
+}function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)); }
+
+## Step 7: Create import routes
+
+Add to server/routes/isp.ts (or create server/routes/isp-import.ts):
+```typescript// POST /api/isp/import/start
+// Starts bulk import job (non-blocking)
+router.post('/import/start', async (req, res) => {
+try {
+const workspaceId = resolveWorkspaceId(req);
+const { filter_status = 'active' } = req.body;if (!['active', 'active_overdue', 'all'].includes(filter_status)) {
+  return res.status(400).json({ error: 'filter_status inválido' });
+}const { logId } = await startBulkImport({
+  workspaceId,
+  filterStatus: filter_status as any
+});res.json({ success: true, logId, message: 'Importação iniciada' });
+} catch (err: any) {
+if (err.message.includes('já está em andamento')) {
+return res.status(409).json({ error: err.message });
+}
+res.status(500).json({ error: err.message });
+}
+});// GET /api/isp/import/progress
+// Poll import progress (frontend polls every 2 seconds)
+router.get('/import/progress', async (req, res) => {
+const workspaceId = resolveWorkspaceId(req);
+const progress = getImportProgress(workspaceId);if (!progress) {
+return res.json({ status: 'idle', message: 'Nenhuma importação em andamento' });
+}res.json(progress);
+});// GET /api/isp/import/history
+// List past import jobs
+router.get('/import/history', async (req, res) => {
+try {
+const workspaceId = resolveWorkspaceId(req);
+const history = await db.select()
+.from(isp_import_logs)
+.where(eq(isp_import_logs.workspace_id, workspaceId))
+.orderBy(desc(isp_import_logs.created_at))
+.limit(10);res.json(history);
+} catch (err: any) {
+res.status(500).json({ error: err.message });
+}
+});
+
+## Step 8: Register routes
+In server/index.ts or wherever ISP routes are registered, ensure the new import routes are included in the existing ISP router.
+
+## After implementing:
+1. Run migration — confirm isp_import_logs table created
+2. Confirm TypeScript compiles
+3. Test: POST /api/isp/import/start with { filter_status: 'active' }
+4. Poll GET /api/isp/import/progress every 2 seconds
+5. Report: what column names exist in the contacts table (especially nome/name, telefone/phone)
+6. Report: does the contacts table have any extra fields like tags, observacoes, custom_fields that we can use to store ERP metadata?

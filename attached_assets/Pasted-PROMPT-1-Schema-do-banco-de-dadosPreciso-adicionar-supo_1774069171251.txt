@@ -1,0 +1,49 @@
+PROMPT 1 — Schema do banco de dadosPreciso adicionar suporte a dois tipos de conta no ChatBanana: 
+"gestor" (parceiro que gerencia clientes) e "empreendedor" (dono 
+de negócio que usa diretamente). Faça as seguintes alterações 
+no schema Drizzle (shared/schema.ts):
+
+1. Na tabela `workspaces`, adicionar as colunas:
+   - account_type: text, default 'empreendedor', 
+     values: 'empreendedor' | 'gestor'
+   - parent_workspace_id: uuid, nullable, 
+     references workspaces(id) on delete set null
+   - max_sub_workspaces: integer, default 0
+   - partner_plan: text, nullable, 
+     values: 'starter' | 'pro' | 'agency' | null
+   - partner_since: timestamp, nullable
+   - white_label_name: text, nullable
+   - white_label_logo: text, nullable
+
+2. Na tabela `users`, adicionar:
+   - account_type: text, default 'empreendedor',
+     values: 'empreendedor' | 'gestor'
+
+3. Criar nova tabela `partner_invites`:
+   - id: uuid primary key default uuid
+   - partner_workspace_id: uuid, references workspaces(id), not null
+   - client_email: text, not null
+   - client_name: text, not null  
+   - business_name: text, not null
+   - invite_token: text, unique, not null
+   - status: text, default 'pending', 
+     values: 'pending' | 'accepted' | 'expired'
+   - expires_at: timestamp, not null
+   - accepted_at: timestamp, nullable
+   - created_workspace_id: uuid, nullable, references workspaces(id)
+   - created_at: timestamp, default now()
+   - workspace_id: uuid, references workspaces(id) (para multi-tenancy)
+
+4. Criar nova tabela `partner_impersonation_tokens`:
+   - id: uuid primary key default uuid
+   - partner_workspace_id: uuid, references workspaces(id), not null
+   - target_workspace_id: uuid, references workspaces(id), not null
+   - partner_user_id: uuid, references users(id), not null
+   - token: text, unique, not null
+   - expires_at: timestamp, not null
+   - used_at: timestamp, nullable
+   - created_at: timestamp, default now()
+
+Após editar o schema, rode `npm run db:push` para aplicar as 
+migrações. Não altere nenhuma tabela existente além das colunas 
+mencionadas. Confirme quando concluído.

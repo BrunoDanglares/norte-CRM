@@ -1,0 +1,118 @@
+PROMPT 3 — FrontendCrie o componente completo Usuarios.jsx para um CRM SaaS.
+Use React com hooks. Use o mesmo padrão visual do projeto: variáveis CSS
+(--bg, --card, --border, --text, --muted, --accent, --accent2, --green, --yellow, --red),
+fonte Plus Jakarta Sans, bordas arredondadas, dark theme.
+
+O componente deve ter 4 abas no topo: Equipe | Equipes | Permissões | Performance
+
+---
+
+ABA 1 — EQUIPE
+
+Header:
+- Título "Usuários & Equipe"
+- Indicador de limite: "X de Y usuários usados" com barra de progresso colorida
+  (verde se < 70%, amarelo se 70-90%, vermelho se > 90%)
+- Botão "Convidar Usuário" (abre modal)
+
+Lista de usuários em cards (grid 2 colunas):
+Cada card mostra:
+- Avatar circular com foto ou inicial do nome como fallback
+- Indicador de status online (bolinha verde pulsante) ou offline (cinza)
+- Nome completo e cargo
+- Badge de role: ADMIN (roxo), MANAGER (azul), AGENT (cinza)
+- Badge de status: ATIVO (verde), INATIVO (vermelho), CONVIDADO (amarelo)
+- Linha de stats: "X leads · Y conversas este mês"
+- Barra de progresso da meta mensal com percentual
+- Botões: Editar (abre modal), e dropdown com: Desativar/Reativar, Ver perfil completo, Excluir
+
+Modal "Convidar Usuário":
+- Campo e-mail
+- Select de role: Manager ou Agent
+- Select de equipe (opcional)
+- Campo meta mensal (número)
+- Botão "Enviar Convite"
+- Após envio: mostra mensagem de sucesso com o e-mail enviado
+
+Modal "Editar Usuário":
+- Campos: nome, cargo, telefone, meta mensal, role, equipe
+- Upload de avatar (apenas UI, salva URL)
+- Botão salvar
+
+---
+
+ABA 2 — EQUIPES
+
+Header com botão "Nova Equipe"
+
+Cards de equipes mostrando:
+- Nome da equipe e descrição
+- Líder da equipe com avatar
+- Avatares dos membros (máximo 5, resto mostra "+N")
+- Contador de membros
+- Botões: Editar, Gerenciar membros, Excluir
+
+Modal "Nova Equipe / Editar":
+- Campo nome e descrição
+- Select de líder (lista de usuários)
+- Botão salvar
+
+Modal "Gerenciar Membros":
+- Lista de usuários que estão na equipe com botão remover
+- Lista de usuários disponíveis para adicionar com botão adicionar
+- Busca por nome
+
+---
+
+ABA 3 — PERMISSÕES
+
+Explicação no topo: "Configure o que cada papel pode fazer no sistema."
+
+Tabela de permissões com:
+- Linhas = permissões (Ver todos os leads, Editar leads de outros, Ver relatórios,
+  Gerenciar conexões, Gerenciar automações, Exportar dados, Convidar usuários)
+- Colunas = roles (Admin, Manager, Agent)
+- Células = Toggle switch (on/off)
+- Admin sempre fica com todos os toggles desabilitados e marcados como true (não editável)
+- Manager e Agent são editáveis
+- Botão "Salvar Permissões" no final
+
+---
+
+ABA 4 — PERFORMANCE
+
+Filtro de período no topo: Esta semana | Este mês | Este trimestre
+
+Ranking geral: top 3 usuários com mais leads fechados (podium visual)
+
+Cards individuais por usuário mostrando:
+- Nome e foto
+- Leads criados no período
+- Conversas atendidas
+- Tempo médio de resposta (simulado)
+- Meta mensal: barra de progresso com "X/Y leads (Z%)"
+- Badge de destaque se bateu a meta: "🏆 Meta batida!"
+
+---
+
+INTEGRAÇÃO COM API:
+
+Ao montar o componente, faça:
+- GET /api/usuarios → popula lista de usuários
+- GET /api/equipes → popula lista de equipes
+- GET /api/permissoes → popula matrix de permissões
+
+Ações que chamam a API:
+- Convidar: POST /api/usuarios/invite
+- Editar usuário: PUT /api/usuarios/:id
+- Desativar/Reativar: PATCH /api/usuarios/:id/status
+- Excluir: DELETE /api/usuarios/:id
+- Criar equipe: POST /api/equipes
+- Adicionar membro: POST /api/equipes/:id/membros
+- Remover membro: DELETE /api/equipes/:id/membros/:userId
+- Salvar permissões: PUT /api/permissoes/:role
+
+Se qualquer chamada falhar, mostre notificação de erro mas não quebre a UI.
+Use dados mock como fallback se a API não responder.
+Inclua token JWT no header de todas as requisições: Authorization: Bearer <token>.
+O token está disponível via localStorage.getItem('token') ou pelo store do projeto.

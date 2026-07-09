@@ -1,0 +1,157 @@
+PROMPT 4 — Guia N8n (arquivo de documentação)
+Gere o arquivo flowcrm-n8n-guide.md na raiz do projeto
+com o guia completo de integração FlowCRM + N8n.
+
+O arquivo deve conter exatamente:
+
+---
+
+# 🔗 Guia de Integração — FlowCRM + N8n
+
+## Visão Geral
+O FlowCRM integra com o N8n de duas formas:
+1. **FlowCRM → N8n**: O CRM dispara eventos via webhook quando
+   algo acontece (lead criado, mensagem recebida, etc.)
+2. **N8n → FlowCRM**: O N8n aciona ações no CRM via API REST
+   autenticada com token
+
+## Passo 1 — Gerar API Token no FlowCRM
+1. Acesse **Integrações → N8n → Aba API Tokens**
+2. Clique em **"Gerar Novo Token"**
+3. Selecione as permissões necessárias
+4. **Copie o token gerado** — ele só é exibido uma vez
+
+## Passo 2 — Configurar Credencial no N8n
+1. No N8n: **Credentials → New → Generic Credential Type → Header Auth**
+2. Name: `FlowCRM`
+3. Header Name: `X-FlowCRM-Token`
+4. Header Value: `[seu token aqui]`
+5. Salvar
+
+## Passo 3 — Usar Prompts Dinâmicos do CRM no N8n
+
+Este é o diferencial: o N8n busca o prompt atualizado do CRM
+antes de cada chamada ao GPT. Assim você muda o comportamento
+da IA pelo CRM sem tocar no fluxo do N8n.
+
+### Estrutura do fluxo no N8n:
+[Webhook Trigger]
+↓
+[HTTP Request] GET https://seu-crm.repl.co/api/ia/prompts/atendimento
+Header: X-FlowCRM-Token: seu-token
+↓ retorna: { data: { prompt, modelo, temperatura } }
+[OpenAI / GPT]
+System Prompt: {{ $('HTTP Request').item.json.data.prompt }}
+Model: {{ $('HTTP Request').item.json.data.modelo }}
+Temperature: {{ $('HTTP Request').item.json.data.temperatura }}
+↓
+[Resposta ao usuário]
+
+### Slugs de prompts disponíveis:
+- `atendimento` → Atendimento WhatsApp
+- `qualificacao` → Qualificação de Leads
+- `followup` → Follow-up Automático
+
+Para criar novos: **CRM → Integrações → N8n → Prompts de IA**
+
+## Passo 4 — Receber Eventos do CRM no N8n
+
+1. No N8n: adicione nó **Webhook** e copie a URL gerada
+2. No CRM: **Integrações → N8n → Aba Conexão**
+3. Cole a URL do N8n e salve
+4. Na aba **Eventos**, selecione quais eventos quer receber
+
+### Payloads dos eventos:
+
+**lead.created / lead.updated / lead.won / lead.lost:**
+```json
+{
+  "evento": "lead.created",
+  "timestamp": "2025-01-01T00:00:00Z",
+  "data": {
+    "id": "uuid",
+    "nome": "João Silva",
+    "telefone": "11999990000",
+    "email": "joao@empresa.com",
+    "empresa": "Acme Inc",
+    "status": "NOVO",
+    "canal": "whatsapp",
+    "valor": 5000,
+    "origem": "whatsapp_inbound"
+  }
+}
+```
+
+**message.received:**
+```json
+{
+  "evento": "message.received",
+  "timestamp": "2025-01-01T00:00:00Z",
+  "data": {
+    "conversa_id": "uuid",
+    "lead": { "id": "uuid", "nome": "João", "telefone": "11999990000" },
+    "mensagem": {
+      "conteudo": "Olá, preciso de ajuda",
+      "de": "5511999990000",
+      "tipo": "text"
+    }
+  }
+}
+```
+
+**deal.moved:**
+```json
+{
+  "evento": "deal.moved",
+  "timestamp": "2025-01-01T00:00:00Z",
+  "data": {
+    "lead": { "id": "uuid", "nome": "João" },
+    "de": "CONTATADO",
+    "para": "QUALIFICADO"
+  }
+}
+```
+
+## Passo 5 — N8n acionando o CRM
+
+Base URL: `https://[seu-crm].repl.co/api/n8n`
+Header obrigatório: `X-FlowCRM-Token: [seu-token]`
+
+### Criar lead:
+POST /api/n8n/lead
+Body: { "nome": "João", "telefone": "11999990000", "canal": "whatsapp" }
+
+### Enviar mensagem WhatsApp:
+POST /api/n8n/mensagem
+Body: { "telefone": "5511999990000", "mensagem": "Olá João!" }
+
+### Mover lead no pipeline:
+POST /api/n8n/lead/:id/mover
+Body: { "status": "QUALIFICADO" }
+
+### Atualizar lead:
+PATCH /api/n8n/lead/:id
+Body: { "valor": 10000, "empresa": "Nova Empresa" }
+
+### Listar leads:
+GET /api/n8n/leads?status=NOVO&limit=10
+
+## Verificar Assinatura dos Webhooks (opcional)
+
+Se configurou um Secret no CRM, valide no N8n com nó Code:
+```javascript
+const crypto = require('crypto');
+const secret = 'seu-secret';
+const signature = $input.item.json.headers['x-flowcrm-signature'];
+const body = JSON.stringify($input.item.json.body);
+const expected = 'sha256=' + crypto
+  .createHmac('sha256', secret)
+  .update(body)
+  .digest('hex');
+if (signature !== expected) throw new Error('Assinatura inválida');
+return $input.item;
+```
+
+---
+
+Salve como `flowcrm-n8n-guide.md` na raiz do projeto.

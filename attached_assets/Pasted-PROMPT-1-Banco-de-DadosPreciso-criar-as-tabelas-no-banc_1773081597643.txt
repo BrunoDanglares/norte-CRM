@@ -1,0 +1,48 @@
+PROMPT 1 — Banco de DadosPreciso criar as tabelas no banco de dados para suportar
+o módulo de Conexões de WhatsApp via Z-API no FlowCRM.
+
+1. CRIAR tabela `conexoes`:
+- id: UUID, primary key, gerado automaticamente
+- nome: TEXT, obrigatório — nome amigável (ex: "WhatsApp Vendas")
+- tipo: TEXT, default 'whatsapp' — valores: 'whatsapp', 'instagram', 'webchat'
+- provider: TEXT, default 'zapi' — valores: 'zapi', 'official', 'evolution'
+- instance_id: TEXT, opcional — ID da instância na Z-API
+- token: TEXT, opcional — token da instância na Z-API
+- numero: TEXT, opcional — número conectado (ex: "5511999990000")
+- status: TEXT, default 'disconnected'
+  valores: 'connected', 'disconnected', 'connecting', 'qr_pending', 'error'
+- qr_code: TEXT, opcional — base64 do QR Code atual
+- qr_expires_at: TIMESTAMP, opcional
+- webhook_url: TEXT, opcional — URL configurada no provedor
+- ultimo_ping: TIMESTAMP, opcional
+- workspace_id: UUID, opcional
+- plano_limite: INTEGER, default 1 — máximo de conexões permitidas
+- created_at: TIMESTAMP, default NOW()
+- updated_at: TIMESTAMP, default NOW()
+
+2. CRIAR tabela `mensagens_log`:
+- id: UUID, primary key, gerado automaticamente
+- conexao_id: UUID, referencia conexoes.id ON DELETE CASCADE
+- direction: TEXT — 'inbound' ou 'outbound'
+- from_number: TEXT
+- to_number: TEXT
+- content: TEXT
+- message_id: TEXT — ID da mensagem na Z-API
+- status: TEXT — 'sent', 'delivered', 'read', 'failed'
+- raw_payload: JSONB, opcional — payload bruto recebido
+- created_at: TIMESTAMP, default NOW()
+
+3. ADICIONAR coluna `conexao_id` na tabela `leads` (se não existir):
+- conexao_id: UUID, opcional, referencia conexoes.id
+
+4. ADICIONAR coluna `conexao_id` na tabela `conversations` ou equivalente:
+- conexao_id: UUID, opcional, referencia conexoes.id
+
+5. CRIAR índices:
+- conexoes(status), conexoes(workspace_id)
+- mensagens_log(conexao_id), mensagens_log(from_number)
+- mensagens_log(created_at)
+
+Se usar Prisma, atualize schema.prisma e rode migration.
+Se usar SQL puro, execute diretamente.
+Confirme ao final as tabelas e colunas criadas.

@@ -1,0 +1,91 @@
+> rest-express@1.0.0 db:push
+> drizzle-kit push
+
+No config path provided, using default 'drizzle.config.ts'
+Reading config file '/app/drizzle.config.ts'
+Using 'pg' driver for database querying
+[⣷] Pulling schema from database...
+[⣯] Pulling schema from database...
+[⣟] Pulling schema from database...
+[⡿] Pulling schema from database...
+[⢿] Pulling schema from database...
+[⣻] Pulling schema from database...
+[⣽] Pulling schema from database...
+[⣷] Pulling schema from database...
+[⣯] Pulling schema from database...
+[⣟] Pulling schema from database...
+[⡿] Pulling schema from database...
+[⢿] Pulling schema from database...
+[⣻] Pulling schema from database...
+[⣽] Pulling schema from database...
+[⣷] Pulling schema from database...
+[⣯] Pulling schema from database...
+[⣟] Pulling schema from database...
+[⡿] Pulling schema from database...
+[✓] Pulling schema from database...
+[✓] Changes applied
+[Boot] Meta webhook registered at /api/webhook/meta (public, no auth)
+[Boot] Backfilling telefone for 4 conversations...
+[Boot] Telefone backfill complete
+[Boot] WhatsApp Official (Meta Cloud API) routes registered at /api/whatsapp-official
+[Boot] ISP module routes registered at /api/isp
+[Boot] Instagram routes registered at /api/instagram
+[Boot] Insta Prospect routes registered at /api/insta-prospect
+[ISP Schedulers] ✅ Billing at 08:00 BRT | Birthday at 09:00 BRT
+[Meta Webhook] POST received, object: whatsapp_business_account entries: 1
+[Meta Webhook] Found connection for ws: aa73eb2b-b80d-4b6a-924f-79117f4fdf7e messages: 1 automacaoId: 8771ba08-e6e0-4b06-b386-3dc7a79f1ce3
+[AI-ISP] IA ISP habilitada para workspace aa73eb2b-b80d-4b6a-924f-79117f4fdf7e (ERP: sgp)
+[ChannelRouter] ✅ Sent text via Meta to 559192424228
+[Meta Webhook] POST received, object: whatsapp_business_account entries: 1
+[Meta Webhook] Found connection for ws: aa73eb2b-b80d-4b6a-924f-79117f4fdf7e messages: 0 automacaoId: 8771ba08-e6e0-4b06-b386-3dc7a79f1ce3
+[Meta Webhook] POST received, object: whatsapp_business_account entries: 1
+[Meta Webhook] Found connection for ws: aa73eb2b-b80d-4b6a-924f-79117f4fdf7e messages: 0 automacaoId: 8771ba08-e6e0-4b06-b386-3dc7a79f1ce3
+[Meta Webhook] POST received, object: whatsapp_business_account entries: 1
+[Meta Webhook] Found connection for ws: aa73eb2b-b80d-4b6a-924f-79117f4fdf7e messages: 1 automacaoId: 8771ba08-e6e0-4b06-b386-3dc7a79f1ce3
+[AI-ISP] IA ISP habilitada para workspace aa73eb2b-b80d-4b6a-924f-79117f4fdf7e (ERP: sgp)
+[ChannelRouter] ✅ Sent text via Meta to 559192424228
+[Meta Webhook] POST received, object: whatsapp_business_account entries: 1
+[Meta Webhook] Found connection for ws: aa73eb2b-b80d-4b6a-924f-79117f4fdf7e messages: 0 automacaoId: 8771ba08-e6e0-4b06-b386-3dc7a79f1ce3
+[Meta Webhook] POST received, object: whatsapp_business_account entries: 1
+[Meta Webhook] Found connection for ws: aa73eb2b-b80d-4b6a-924f-79117f4fdf7e messages: 0 automacaoId: 8771ba08-e6e0-4b06-b386-3dc7a79f1ce3
+[Meta Webhook] POST received, object: whatsapp_business_account entries: 1
+[Meta Webhook] Found connection for ws: aa73eb2b-b80d-4b6a-924f-79117f4fdf7e messages: 1 automacaoId: 8771ba08-e6e0-4b06-b386-3dc7a79f1ce3
+[AI-ISP] IA ISP habilitada para workspace aa73eb2b-b80d-4b6a-924f-79117f4fdf7e (ERP: sgp)
+[AI-ISP] Tags ISP encontradas na resposta da IA: CPF=1, 2via=0, desbloquear=0, confirmar=0, promessa=0, OS=0 | ispEnabled=true
+[AI-ISP] Buscando cliente por CPF: "83295321191" (original: "83295321191")
+[SGP] searchCustomerByCPF: CPF="83295321191" URL="https://sgpanp.redeconexaonet.com/api/ura/consultacliente/"
+[SGP] POST https://sgpanp.redeconexaonet.com/api/ura/consultacliente/ | fields=cpfcnpj=83295321191 | bodyLen=70
+[SGP] searchCustomerByCPF: encontrado 1 contrato(s) | plano="600 MEGA FIBRA - PLANO BASICO"
+[AI-ISP] Resultado busca CPF 83295321191: encontrado - ABADIA PINTO DA ROCHA (ID: 6011)
+[SGP] POST https://sgpanp.redeconexaonet.com/api/ura/titulos/ | fields=contrato=8951 | bodyLen=64
+[ChannelRouter] ✅ Sent text via Meta to 559192424228
+[Meta Webhook] POST received, object: whatsapp_business_account entries: 1
+[Meta Webhook] Found connection for ws: aa73eb2b-b80d-4b6a-924f-79117f4fdf7e messages: 0 automacaoId: 8771ba08-e6e0-4b06-b386-3dc7a79f1ce3
+[Meta Webhook] POST received, object: whatsapp_business_account entries: 1
+[Meta Webhook] Found connection for ws: aa73eb2b-b80d-4b6a-924f-79117f4fdf7e messages: 0 automacaoId: 8771ba08-e6e0-4b06-b386-3dc7a79f1ce3
+[AI-ISP] Enviando boleto: boleto_112062_R$120.00.pdf | URL: https://sgpanp.redeconexaonet.com/boleto/108959-RIYV8Z89GM/
+[ChannelRouter] ✅ Sent document via Meta to 559192424228
+[ChannelRouter] ✅ Sent text via Meta to 559192424228
+[Meta Webhook] POST received, object: whatsapp_business_account entries: 1
+[Meta Webhook] Found connection for ws: aa73eb2b-b80d-4b6a-924f-79117f4fdf7e messages: 0 automacaoId: 8771ba08-e6e0-4b06-b386-3dc7a79f1ce3
+[Meta Webhook] POST received, object: whatsapp_business_account entries: 1
+[Meta Webhook] Found connection for ws: aa73eb2b-b80d-4b6a-924f-79117f4fdf7e messages: 0 automacaoId: 8771ba08-e6e0-4b06-b386-3dc7a79f1ce3
+[Meta Webhook] POST received, object: whatsapp_business_account entries: 1
+[Meta Webhook] Found connection for ws: aa73eb2b-b80d-4b6a-924f-79117f4fdf7e messages: 0 automacaoId: 8771ba08-e6e0-4b06-b386-3dc7a79f1ce3
+[Meta Webhook] POST received, object: whatsapp_business_account entries: 1
+[Meta Webhook] Found connection for ws: aa73eb2b-b80d-4b6a-924f-79117f4fdf7e messages: 0 automacaoId: 8771ba08-e6e0-4b06-b386-3dc7a79f1ce3
+[ChannelRouter] ✅ Sent text via Meta to 559192424228
+[Meta Webhook] POST received, object: whatsapp_business_account entries: 1
+[Meta Webhook] Found connection for ws: aa73eb2b-b80d-4b6a-924f-79117f4fdf7e messages: 0 automacaoId: 8771ba08-e6e0-4b06-b386-3dc7a79f1ce3
+[Meta Webhook] POST received, object: whatsapp_business_account entries: 1
+[Meta Webhook] Found connection for ws: aa73eb2b-b80d-4b6a-924f-79117f4fdf7e messages: 0 automacaoId: 8771ba08-e6e0-4b06-b386-3dc7a79f1ce3
+[Meta Webhook] POST received, object: whatsapp_business_account entries: 1
+[Meta Webhook] Found connection for ws: aa73eb2b-b80d-4b6a-924f-79117f4fdf7e messages: 1 automacaoId: 8771ba08-e6e0-4b06-b386-3dc7a79f1ce3
+[AI-ISP] IA ISP habilitada para workspace aa73eb2b-b80d-4b6a-924f-79117f4fdf7e (ERP: sgp)
+[AutomationEngine] Audio transcription error: Audio download failed: 401 Unauthorized
+[AutomationEngine] All audio transcription methods failed: Missing credentials. Please pass an `apiKey`, or set the `OPENAI_API_KEY` environment variable.
+[ChannelRouter] ✅ Sent text via Meta to 559192424228
+[Meta Webhook] POST received, object: whatsapp_business_account entries: 1
+[Meta Webhook] Found connection for ws: aa73eb2b-b80d-4b6a-924f-79117f4fdf7e messages: 0 automacaoId: 8771ba08-e6e0-4b06-b386-3dc7a79f1ce3
+[Meta Webhook] POST received, object: whatsapp_business_account entries: 1
+[Meta Webhook] Found connection for ws: aa73eb2b-b80d-4b6a-924f-79117f4fdf7e messages: 0 automacaoId: 8771ba08-e6e0-4b06-b386-3dc7a79f1ce3

@@ -1,0 +1,140 @@
+Migração limpa. Detalhe importante — o workspace_id está como UUID, não INTEGER. Isso afeta o Prompt 2. Vamos seguir.
+
+PROMPT 2 — Backend: Filtrar queries por workspace_id
+Audite e corrija o isolamento de dados multi-tenant no FlowCRM.
+A migration já adicionou workspace_id (UUID) em todas as tabelas core.
+O JWT já inclui workspaceId. O helper resolveWorkspaceId(req) já existe.
+
+## OBJETIVO
+Garantir que NENHUMA query retorna dados de outro workspace.
+Faça uma varredura completa em server/routes.ts e server/storage.ts.
+
+---
+
+## PARTE 1: Auditoria — encontre todos os vazamentos
+
+Procure por queries que NÃO filtram por workspace_id:
+
+Padrões a buscar:
+- SELECT * FROM leads WHERE id = $1  (sem AND workspace_id)
+- SELECT * FROM conversations        (sem WHERE workspace_id)
+- DELETE FROM leads WHERE id = $1    (sem AND workspace_id)
+- UPDATE leads SET ... WHERE id = $1 (sem AND workspace_id)
+
+Para cada ocorrência encontrada, liste o método/rota e corrija.
+
+---
+
+## PARTE 2: Padrão de correção
+
+Use este padrão em todos os métodos do storage.ts:
+
+### Listagem
+```typescript
+// ANTES
+SELECT * FROM leads ORDER BY created_at DESC
+
+// DEPOIS  
+SELECT * FROM leads WHERE workspace_id = $1 ORDER BY created_at DESC
+// params: [workspaceId]
+```
+
+### Busca por ID (previne acesso cross-tenant)
+```typescript
+// ANTES
+SELECT * FROM leads WHERE id = $1
+
+// DEPOIS
+SELECT * FROM leads WHERE id = $1 AND workspace_id = $2
+// Se não encontrar → retorna null (rota retorna 404)
+// params: [id, workspaceId]
+```
+
+### Criação
+```typescript
+// ANTES
+INSERT INTO leads (name, phone) VALUES ($1, $2)
+
+// DEPOIS
+INSERT INTO leads (name, phone, workspace_id) VALUES ($1, $2, $3)
+// params: [...campos, workspaceId]
+```
+
+### Update / Delete
+```typescript
+// ANTES
+UPDATE leads SET name = $1 WHERE id = $2
+
+// DEPOIS
+UPDATE leads SET name = $1 WHERE id = $2 AND workspace_id = $3
+// Se 0 rows affected → retorna null (rota retorna 404)
+```
+
+---
+
+## PARTE 3: Corrigir rotas para passar workspaceId
+
+Em server/routes.ts, todas as rotas protegidas devem extrair e passar workspaceId:
+```typescript
+// Em cada rota autenticada
+const workspaceId = resolveWorkspaceId(req)
+
+// Passar para o storage
+const leads = await storage.getLeads(workspaceId)
+const lead = await storage.createLead({ ...req.body, workspaceId })
+const lead = await storage.updateLead(id, req.body, workspaceId)
+const lead = await storage.getLead(id, workspaceId)
+```
+
+Aplique para todas as entidades:
+leads, contacts, conversations, messages, deals,
+appointments, transactions, automacoes, campanhas,
+pipeline_stages, tags
+
+---
+
+## PARTE 4: Webhook Z-API — workspace por conexão
+
+No handler POST /api/webhooks/zapi:
+```typescript
+// Identifique o workspace pela instância Z-API que recebeu a mensagem
+const instanceId = webhookPayload.instanceId || webhookPayload.phone
+
+const conexao = await db.query(
+  `SELECT workspace_id FROM conexoes 
+   WHERE instance_id = $1 OR zapi_instance_id = $1 
+   LIMIT 1`,
+  [instanceId]
+)
+
+const workspaceId = conexao.rows[0]?.workspace_id 
+  || process.env.DEFAULT_WORKSPACE_ID  // UUID do workspace padrão
+
+// Use em todas as operações subsequentes do webhook
+await storage.createLead({ ...leadData, workspaceId })
+await storage.createConversation({ ...convData, workspaceId })
+await storage.createMessage({ ...msgData, workspaceId })
+```
+
+---
+
+## PARTE 5: Engine de automações
+
+No arquivo automationEngine.ts:
+
+1. Renomeie context.tenantId → context.workspaceId em todo o arquivo
+2. Atualize as queries que usavam tenant_id = $n para workspace_id = $n
+3. Na função triggerZapierWebhook, atualize o parâmetro tenantId → workspaceId
+4. Em automation_pending_inputs, use workspace_id (nova coluna) em vez de tenant_id
+
+---
+
+## PARTE 6: Teste de isolamento
+
+Após implementar, execute este teste manual:
+
+1. Crie um lead via POST /api/leads com o usuário do workspace padrão
+2. Tente buscar esse lead com um token JWT de outro workspace_id (UUID diferente)
+3. Deve retornar 404 — se retornar o lead, o isolamento ainda está quebrado
+
+Reporte quais métodos foram corrigidos e se o teste de isolamento passou.

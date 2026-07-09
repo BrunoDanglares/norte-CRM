@@ -1,0 +1,455 @@
+Fix the IXC adapter in server/services/ixc-adapter.ts based on the REAL IXC Provedor API structure documented below.
+
+## IXC API — Real Documentation
+
+### Authentication
+- URL base: https://seudominio.com.br/webservice/v1/
+- Auth: Basic Auth where username = token ID, password = token hash
+- Token format in header: Authorization: Basic base64("ID:HASH")
+  Example: if token ID=123 and hash="abc123", encode "123:abc123" in base64
+- Header obrigatório para listagem: ixcsoft: listar
+- Header obrigatório para inserção: ixcsoft: incluir  
+- Header obrigatório para alteração: ixcsoft: alterar
+- Content-Type: application/json
+
+### How IXC API works (IMPORTANT — different from SGP)
+IXC is form-based. Every table is an endpoint. Filtering uses these query params:
+- qtype: field name to filter by
+- query: value to search
+- oper: operator (=, !=, >, <, like)
+- page: page number (start at 1)
+- rp: records per page
+
+Example — search client by CPF:
+GET {baseUrl}/cliente?qtype=cpf_cnpj&query=123.456.789-00&oper=%3D&page=1&rp=1
+
+For multiple filters, use grid_param as JSON array:
+POST {baseUrl}/cliente
+Header: ixcsoft: listar
+Body: {
+  "qtype": "cpf_cnpj",
+  "query": "12345678900",
+  "oper": "=",
+  "page": "1",
+  "rp": "1"
+}
+
+### Real response structure — cliente
+{
+  "type": "success",
+  "total": "1",
+  "registros": [
+    {
+      "id": "123",
+      "razao": "NOME COMPLETO DO CLIENTE",
+      "fantasia": "APELIDO",
+      "tipo_pessoa": "F",
+      "cpf_cnpj": "123.456.789-00",
+      "ativo": "S",
+      "data_nascimento": "1990-05-15",
+      "fone": "(91) 3333-3333",
+      "celular": "(91) 99999-9999",
+      "whatsapp": "(91) 99999-9999",
+      "email": "cliente@email.com",
+      "cep": "66000-000",
+      "endereco": "RUA EXEMPLO",
+      "numero": "123",
+      "bairro": "BAIRRO",
+      "cidade": "BELÉM",
+      "uf": "PA",
+      "complemento": "",
+      "ativo": "S",
+      "data_cadastro": "2023-01-15"
+    }
+  ]
+}
+
+ativo values: "S" = ativo, "N" = inativo/cancelado
+
+### Real response structure — contrato (needed to get plan name)
+GET {baseUrl}/cliente_contrato?qtype=id_cliente&query={clienteId}&oper=%3D&page=1&rp=5
+Header: ixcsoft: listar
+
+{
+  "type": "success",
+  "registros": [
+    {
+      "id": "456",
+      "id_cliente": "123",
+      "id_conc_velocidade": "10",
+      "descricao": "PLANO 100MB",
+      "ativo": "S",
+      "tipo": "P",
+      "mensalidade": "89.90",
+      "data_ativacao": "2023-01-15",
+      "data_vencimento": "2024-12-31",
+      "situacao": "A"
+    }
+  ]
+}
+
+### Real response structure — fn_areceber (faturas/contas a receber)
+GET {baseUrl}/fn_areceber?qtype=id_cliente&query={clienteId}&oper=%3D&page=1&rp=20
+Header: ixcsoft: listar
+
+{
+  "type": "success",
+  "total": "3",
+  "registros": [
+    {
+      "id": "789",
+      "id_cliente": "123",
+      "id_contrato": "456",
+      "parcela": "1",
+      "descricao": "Mensalidade Internet",
+      "valor": "89.90",
+      "valor_pago": "0.00",
+      "data_vencimento": "2024-03-15",
+      "data_pagamento": null,
+      "status": "A",
+      "forma_pagamento": "B",
+      "linha_digitavel": "03399.12345 67890.123456 78901.234567 8 12340000008990",
+      "url_boleto": "https://boleto.exemplo.com.br/123",
+      "pix_copia_cola": "00020126580014br.gov.bcb.pix...",
+      "nosso_numero": "12345678",
+      "banco": "033",
+      "multa": "0.00",
+      "juros": "0.00",
+      "desconto": "0.00"
+    }
+  ]
+}
+
+status values: "A" = aberto, "B" = baixado/pago, "C" = cancelado
+
+### Real response — su_oss_chamado (ordens de serviço)
+POST {baseUrl}/su_oss_chamado
+Header: ixcsoft: incluir
+
+Request body:
+{
+  "id_cliente": "123",
+  "id_contrato": "456",
+  "assunto": "Sem sinal de internet",
+  "mensagem": "Cliente relatou que perdeu o sinal às 14h",
+  "tipo": "C",
+  "prioridade": "N",
+  "id_setor": "1"
+}
+
+Response:
+{
+  "type": "success",
+  "id": "999",
+  "message": "Registro incluído com sucesso"
+}
+
+GET {baseUrl}/su_oss_chamado/{id}
+Header: ixcsoft: listar
+
+Response registros[0]:
+{
+  "id": "999",
+  "id_cliente": "123",
+  "assunto": "Sem sinal de internet",
+  "mensagem": "Cliente relatou...",
+  "status": "A",
+  "prioridade": "N",
+  "data_abertura": "2024-03-15 14:30:00",
+  "data_fechamento": null,
+  "protocolo": "OS-999"
+}
+
+status values: "A" = aberto, "E" = em andamento, "F" = fechado/resolvido, "C" = cancelado
+
+### 2ª via / PIX — IXC special endpoint
+POST {baseUrl}/fn_areceber_gerar_boleto
+Header: ixcsoft: incluir
+
+Body:
+{
+  "id": "789"  -- ID da fatura (fn_areceber)
+}
+
+Response:
+{
+  "type": "success",
+  "boleto_url": "https://...",
+  "linha_digitavel": "03399...",
+  "pix": "00020126..."
+}
+
+OR for some IXC versions, the boleto/pix data is already in the fn_areceber record
+and just needs to be refreshed by calling:
+GET {baseUrl}/fn_areceber/{id}
+
+## What to fix in server/services/ixc-adapter.ts
+
+### 1. Fix Authentication
+IXC uses TWO separate fields for auth — token ID and token hash:
+```typescript
+// Update ISPCredentials in isp-provider.interface.ts:
+// Add: ixcTokenId?: string  -- the numeric ID of the token user
+// ixcApiToken stays as the hash/password
+
+// In ixc-adapter, build Basic Auth:
+function getIXCHeaders(credentials: ISPCredentials): HeadersInit {
+  // credentials.ixcTokenId = "123" (user ID)
+  // credentials.apiToken = "abc123hash" (token hash)
+  const encoded = Buffer.from(`${credentials.ixcTokenId}:${credentials.apiToken}`).toString('base64');
+  return {
+    'Authorization': `Basic ${encoded}`,
+    'Content-Type': 'application/json'
+  };
+}
+```
+
+Update isp_configs table — add column:
+- ixc_token_id: text (the numeric user ID for IXC auth)
+
+Update isp-provider-factory.ts buildCredentials to include ixcTokenId.
+
+Update frontend ISP config form — when erp_type === 'ixc', show TWO token fields:
+- "ID do Usuário Token" (ixc_token_id)  
+- "Hash do Token" (sgp_api_token reused)
+
+### 2. Fix searchCustomerByCPF
+Change to:
+```typescript
+// GET {baseUrl}/cliente with query params
+const cleanCPF = cpf.replace(/\D/g, '');
+const url = `${credentials.baseUrl}/cliente?qtype=cpf_cnpj&query=${cleanCPF}&oper=%3D&page=1&rp=1`;
+
+const response = await ixcFetch(url, {
+  method: 'GET',
+  headers: { ...getIXCHeaders(credentials), 'ixcsoft': 'listar' }
+});
+
+if (!response.registros?.length) return null;
+const c = response.registros[0];
+
+// Also fetch contract to get plan name
+const contratoUrl = `${credentials.baseUrl}/cliente_contrato?qtype=id_cliente&query=${c.id}&oper=%3D&page=1&rp=1`;
+const contratoResp = await ixcFetch(contratoUrl, {
+  method: 'GET',
+  headers: { ...getIXCHeaders(credentials), 'ixcsoft': 'listar' }
+}).catch(() => ({ registros: [] }));
+const contrato = contratoResp.registros?.[0];
+
+return {
+  id: String(c.id),
+  contratoId: String(contrato?.id || ''), // store for invoice queries
+  nome: c.razao || c.fantasia || '',
+  cpf: c.cpf_cnpj || '',
+  telefone: c.whatsapp || c.celular || c.fone || '',
+  email: c.email || '',
+  plano: contrato?.descricao || '',
+  dataNascimento: c.data_nascimento || null,
+  status: c.ativo === 'S' ? 'ativo' : 'cancelado',
+  endereco: `${c.endereco || ''}, ${c.numero || ''} - ${c.bairro || ''} - ${c.cidade || ''}`
+};
+```
+
+### 3. Fix getOpenInvoices
+```typescript
+// GET fn_areceber filtering by id_cliente AND status=A (aberto)
+const url = `${credentials.baseUrl}/fn_areceber?qtype=id_cliente&query=${customerId}&oper=%3D&page=1&rp=50`;
+
+const response = await ixcFetch(url, {
+  method: 'GET',
+  headers: { ...getIXCHeaders(credentials), 'ixcsoft': 'listar' }
+});
+
+// Filter only open (A) invoices
+const openInvoices = (response.registros || []).filter((inv: any) => inv.status === 'A');
+
+return openInvoices.map((inv: any): ISPInvoice => ({
+  id: String(inv.id),
+  customerId: String(inv.id_cliente),
+  numero: inv.nosso_numero || inv.parcela || String(inv.id),
+  valor: parseFloat(inv.valor) || 0,
+  vencimento: inv.data_vencimento,
+  status: inv.status === 'A' ? 'aberto' : inv.status === 'B' ? 'pago' : 'cancelado',
+  linhaDigitavel: inv.linha_digitavel || null,
+  linkBoleto: inv.url_boleto || null,
+  pix: inv.pix_copia_cola || null,
+  diasAtraso: calcDiasAtraso(inv.data_vencimento)
+})).sort((a, b) => new Date(a.vencimento).getTime() - new Date(b.vencimento).getTime());
+```
+
+### 4. Fix generateSecondCopy
+```typescript
+// Try IXC special endpoint first, fallback to reading existing data
+const url = `${credentials.baseUrl}/fn_areceber_gerar_boleto`;
+
+const response = await ixcFetch(url, {
+  method: 'POST',
+  headers: { ...getIXCHeaders(credentials), 'ixcsoft': 'incluir' },
+  body: JSON.stringify({ id: invoiceId })
+}).catch(async () => {
+  // Fallback: just read the existing invoice data
+  const invoiceUrl = `${credentials.baseUrl}/fn_areceber/${invoiceId}`;
+  return ixcFetch(invoiceUrl, {
+    method: 'GET',
+    headers: { ...getIXCHeaders(credentials), 'ixcsoft': 'listar' }
+  });
+});
+
+// Handle both response formats
+const inv = response.registros?.[0] || response;
+return {
+  linhaDigitavel: response.linha_digitavel || inv.linha_digitavel || '',
+  linkBoleto: response.boleto_url || inv.url_boleto || '',
+  pix: response.pix || inv.pix_copia_cola || null,
+  vencimento: inv.data_vencimento || '',
+  valor: parseFloat(inv.valor) || 0
+};
+```
+
+### 5. Fix createSupportTicket
+```typescript
+// Need id_setor — use default 1 or from config
+const url = `${credentials.baseUrl}/su_oss_chamado`;
+
+const tipoMap: Record<string, string> = {
+  'sem_sinal': 'Sem sinal de internet',
+  'lentidao': 'Internet lenta',
+  'sem_wifi': 'Sem sinal WiFi',
+  'financeiro': 'Dúvida financeira',
+  'outros': 'Outros'
+};
+
+const body = {
+  id_cliente: params.customerId,
+  assunto: tipoMap[params.tipo] || params.tipo,
+  mensagem: params.descricao,
+  tipo: 'C',
+  prioridade: 'N',
+  id_setor: '1'  -- default sector ID
+};
+
+const response = await ixcFetch(url, {
+  method: 'POST',
+  headers: { ...getIXCHeaders(credentials), 'ixcsoft': 'incluir' },
+  body: JSON.stringify(body)
+});
+
+if (response.type === 'error') {
+  throw new ISPError(response.message || 'Erro ao abrir chamado', 400, 'ixc');
+}
+
+return {
+  id: String(response.id),
+  customerId: params.customerId,
+  tipo: params.tipo,
+  descricao: params.descricao,
+  status: 'aberto',
+  criadoEm: new Date().toISOString(),
+  protocolo: `OS-${response.id}`
+};
+```
+
+### 6. Fix getTicketStatus
+```typescript
+const url = `${credentials.baseUrl}/su_oss_chamado/${ticketId}`;
+
+const response = await ixcFetch(url, {
+  method: 'GET',
+  headers: { ...getIXCHeaders(credentials), 'ixcsoft': 'listar' }
+});
+
+const t = response.registros?.[0];
+if (!t) throw new ISPError('Chamado não encontrado', 404, 'ixc');
+
+const statusMap: Record<string, ISPTicket['status']> = {
+  'A': 'aberto',
+  'E': 'em_andamento',
+  'F': 'resolvido',
+  'C': 'resolvido'
+};
+
+return {
+  id: String(t.id),
+  customerId: String(t.id_cliente),
+  tipo: t.assunto || '',
+  descricao: t.mensagem || '',
+  status: statusMap[t.status] || 'aberto',
+  criadoEm: t.data_abertura || new Date().toISOString(),
+  protocolo: t.protocolo || `OS-${t.id}`
+};
+```
+
+### 7. Fix getOverdueCustomers
+```typescript
+// Filter fn_areceber by status=A AND data_vencimento <= targetDate
+const targetDate = new Date();
+targetDate.setDate(targetDate.getDate() - daysOverdue);
+const dateStr = targetDate.toISOString().split('T')[0];
+
+// Use grid_param for multiple filters
+const body = JSON.stringify({
+  grid_param: JSON.stringify([
+    { TB: "status", OP: "=", P: "A", C: "AND", G: "status" },
+    { TB: "data_vencimento", OP: "<=", P: dateStr, C: "AND", G: "data_vencimento" }
+  ]),
+  page: "1",
+  rp: "100"
+});
+
+const url = `${credentials.baseUrl}/fn_areceber`;
+const response = await ixcFetch(url, {
+  method: 'POST',
+  headers: { ...getIXCHeaders(credentials), 'ixcsoft': 'listar' },
+  body
+});
+```
+
+### 8. Fix getInvoicesDueSoon
+```typescript
+// Filter fn_areceber by status=A AND data_vencimento = targetDate
+const targetDate = new Date();
+targetDate.setDate(targetDate.getDate() + daysUntilDue);
+const dateStr = targetDate.toISOString().split('T')[0];
+
+const body = JSON.stringify({
+  grid_param: JSON.stringify([
+    { TB: "status", OP: "=", P: "A", C: "AND", G: "status" },
+    { TB: "data_vencimento", OP: "=", P: dateStr, C: "AND", G: "data_vencimento" }
+  ]),
+  page: "1",
+  rp: "100"
+});
+```
+
+### 9. Update isp_configs schema
+Add column via migration:
+- ixc_token_id: text (nullable — only used for IXC)
+
+Update isp-provider-factory.ts:
+```typescript
+export function buildCredentials(config: any): ISPCredentials {
+  return {
+    baseUrl: config.sgp_base_url,
+    apiToken: config.sgp_api_token,
+    erpType: config.erp_type || 'sgp',
+    sgpApp: config.sgp_app_name,
+    ixcTokenId: config.ixc_token_id  // add this
+  };
+}
+```
+
+### 10. Update ISP config frontend
+When erp_type === 'ixc', replace single "API Token" field with TWO fields:
+- "ID do Usuário Token" → maps to ixc_token_id
+  (helper: "Encontre em IXC → Configurações → Usuários → ID do usuário de integração")
+- "Hash do Token" → maps to sgp_api_token
+  (helper: "O token gerado para o usuário de integração no IXC")
+
+## After implementing:
+1. Run migration — confirm ixc_token_id column added to isp_configs
+2. Confirm TypeScript compiles
+3. Test with real IXC credentials:
+   - Select IXC in the /isp-config page
+   - Fill ixc_token_id and token hash
+   - Click "Testar Conexão"
+4. Report the raw JSON response from the first API call
