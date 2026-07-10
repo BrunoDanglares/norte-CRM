@@ -245,6 +245,14 @@
         <li>Logs de automações executadas e campanhas disparadas</li>
         <li>Dados de desempenho para relatórios e melhoria do Serviço</li>
       </ul>
+      <p><strong>Dados do Instagram (integração opcional, quando o Cliente conecta uma conta Profissional):</strong></p>
+      <ul>
+        <li><strong>Perfil da conta:</strong> nome de usuário, ID e informações públicas do perfil (permissão <em>instagram_business_basic</em>)</li>
+        <li><strong>Publicações:</strong> mídias e legendas recentes do feed, usadas para aprender a linguagem da marca e para o Cliente criar/agendar novos posts (permissões <em>instagram_business_basic</em> e <em>instagram_business_content_publish</em>)</li>
+        <li><strong>Mensagens diretas (DMs):</strong> conteúdo das conversas do Instagram, para atendimento centralizado pela plataforma (permissão <em>instagram_business_manage_messages</em>)</li>
+        <li><strong>Comentários:</strong> comentários nas publicações, para leitura e resposta pela plataforma (permissão <em>instagram_business_manage_comments</em>)</li>
+      </ul>
+      <p>A conexão do Instagram é <strong>opcional e iniciada pelo próprio Cliente</strong>, que autoriza o acesso pelo login oficial do Instagram/Meta. O Cliente pode revogar o acesso a qualquer momento — desconectando na plataforma ou em Configurações do Instagram &rarr; Apps e sites. Ao revogar, a conexão é desativada e os dados podem ser excluídos mediante solicitação (ver seção <em>Retenção e Exclusão de Dados</em>). Os dados do Instagram são usados exclusivamente para as finalidades acima e <strong>não são vendidos nem usados para publicidade de terceiros</strong>.</p>
     </section>
 
     <section id="s3">
@@ -272,7 +280,7 @@
       <div class="partners">
         <div class="partner-tag"><strong>Stripe</strong>Processamento de pagamentos</div>
         <div class="partner-tag"><strong>OpenAI</strong>Transcrição de áudio e IA (Whisper/GPT)</div>
-        <div class="partner-tag"><strong>Z-API / Meta</strong>Envio e recebimento de mensagens WhatsApp</div>
+        <div class="partner-tag"><strong>Meta (WhatsApp e Instagram)</strong>Envio/recebimento de mensagens e gestão da conta do Instagram (perfil, publicações, DMs e comentários)</div>
         <div class="partner-tag"><strong>Infraestrutura</strong>Servidores em nuvem para hospedagem</div>
         <div class="partner-tag"><strong>N8n / Zapier / Make</strong>Apenas quando ativado pelo Cliente</div>
         <div class="partner-tag"><strong>Autoridades</strong>Quando exigido por lei ou ordem judicial</div>
