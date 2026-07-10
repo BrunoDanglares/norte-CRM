@@ -895,6 +895,19 @@ const allowedOrigins: (string | RegExp)[] = [
   "https://app.chatbanana.com.br",
 ];
 
+// Domínio(s) de produção deste deploy vêm do ambiente (deploy próprio / white-label).
+// Ex.: PUBLIC_BASE_URL/FRONTEND_URL = https://norte-norte.xhtsxx.easypanel.host.
+// Sem isto, o Origin dos assets `crossorigin` do próprio site é barrado (tela branca).
+for (const envUrl of [process.env.PUBLIC_BASE_URL, process.env.FRONTEND_URL]) {
+  if (!envUrl) continue;
+  try {
+    const o = new URL(envUrl).origin;
+    if (!allowedOrigins.includes(o)) allowedOrigins.push(o);
+  } catch {
+    /* URL inválida no env — ignora */
+  }
+}
+
 if (process.env.NODE_ENV !== "production") {
   allowedOrigins.push("http://localhost:5000");
   allowedOrigins.push("http://localhost:3000");
@@ -913,8 +926,12 @@ app.use(cors({
     if (allowed) {
       callback(null, true);
     } else {
+      // Origem não-permitida NÃO deve virar erro (500). Degrada com segurança:
+      // responde sem cabeçalho CORS. Requests same-origin (assets do próprio
+      // site, chamadas /api do front) seguem funcionando; só leituras
+      // cross-origin de outros sites ficam bloqueadas pelo browser (o correto).
       console.warn(`[CORS] Blocked origin: ${origin}`);
-      callback(new Error("Not allowed by CORS"));
+      callback(null, false);
     }
   },
   credentials: true,
