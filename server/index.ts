@@ -1711,6 +1711,25 @@ app.use((req, res, next) => {
       import("./services/instaflixScheduler")
         .then(({ startInstaflixSchedulers }) => startInstaflixSchedulers())
         .catch((e) => console.error("[Instaflix] Falha ao iniciar schedulers:", e));
+
+      // Instagram — renovação automática do token (long-lived ~60d). O serviço já
+      // existia mas NUNCA era agendado: sem isto o token vence e o Instaflix/DM
+      // param até reconectar manualmente. Roda ~1min após o boot e a cada 12h; só
+      // age em tokens a <=10d de vencer (lógica no próprio serviço, não-destrutiva).
+      // Bruno 2026-07-09.
+      {
+        const rodarRefreshIG = async () => {
+          try {
+            const { refreshInstagramTokens } = await import("./services/instagramTokenRefresh");
+            const r = await refreshInstagramTokens();
+            console.log(`[IG TokenRefresh] checados=${r.checados} renovados=${r.renovados} validos=${r.validos} falhas=${r.falhas}`);
+          } catch (e: any) {
+            console.warn("[IG TokenRefresh] erro no ciclo:", e?.message || e);
+          }
+        };
+        setTimeout(() => void rodarRefreshIG(), 60 * 1000);
+        setInterval(() => void rodarRefreshIG(), 12 * 60 * 60 * 1000);
+      }
     },
   );
 })();
