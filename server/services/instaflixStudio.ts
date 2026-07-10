@@ -365,6 +365,53 @@ export interface RascunhoPost {
   formato: "imagem" | "carrossel";
 }
 
+// ── Seleção dos materiais que viram referência visual (modo "inspirar nos materiais") ──
+// A IA já descreveu cada material no upload (campo resumo). Aqui ela escolhe os que
+// PRESTAM como inspiração visual de um post — telas boas do app / artes limpas — e
+// DESCARTA lixo (prints de erro/bug, borrados, puramente técnicos). Só imagens raster
+// (PDF não serve de referência). Fallback heurístico se a IA falhar. Bruno 2026-07-09.
+async function selecionarReferenciasVisuais(
+  bk: InstaflixBrandKit | null,
+  workspaceId: string,
+  modelo: string,
+): Promise<string[]> {
+  if (!bk) return [];
+  const docs = (Array.isArray(bk.documentos) ? bk.documentos : []) as Array<{ nome?: string; resumo?: string; url?: string; tipo?: string }>;
+  const imgs = docs.filter((d) => d?.url && d.tipo === "imagem");
+  if (!imgs.length) return [];   // sem materiais de imagem → sem referência (geração normal)
+
+  const MAX = 3;
+  let escolhidas: string[] = [];
+
+  try {
+    const lista = imgs.map((d, i) => `${i}. ${d.nome || "material"} — ${(d.resumo || "").slice(0, 200)}`).join("\n");
+    const r = await chamarAgente<{ indices: number[] }>(workspaceId, {
+      model: modelo,
+      temperature: 0,
+      system:
+        "Você seleciona quais imagens de referência de uma marca servem de INSPIRAÇÃO VISUAL para a arte de um post do Instagram. Escolha as que mostram o PRODUTO/marca de forma apresentável (telas boas do app, artes/materiais limpos). DESCARTE prints de erro/bug, telas quebradas, imagens borradas, sem valor visual ou puramente técnicas/ilegíveis. Responda SOMENTE JSON: { indices: number[] }, no máximo 3, do melhor pro pior. Se nenhuma servir, retorne { indices: [] }.",
+      user: `MATERIAIS (índice. nome — resumo):\n${lista}`,
+    });
+    const idx = Array.isArray(r?.indices) ? r.indices : [];
+    escolhidas = idx
+      .filter((n) => Number.isInteger(n) && n >= 0 && n < imgs.length)
+      .slice(0, MAX)
+      .map((n) => imgs[n].url!)
+      .filter(Boolean);
+  } catch { /* cai no heurístico abaixo */ }
+
+  if (!escolhidas.length) {
+    const LIXO = /bug|erro|error|falha|crash|debug|quebrad|borrad/i;
+    escolhidas = imgs
+      .filter((d) => !LIXO.test(`${d.nome || ""} ${d.resumo || ""}`))
+      .slice(0, MAX)
+      .map((d) => d.url!)
+      .filter(Boolean);
+  }
+
+  return Array.from(new Set(escolhidas)).slice(0, MAX);
+}
+
 export interface GerarRascunhoOpts {
   workspaceId: string;
   brandKit: InstaflixBrandKit | null;
@@ -376,6 +423,7 @@ export interface GerarRascunhoOpts {
   objetivo?: string;             // CTA/objetivo (chave de OBJETIVOS_CTA)
   faixaAtiva?: boolean;           // faixa colorida no rodapé: true=faixa, false=só sombra (editorial), undefined=IA decide
   faixaCor?: string;              // cor manual da faixa (hex); sem isto herda a cor da marca
+  inspirarMateriais?: boolean;    // toggle do Estúdio: usar os materiais (imagens) do produto como referência visual
   temasRecentes?: string[];       // pra não repetir assunto
   tamanho?: TamanhoImagem;
   baseUrl?: string;               // base pública pra montar a URL da imagem
@@ -700,6 +748,12 @@ Gere EXATAMENTE ${nSlides} slide(s) com estilo visual CONSISTENTE entre si. Esco
   else if (opts.faixaAtiva === false) estiloLetreiro = "editorial";
   opts.onProgress?.(35);
 
+  // Modo "inspirar nos materiais do produto" (toggle do Estúdio): a IA escolhe os
+  // melhores materiais-imagem uma vez (mesmas refs pra todos os slides do carrossel).
+  const referencias = opts.inspirarMateriais
+    ? await selecionarReferenciasVisuais(opts.brandKit, opts.workspaceId, modelo)
+    : [];
+
   // ── 4) Gerador de imagem (sequencial pra respeitar rate limit da OpenAI) ─────
   // A parte mais lenta: reporta progresso após cada imagem (35% → ~93%).
   const midias: MidiaGerada[] = [];
@@ -716,6 +770,7 @@ Gere EXATAMENTE ${nSlides} slide(s) com estilo visual CONSISTENTE entre si. Esco
       estilo: estiloLetreiro,
       faixaCor: opts.faixaCor,
       ctaSelo,
+      referencias,
     });
     midias.push({
       ordem: s.ordem ?? i + 1,

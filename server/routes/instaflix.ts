@@ -473,6 +473,8 @@ router.post("/posts/generate", requireAuth, async (req, res) => {
     // Faixa do rodapé (controle por post no Estúdio): liga/desliga + cor manual.
     const faixaAtiva = typeof req.body.faixaAtiva === "boolean" ? req.body.faixaAtiva : undefined;
     const faixaCor = typeof req.body.faixaCor === "string" && /^#[0-9a-fA-F]{6}$/.test(req.body.faixaCor) ? req.body.faixaCor : undefined;
+    // Toggle do Estúdio: usar os materiais (imagens) do produto como referência visual.
+    const inspirarMateriais = req.body.inspirarMateriais === true;
     const conn = await getActiveConnection(workspaceId);
 
     let pillar = null;
@@ -504,7 +506,7 @@ router.post("/posts/generate", requireAuth, async (req, res) => {
       try {
         const brandKit = await getBrandKit(workspaceId);
         const rascunho = await gerarRascunhoPost({
-          workspaceId, brandKit, pillar, formato, numImagens, estilo, briefing, objetivo, faixaAtiva, faixaCor,
+          workspaceId, brandKit, pillar, formato, numImagens, estilo, briefing, objetivo, faixaAtiva, faixaCor, inspirarMateriais,
           onProgress: (pct) => { void updatePost(post.id, workspaceId, { progresso: pct }).catch(() => {}); },
         });
         await updatePost(post.id, workspaceId, {

@@ -17,6 +17,7 @@ import sharp, { type OverlayOptions } from "sharp";
 import { uploadsDir, resolveUploadPath } from "../utils/uploadsDir";
 import { getOpenAIClient } from "./openaiClient";
 import { resolveOpenAIKeys } from "./openaiKeyResolver";
+import { toFile } from "openai";
 
 // gpt-image-1 aceita: '1024x1024' (1:1), '1024x1536' (retrato 2:3), '1536x1024' (paisagem).
 // Default RETRATO (1024x1536) — depois recortamos pra 4:5 (formato do feed do IG),
@@ -398,6 +399,7 @@ export interface GerarImagemOpts {
   estilo?: EstiloLetreiro;          // estilo do letreiro escolhido pela IA
   faixaCor?: string;                // cor manual da faixa (hex); sobrepõe paleta[0] só na faixa
   ctaSelo?: string;                 // selo de CTA no letreiro 'editorial' (só se objetivo de venda)
+  referencias?: string[];           // modo "inspirar nos materiais": imagens de referência (/uploads/…). Vazio = geração normal.
 }
 
 export interface GerarImagemResult {
@@ -405,6 +407,31 @@ export interface GerarImagemResult {
   url?: string;                     // absoluta se houver base; senão relativa /uploads/...
   filename?: string;
   error?: string;
+}
+
+// Carrega as imagens de referência (materiais/telas do produto) do disco como File,
+// pro modo "inspirar nos materiais" (image-to-image do gpt-image-1). Só aceita raster
+// local de /uploads; ignora o que não existe / não é imagem. Cap de segurança em 3.
+const REF_MAX = 3;
+const REF_MIME: Record<string, string> = {
+  ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp",
+};
+async function carregarReferencias(refs: string[]): Promise<any[]> {
+  const out: any[] = [];
+  const vistos = new Set<string>();
+  for (const r of refs) {
+    if (out.length >= REF_MAX) break;
+    if (!r || /^https?:\/\//i.test(r)) continue;           // só materiais locais (/uploads)
+    try {
+      const local = path.join(uploadsDir, path.basename(r));
+      if (vistos.has(local) || !fs.existsSync(local)) continue;
+      const type = REF_MIME[path.extname(local).toLowerCase()];
+      if (!type) continue;                                  // só imagem raster
+      vistos.add(local);
+      out.push(await toFile(fs.readFileSync(local), path.basename(local), { type }));
+    } catch { /* ref inválida — pula */ }
+  }
+  return out;
 }
 
 export async function gerarImagemIA(opts: GerarImagemOpts): Promise<GerarImagemResult> {
@@ -435,20 +462,47 @@ export async function gerarImagemIA(opts: GerarImagemOpts): Promise<GerarImagemR
   // Paleta da marca (primary + accent…) — o overlay usa; sem paleta, cai no legado corPrimaria.
   const paleta = (opts.paleta && opts.paleta.length) ? opts.paleta : (opts.corPrimaria ? [opts.corPrimaria] : []);
 
-  try {
-    const res = await client.images.generate({
-      model: "gpt-image-1",
-      prompt: promptSeguro,
-      size: opts.size || "1024x1536",
-      quality: opts.quality || "high",
-    });
+  // Modo REFERÊNCIA (opt-in por post): usa materiais/telas do produto como inspiração
+  // visual via image-to-image. Sem referências válidas → geração normal (texto→imagem).
+  const refFiles = opts.referencias?.length ? await carregarReferencias(opts.referencias) : [];
+  const usarRef = refFiles.length > 0;
 
-    const b64 = res.data?.[0]?.b64_json;
+  // O promptSeguro PROÍBE telas de app/UI (anti-alucinação de marca na foto). No modo
+  // referência é o oposto: queremos a estética do produto. Prompt próprio, ainda sem
+  // texto/logo fabricado e com espaço embaixo pro overlay da logo REAL.
+  const promptRef =
+    `${opts.prompt}\n\n` +
+    "Use the attached image(s) as VISUAL REFERENCE for the brand and product look — its colors, " +
+    "interface style, shapes and key visual elements. Create a POLISHED, modern Instagram post " +
+    "clearly INSPIRED by them and in the same visual world. Do NOT copy any reference pixel-for-pixel " +
+    "and do NOT reproduce a real screenshot verbatim — compose a clean, original promotional graphic.\n\n" +
+    "STRICT RULES: do NOT render fabricated logos, brand names, wordmarks, watermarks or unreadable/garbled " +
+    "text. Keep an uncluttered composition with calm empty negative space near the bottom so a caption and " +
+    "the real brand logo can be overlaid later.";
+
+  try {
+    const b64 = usarRef
+      ? (await client.images.edit({
+          model: "gpt-image-1",
+          image: refFiles as any,           // gpt-image-1 aceita múltiplas imagens de referência
+          prompt: promptRef,
+          size: opts.size || "1024x1536",
+          quality: opts.quality || "high",
+        })).data?.[0]?.b64_json
+      : (await client.images.generate({
+          model: "gpt-image-1",
+          prompt: promptSeguro,
+          size: opts.size || "1024x1536",
+          quality: opts.quality || "high",
+        })).data?.[0]?.b64_json;
+
     if (!b64) return { ok: false, error: "IA não retornou imagem" };
 
     let buffer = Buffer.from(b64, "base64");
     buffer = await recortarParaFeed(buffer);       // 4:5 (retrato do feed)
-    buffer = await corrigirBalancoBranco(buffer);  // remove o cast amarelado/dourado da foto
+    // Balanço de branco (gray-world) é calibrado pro cast amarelado das FOTOS do
+    // gpt-image-1; numa arte referenciada na marca ele lavaria a cor da marca → pula.
+    if (!usarRef) buffer = await corrigirBalancoBranco(buffer);
     buffer = await aplicarOverlayMarca(buffer, { logos: opts.logos, logoUrl: opts.logoUrl, textoOverlay: opts.textoOverlay, paleta, estilo: opts.estilo, faixaCor: opts.faixaCor, ctaSelo: opts.ctaSelo, workspaceId: opts.workspaceId });
 
     const filename = `instaflix-${Date.now()}-${randomUUID().slice(0, 8)}.png`;

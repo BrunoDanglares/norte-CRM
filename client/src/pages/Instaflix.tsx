@@ -537,6 +537,7 @@ function EstudioTab() {
   // Faixa de texto no rodapé das artes: liga/desliga + cor. "" = herda a cor da marca.
   const [faixaAtiva, setFaixaAtiva] = useState(true);
   const [faixaCor, setFaixaCor] = useState("");
+  const [inspirarMateriais, setInspirarMateriais] = useState(false);
 
   const { data: pillars = [] } = useQuery<any[]>({ queryKey: ["/api/instaflix/pillars"] });
   const { data: bk } = useQuery<any>({ queryKey: ["/api/instaflix/brand-kit"] });
@@ -564,6 +565,7 @@ function EstudioTab() {
         briefing: briefing.trim() || undefined,
         faixaAtiva,
         faixaCor: faixaAtiva ? (faixaCor || undefined) : undefined,
+        inspirarMateriais,
       });
       await qc.invalidateQueries({ queryKey: ["/api/instaflix/posts"] });
       toast({ title: "Gerando post…", description: "A prévia aparece abaixo com o progresso. Pode continuar usando o app." });
@@ -701,6 +703,19 @@ function EstudioTab() {
                   )}
                 </div>
               )}
+            </div>
+
+            {/* Inspirar nos materiais do produto — image-to-image opcional (Bruno 2026-07-09) */}
+            <div className="sm:col-span-3 rounded-box border border-base-300 bg-base-100 p-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <Label className="text-[12px]">Inspirar nos materiais do produto</Label>
+                  <p className="text-[10.5px] text-muted-foreground mt-0.5">
+                    A IA usa as imagens que você enviou em <span className="font-medium">Marca › Materiais</span> como referência visual da arte (a IA escolhe as melhores e ignora as ruins). Ligue pra um visual mais fiel ao seu produto; desligado, gera no estilo padrão.
+                  </p>
+                </div>
+                <Switch checked={inspirarMateriais} onCheckedChange={setInspirarMateriais} data-testid="switch-inspirar-materiais" />
+              </div>
             </div>
           </div>
         </div>
