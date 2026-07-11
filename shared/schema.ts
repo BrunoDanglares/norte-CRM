@@ -1164,6 +1164,10 @@ export const instagramConnections = pgTable("instagram_connections", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
   workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
   igUserId: text("ig_user_id").notNull(),
+  // ID que a Meta usa na ENTREGA dos webhooks (ex.: id comercial 1784...), que pode
+  // diferir do ig_user_id gravado no connect (ex.: Instagram-scoped 2756... do IG Login).
+  // Casamos o webhook por ig_user_id OU ig_webhook_id. Bruno 2026-07-11.
+  igWebhookId: text("ig_webhook_id"),
   igUsername: text("ig_username").notNull(),
   accessToken: text("access_token").notNull(),
   pageId: text("page_id"),

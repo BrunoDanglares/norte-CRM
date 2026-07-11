@@ -548,6 +548,9 @@ async function runAutoMigrations() {
     )`,
     `CREATE INDEX IF NOT EXISTS instaflix_post_metrics_workspace_idx ON instaflix_post_metrics(workspace_id)`,
     `CREATE INDEX IF NOT EXISTS instaflix_post_metrics_post_idx ON instaflix_post_metrics(post_id)`,
+    // ID de entrega do webhook da Meta (pode diferir do ig_user_id do IG Login). Bruno 2026-07-11.
+    `ALTER TABLE instagram_connections ADD COLUMN IF NOT EXISTS ig_webhook_id TEXT`,
+    `CREATE INDEX IF NOT EXISTS instagram_connections_ig_webhook_id_idx ON instagram_connections(ig_webhook_id)`,
   ];
 
   // ── Migration markers: skip de DDLs já aplicadas ─────────────────────────
