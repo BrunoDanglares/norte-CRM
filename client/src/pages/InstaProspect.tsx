@@ -398,7 +398,9 @@ function PostDetailModal({ post, onClose }: { post: any; onClose: () => void }) 
   async function loadComments() {
     setLoadingC(true); setCError("");
     try {
-      const d = await apiFetch(`/api/instagram/posts/${post.id}/comments`);
+      // cache-buster (?t=): senão o navegador devolve comentários antigos em cache mesmo
+      // depois de apagar/responder — a lista tem que refletir o Instagram AGORA.
+      const d = await apiFetch(`/api/instagram/posts/${post.id}/comments?t=${Date.now()}`);
       setComments(Array.isArray(d.comments) ? d.comments : []);
     } catch (e: any) {
       let msg = ""; try { const j = String(e?.message || "").match(/\{[\s\S]*\}/); if (j) msg = JSON.parse(j[0]).error || ""; } catch {}

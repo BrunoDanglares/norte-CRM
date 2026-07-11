@@ -817,6 +817,7 @@ protectedRouter.get("/posts/:mediaId/comments", requireAuth, async (req: Request
     const r = await fetch(url);
     const data = await r.json() as any;
     if (data.error) return res.status(400).json({ error: data.error.message || "Erro ao buscar comentários" });
+    res.set("Cache-Control", "no-store"); // reflete o Instagram AGORA (comentário apagado some)
     res.json({
       comments: (data.data || []).map((c: any) => ({
         id: c.id, text: c.text || "", username: c.username || "", timestamp: c.timestamp, likeCount: c.like_count || 0,
