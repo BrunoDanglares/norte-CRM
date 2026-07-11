@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "type": "module",
   "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "cross-env NODE_ENV=development tsx watch --import dotenv/config server/index.ts",
     "dev:no-watch": "cross-env NODE_ENV=development tsx --import dotenv/config server/index.ts",

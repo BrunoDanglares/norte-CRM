@@ -1,10 +1,8 @@
-# O EasyPanel builda com Nixpacks (não com o Dockerfile). Aqui garantimos:
+# O EasyPanel builda com Nixpacks (não com o Dockerfile). Garantimos:
 #  1) Chromium do Debian (apt) pro navegador headless do Instaflix (leitura de sites SPA);
-#  2) Ferramentas de build (python3/make/g++) pra módulos nativos do npm (ex.: bufferutil
-#     do `ws`) COMPILAREM no `npm ci` — sem elas o build quebra (exit 1) no Nixpacks minimal.
-# O download do Chromium bundled do puppeteer é pulado (ver .puppeteerrc.cjs). Bruno 2026-07-10.
+#  2) unzip: se o download do Chromium bundled do puppeteer acontecer (não deveria — ver
+#     .npmrc puppeteer_skip_download), ele consegue extrair em vez de quebrar o build;
+#  3) build tools (python3/make/g++) pra módulos nativos do npm compilarem no `npm ci`.
+# Node é fixado em 22 (.nvmrc + engines) — puppeteer 25/vite 7/sharp exigem >=20/22. Bruno 2026-07-11.
 [phases.setup]
-aptPkgs = ["chromium", "ca-certificates", "fonts-liberation", "python3", "make", "g++"]
-
-[variables]
-PUPPETEER_SKIP_DOWNLOAD = "true"
+aptPkgs = ["chromium", "unzip", "ca-certificates", "fonts-liberation", "python3", "make", "g++"]
