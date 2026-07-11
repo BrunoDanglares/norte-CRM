@@ -1008,12 +1008,6 @@ function PostPreviewDialog({ post, onClose }: { post: any; onClose: () => void }
           )}
         </div>
 
-        {post.errorMessage && (
-          <div className="rounded-box bg-red-500/10 border border-red-500/25 p-2.5 text-[12px] text-red-600">
-            {post.errorMessage}
-          </div>
-        )}
-
         {/* Ações conforme status */}
         <div className="flex flex-wrap gap-2 pt-1">
           {post.status === "aguardando_aprovacao" && (
