@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, type RefObject } from "react";
+import { createPortal } from "react-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch, apiRequest } from "@/lib/queryClient";
 
@@ -436,43 +437,72 @@ function PostDetailModal({ post, onClose }: { post: any; onClose: () => void }) 
     } catch { return ""; }
   }
 
+  // Modal no estilo Instagram web: fecha no Esc e trava o scroll do fundo enquanto aberto.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.removeEventListener("keydown", onKey); document.body.style.overflow = prevOverflow; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const caption = post.caption || "";
   const capLong = caption.length > 220;
 
-  return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 16 }} onClick={onClose}>
-      <div className="bg-card border border-border" onClick={e => e.stopPropagation()} style={{ borderRadius: 16, width: "100%", maxWidth: 560, maxHeight: "88vh", overflow: "hidden", display: "flex", flexDirection: "column" }} data-testid="modal-post-detail">
-        {/* Cabeçalho fixo: mídia (enquadrada) + botão fechar sobreposto */}
-        <div style={{ position: "relative", flex: "none" }}>
+  return createPortal(
+    <div
+      onClick={onClose}
+      className="flex items-center justify-center p-3 sm:p-6"
+      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", zIndex: 2147483000 }}
+      data-testid="modal-post-overlay"
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        className="relative bg-card border border-border rounded-2xl overflow-hidden shadow-2xl w-full max-w-[980px] max-h-[92vh] md:h-[86vh] flex flex-col md:flex-row"
+        data-testid="modal-post-detail"
+      >
+        {/* Fechar — flutua acima de tudo */}
+        <button onClick={onClose} aria-label="Fechar" className="absolute top-2.5 right-2.5 z-20" style={{ width: 32, height: 32, borderRadius: "50%", background: "rgba(0,0,0,0.55)", color: "#fff", border: "none", cursor: "pointer", fontSize: 15, lineHeight: 1, display: "grid", placeItems: "center" }} data-testid="button-close-post-detail">✕</button>
+
+        {/* ── MÍDIA (esquerda, estilo Instagram web) ── */}
+        <div className="relative shrink-0 flex items-center justify-center w-full md:w-[56%] h-[36vh] md:h-full" style={{ background: "#000" }}>
           {post.mediaUrl ? (
-            <div style={{ width: "100%", height: 260, overflow: "hidden", background: "#0b0b0f", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              {post.mediaType === "VIDEO"
-                ? <video src={post.mediaUrl} controls style={{ maxWidth: "100%", maxHeight: 260, objectFit: "contain" }} />
-                : <img src={post.mediaUrl} alt="" style={{ maxWidth: "100%", maxHeight: 260, objectFit: "contain" }} />}
-            </div>
-          ) : <div style={{ height: 8 }} />}
-          <button onClick={onClose} aria-label="Fechar" style={{ position: "absolute", top: 10, right: 10, width: 30, height: 30, borderRadius: "50%", background: "rgba(0,0,0,0.55)", color: "#fff", border: "none", cursor: "pointer", fontSize: 15, lineHeight: 1, display: "grid", placeItems: "center" }} data-testid="button-close-post-detail">✕</button>
+            post.mediaType === "VIDEO"
+              ? <video src={post.mediaUrl} controls className="max-w-full max-h-full" style={{ objectFit: "contain" }} />
+              : <img src={post.mediaUrl} alt="" className="max-w-full max-h-full" style={{ objectFit: "contain" }} />
+          ) : <span className="text-muted-foreground" style={{ fontSize: 12 }}>Sem mídia</span>}
         </div>
 
-        {/* Corpo rolável */}
-        <div style={{ padding: "16px 18px", overflowY: "auto" }}>
-          <p className="text-foreground" style={{ fontSize: 13.5, fontWeight: 400, margin: "0 0 6px", lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
-            {capLong && !capExp ? caption.slice(0, 220) + "… " : caption || "(sem legenda)"}
-            {capLong && (
-              <button onClick={() => setCapExp(v => !v)} className="text-muted-foreground" style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, padding: 0, fontWeight: 600 }}>
-                {capExp ? "ver menos" : "ver mais"}
-              </button>
-            )}
-          </p>
-          <p className="text-muted-foreground" style={{ fontSize: 11, margin: "0 0 14px" }}>{formatDate(post.timestamp)}</p>
-
-          <div className="text-muted-foreground" style={{ display: "flex", gap: 16, fontSize: 12, marginBottom: 16, alignItems: "center" }}>
-            <span>❤️ {post.likeCount} curtidas</span>
-            <span>💬 {post.commentsCount} comentários</span>
-            <a href={post.permalink} target="_blank" rel="noopener noreferrer" style={{ color: "#E1306C", textDecoration: "none", marginLeft: "auto" }}>
-              Abrir no Instagram ↗
-            </a>
+        {/* ── PAINEL DIREITO (legenda + comentários) ── */}
+        <div className="flex flex-col min-h-0 flex-1 md:w-[44%] md:h-full">
+          {/* Header */}
+          <div className="flex items-center gap-2.5 border-b border-border shrink-0" style={{ padding: "12px 46px 12px 16px" }}>
+            <div style={{ flex: "none", width: 32, height: 32, borderRadius: "50%", background: "linear-gradient(135deg,#feda75,#d62976,#4f5bd5)", display: "grid", placeItems: "center", color: "#fff", fontSize: 13, fontWeight: 700 }}>
+              {(post.username || "IG").slice(0, 2).toUpperCase()}
+            </div>
+            <div style={{ minWidth: 0 }}>
+              <p className="text-foreground" style={{ fontSize: 13, fontWeight: 600, margin: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{post.username ? `@${post.username}` : "Publicação"}</p>
+              <p className="text-muted-foreground" style={{ fontSize: 10.5, margin: 0 }}>{formatDate(post.timestamp)}</p>
+            </div>
           </div>
+
+          {/* Corpo rolável: legenda + comentários + automações */}
+          <div className="flex-1 min-h-0 overflow-y-auto" style={{ padding: "14px 16px" }}>
+            {/* Legenda (estilo primeiro comentário do IG) */}
+            {caption ? (
+              <div style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 14 }}>
+                <div style={{ flex: "none", width: 28, height: 28, borderRadius: "50%", background: "linear-gradient(135deg,#feda75,#d62976,#4f5bd5)", display: "grid", placeItems: "center", color: "#fff", fontSize: 12, fontWeight: 700 }}>{(post.username || "IG").slice(0, 1).toUpperCase()}</div>
+                <p className="text-foreground" style={{ fontSize: 13, margin: 0, lineHeight: 1.5, whiteSpace: "pre-wrap", minWidth: 0 }}>
+                  {post.username && <strong>@{post.username} </strong>}
+                  {capLong && !capExp ? caption.slice(0, 220) + "… " : caption}
+                  {capLong && (
+                    <button onClick={() => setCapExp(v => !v)} className="text-muted-foreground" style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, padding: 0, fontWeight: 600 }}>
+                      {capExp ? "ver menos" : "ver mais"}
+                    </button>
+                  )}
+                </p>
+              </div>
+            ) : null}
 
           {/* ── Comentários (ler + responder) ── */}
           <div style={{ borderTop: "1px solid var(--border)", paddingTop: 14, marginBottom: 4 }}>
@@ -509,7 +539,7 @@ function PostDetailModal({ post, onClose }: { post: any; onClose: () => void }) 
                           <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
                             <input
                               value={replyText} onChange={e => setReplyText(e.target.value)} autoFocus
-                              onKeyDown={e => { if (e.key === "Enter") enviarResposta(c.id); if (e.key === "Escape") { setReplyOpen(null); setReplyText(""); } }}
+                              onKeyDown={e => { if (e.key === "Enter") enviarResposta(c.id); if (e.key === "Escape") { e.stopPropagation(); setReplyOpen(null); setReplyText(""); } }}
                               placeholder={`Responder @${c.username || ""}…`}
                               className="bg-muted text-foreground border-border"
                               style={{ flex: 1, padding: "6px 10px", borderRadius: 8, border: "0.5px solid", fontSize: 12.5 }}
@@ -566,9 +596,18 @@ function PostDetailModal({ post, onClose }: { post: any; onClose: () => void }) 
           <div style={{ textAlign: "center", marginTop: 12 }}>
             <p className="text-muted-foreground" style={{ fontSize: 10 }}>ID do post: {post.id}</p>
           </div>
-        </div>
-      </div>
-    </div>
+          </div>{/* fim corpo rolável */}
+
+          {/* Footer: métricas + abrir no Instagram */}
+          <div className="border-t border-border shrink-0 text-muted-foreground" style={{ padding: "10px 16px", display: "flex", gap: 16, alignItems: "center", fontSize: 12 }}>
+            <span>❤️ {post.likeCount}</span>
+            <span>💬 {post.commentsCount}</span>
+            <a href={post.permalink} target="_blank" rel="noopener noreferrer" style={{ color: "#E1306C", textDecoration: "none", marginLeft: "auto", fontWeight: 600 }}>Abrir no Instagram ↗</a>
+          </div>
+        </div>{/* fim painel direito */}
+      </div>{/* fim container */}
+    </div>,
+    document.body
   );
 }
 
