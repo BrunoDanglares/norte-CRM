@@ -1,8 +1,7 @@
-# O EasyPanel builda com Nixpacks (não com o Dockerfile). Garantimos:
-#  1) Chromium do Debian (apt) pro navegador headless do Instaflix (leitura de sites SPA);
-#  2) unzip: se o download do Chromium bundled do puppeteer acontecer (não deveria — ver
-#     .npmrc puppeteer_skip_download), ele consegue extrair em vez de quebrar o build;
-#  3) build tools (python3/make/g++) pra módulos nativos do npm compilarem no `npm ci`.
-# Node é fixado em 22 (.nvmrc + engines) — puppeteer 25/vite 7/sharp exigem >=20/22. Bruno 2026-07-11.
+# Chromium via NIX (binário self-contained que RODA dentro de container). O pacote
+# `chromium` do apt no Ubuntu 24.04 (noble) é só um atalho pro SNAP — e snap não funciona
+# em container. O Nix instala um chromium real; o puppeteer não baixa o bundled (.npmrc
+# puppeteer_skip_download) e o código resolve o binário do Nix em runtime via PATH
+# (siteRenderer.acharChromium → `command -v chromium`). Node fixado em 22 (.nvmrc). Bruno 2026-07-11.
 [phases.setup]
-aptPkgs = ["chromium", "unzip", "ca-certificates", "fonts-liberation", "python3", "make", "g++"]
+nixPkgs = ["...", "chromium"]
