@@ -199,20 +199,23 @@ async function processInstagramWebhookPayload(body: any) {
       const storyFlowId = conn.automacaoId;
 
       for (const change of entry.changes || []) {
-        if (change.field === "comments" && change.value && commentFlowId) {
+        if (change.field === "comments" && change.value) {
           const { value } = change;
-          await handleInstaProspectComment({
-            workspaceId: conn.workspaceId,
-            connectionId: conn.id,
-            accessToken: conn.accessToken,
-            igAccountUserId: igUserId,
-            commentId: value.id,
-            postId: value.media?.id || "",
-            fromIgUserId: value.from?.id || "",
-            fromIgUsername: value.from?.username || "",
-            commentText: value.text || "",
-            linkedFlowId: commentFlowId,
-          });
+          console.log(`[Meta→IG] comentário recebido igUser=${igUserId} flow=${commentFlowId || "NENHUM"} comment=${value.id} texto="${(value.text || "").slice(0, 40)}"`);
+          if (commentFlowId) {
+            await handleInstaProspectComment({
+              workspaceId: conn.workspaceId,
+              connectionId: conn.id,
+              accessToken: conn.accessToken,
+              igAccountUserId: igUserId,
+              commentId: value.id,
+              postId: value.media?.id || "",
+              fromIgUserId: value.from?.id || "",
+              fromIgUsername: value.from?.username || "",
+              commentText: value.text || "",
+              linkedFlowId: commentFlowId,
+            });
+          }
         }
 
         if (change.field === "mention" && change.value && storyFlowId) {

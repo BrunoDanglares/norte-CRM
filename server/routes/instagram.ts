@@ -175,29 +175,40 @@ webhookRouter.post("/webhook", async (req: Request, res: Response) => {
       }
     }
 
+    // Bug fix (Bruno 2026-07-11): faltava passar o fluxo vinculado (linkedFlowId).
+    // Sem ele, handleInstaProspectComment/Story retornavam logo no início e o
+    // comentário NUNCA era respondido por este webhook. Espelha o /api/webhook/meta.
+    const commentFlowId = conn.automacaoId || conn.commentAutomacaoId;
+    const storyFlowId = conn.automacaoId;
+
     for (const change of entry.changes || []) {
       if (change.field === "comments" && change.value) {
         const { value } = change;
-        await handleInstaProspectComment({
-          workspaceId: conn.workspaceId,
-          connectionId: conn.id,
-          accessToken: conn.accessToken,
-          igAccountUserId: igUserId,
-          commentId: value.id,
-          postId: value.media?.id || "",
-          fromIgUserId: value.from?.id || "",
-          fromIgUsername: value.from?.username || "",
-          commentText: value.text || "",
-        });
+        console.log(`[Instagram] comentário recebido igUser=${igUserId} flow=${commentFlowId || "NENHUM"} comment=${value.id} texto="${(value.text || "").slice(0, 40)}"`);
+        if (commentFlowId) {
+          await handleInstaProspectComment({
+            workspaceId: conn.workspaceId,
+            connectionId: conn.id,
+            accessToken: conn.accessToken,
+            igAccountUserId: igUserId,
+            commentId: value.id,
+            postId: value.media?.id || "",
+            fromIgUserId: value.from?.id || "",
+            fromIgUsername: value.from?.username || "",
+            commentText: value.text || "",
+            linkedFlowId: commentFlowId,
+          });
+        }
       }
 
-      if (change.field === "mention" && change.value) {
+      if (change.field === "mention" && change.value && storyFlowId) {
         await handleInstaProspectStory({
           workspaceId: conn.workspaceId,
           accessToken: conn.accessToken,
           igAccountUserId: igUserId,
           fromIgUserId: change.value?.sender_id || "",
           fromIgUsername: change.value?.from?.username || "",
+          linkedFlowId: storyFlowId,
         });
       }
     }
