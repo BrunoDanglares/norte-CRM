@@ -11,7 +11,6 @@
 // redirect e sub-recurso apontando pra rede interna). Bruno 2026-07-09.
 // ═══════════════════════════════════════════════════════════════════════════
 
-import puppeteer from "puppeteer";
 import type { Browser } from "puppeteer";
 import { lookup } from "dns/promises";
 import { existsSync } from "fs";
@@ -79,10 +78,12 @@ function acharChromium(): string | undefined {
   return undefined; // deixa o puppeteer usar o bundled (dev local)
 }
 
-// Singleton preguiçoso — lança o Chromium na 1ª vez e reusa. Local usa o Chromium
-// que o puppeteer baixou; em produção (Alpine) usa o do sistema (ver Dockerfile).
+// Singleton preguiçoso — carrega o puppeteer e lança o Chromium só na 1ª análise de site
+// (NUNCA no boot: import dinâmico → um problema com o puppeteer/Chromium não impede o app
+// de subir; a leitura de site apenas cai no fallback). Bruno 2026-07-11.
 async function getBrowser(): Promise<Browser> {
   if (!browserPromise) {
+    const puppeteer = (await import("puppeteer")).default;
     browserPromise = puppeteer
       .launch({
         headless: true,
