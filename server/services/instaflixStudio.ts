@@ -201,6 +201,21 @@ function levePaguePares(texto: string): Set<string> {
   return out;
 }
 
+// Instagram NÃO renderiza Markdown — `**negrito**`, `__x__`, `# título`, `` `code` `` saem
+// com os símbolos LITERAIS na legenda (feio). Remove os marcadores mantendo o texto.
+// Bruno 2026-07-11.
+export function limparMarkdown(txt: string): string {
+  return String(txt || "")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")          // **negrito** → negrito
+    .replace(/__([^_]+)__/g, "$1")              // __negrito__ → negrito
+    .replace(/`([^`]+)`/g, "$1")                // `code` → code
+    .replace(/^[ \t]{0,3}#{1,6}[ \t]+/gm, "")   // "## Título" → "Título"
+    .replace(/^[ \t]{0,3}>[ \t]?/gm, "")        // "> citação" → "citação"
+    .replace(/\*\*/g, "")                        // ** solto/desbalanceado
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+}
+
 export interface OfertasAutorizadas {
   precos: Set<number>;      // valores em R$ autorizados
   percents: Set<number>;    // percentuais de desconto autorizados
@@ -676,7 +691,7 @@ export async function gerarRascunhoPost(opts: GerarRascunhoOpts): Promise<Rascun
       model: modelo,
       temperature: 0.85,
       system:
-        `Você é um copywriter de Instagram em português do Brasil. Escreve legendas envolventes na voz da marca, com gancho na primeira linha, corpo com valor e um CTA. Inclua 5 a 12 hashtags relevantes (sem '#', só as palavras). A legenda deve ter no máximo ${LEGENDA_MAX} caracteres. Respeite RIGOROSAMENTE o CONTEXTO TEMPORAL: use o dia da semana real e NUNCA diga que é fim de semana/sextou num dia útil. Responda em JSON com as chaves: legenda (string), hashtags (array de strings SEM '#'), cta (string).`,
+        `Você é um copywriter de Instagram em português do Brasil. Escreve legendas envolventes na voz da marca, com gancho na primeira linha, corpo com valor e um CTA. Inclua 5 a 12 hashtags relevantes (sem '#', só as palavras). A legenda deve ter no máximo ${LEGENDA_MAX} caracteres. TEXTO PURO: o Instagram NÃO formata Markdown — NÃO use '**negrito**', '__', '#' de título, crase, nem '>'; escreva sem esses símbolos (para dar ênfase use CAIXA ALTA ou emojis). Respeite RIGOROSAMENTE o CONTEXTO TEMPORAL: use o dia da semana real e NUNCA diga que é fim de semana/sextou num dia útil. Responda em JSON com as chaves: legenda (string), hashtags (array de strings SEM '#'), cta (string).`,
       user: `MARCA:\n${marca}\n\n${direcaoCtx}\n\n${pilarCtx}\n\nTEMA: ${estrategia.tema}\nÂNGULO: ${estrategia.angulo}\nRESUMO: ${estrategia.resumo}\nPONTOS-CHAVE: ${(estrategia.pontosChave || []).join("; ")}\n${temporalCtx}\n\nEscreva a legenda sobre o TEMA (PILAR) acima, seguindo a DIREÇÃO EDITORIAL (prioridade), coerente com o CONTEXTO TEMPORAL (dia da semana), e, se houver OBJETIVO/CTA, encerre com essa chamada.`,
     },
   );
@@ -794,7 +809,7 @@ Gere EXATAMENTE ${nSlides} slide(s) com estilo visual CONSISTENTE entre si. Esco
     .filter(Boolean)
     .slice(0, HASHTAGS_MAX);
 
-  let legenda = String(copy.legenda || "").trim();
+  let legenda = limparMarkdown(String(copy.legenda || "")); // Instagram não formata markdown
   // Rede de segurança na legenda: remove frases com desconto/oferta/preço que NÃO
   // constem nos valores autorizados (briefing + planos e valores da marca). Preços
   // REAIS da marca passam; ofertas inventadas caem. Bruno 2026-07-09.

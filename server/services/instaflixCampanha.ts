@@ -16,7 +16,7 @@ import { getOpenAIClient } from "./openaiClient";
 import { resolveOpenAIKeys } from "./openaiKeyResolver";
 import { getBrandKit, createPost, getActiveConnection, brandLogoUrls } from "./instaflixService";
 import { comporArteProduto } from "./instaflixImageService";
-import { sanitizarLegendaComValores } from "./instaflixStudio";
+import { sanitizarLegendaComValores, limparMarkdown } from "./instaflixStudio";
 import type { InstaflixPost } from "@shared/schema";
 
 export type OfertaTipo = "desconto_pct" | "preco_de_por" | "preco_fixo" | "condicao" | "sem_preco";
@@ -125,7 +125,7 @@ export async function gerarPostCampanha(input: CampanhaInput): Promise<Instaflix
   const gerado = await escreverLegendaCampanha(input.workspaceId, {
     produtoNome: input.produtoNome, ofertaRotulo, cta: input.cta, briefing: input.briefing, marca,
   });
-  const legenda = sanitizarLegendaCampanha(gerado.legenda, ofertaRotulo) || gerado.legenda;
+  const legenda = limparMarkdown(sanitizarLegendaCampanha(gerado.legenda, ofertaRotulo) || gerado.legenda);
   const hashtags = gerado.hashtags;
   const rodape = hashtags.length ? "\n\n" + hashtags.map((h) => `#${h}`).join(" ") : "";
 

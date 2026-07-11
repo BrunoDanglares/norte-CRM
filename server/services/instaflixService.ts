@@ -56,8 +56,11 @@ export async function upsertBrandKit(workspaceId: string, data: Record<string, a
 
 // ── Conexão do Instagram (a conta que publica) ───────────────────────────────
 export async function getActiveConnection(workspaceId: string) {
+  // MAIS RECENTE primeiro: se houver conexão-fantasma de app antigo ainda ativa, usa a
+  // reconexão nova (a válida), não uma qualquer. Bruno 2026-07-11.
   const [conn] = await db.select().from(instagramConnections)
     .where(and(eq(instagramConnections.workspaceId, workspaceId), eq(instagramConnections.isActive, true)))
+    .orderBy(desc(instagramConnections.updatedAt))
     .limit(1);
   return conn ?? null;
 }
@@ -231,9 +234,14 @@ export async function markFalhou(id: string, errorMessage: string): Promise<void
 // atualiza o status do post. Usada pela rota "publicar agora" E pelo scheduler.
 export async function publicarPostAgora(post: InstaflixPost): Promise<{ ok: boolean; error?: string; mediaId?: string }> {
   try {
-    const conn = post.instagramConnectionId
-      ? (await db.select().from(instagramConnections).where(eq(instagramConnections.id, post.instagramConnectionId)).limit(1))[0]
-      : await getActiveConnection(post.workspaceId);
+    // Só usa a conexão FIXADA no post se ela ainda estiver ATIVA; senão (ex.: era a
+    // conexão-fantasma de app antigo, já desativada) cai na conexão ativa mais recente.
+    let conn: any = post.instagramConnectionId
+      ? (await db.select().from(instagramConnections)
+          .where(and(eq(instagramConnections.id, post.instagramConnectionId), eq(instagramConnections.isActive, true)))
+          .limit(1))[0]
+      : null;
+    if (!conn) conn = await getActiveConnection(post.workspaceId);
 
     if (!conn) {
       await markFalhou(post.id, "Sem conexão do Instagram ativa");
@@ -266,9 +274,18 @@ export async function publicarPostAgora(post: InstaflixPost): Promise<{ ok: bool
       return { ok: false, error: msg };
     }
 
+    // Safety net p/ rascunhos ANTIGOS que já salvaram markdown: o Instagram mostra
+    // '**' literal. Tira os marcadores na publicação (posts novos já saem limpos da
+    // geração). Inline pra evitar import circular com instaflixStudio. Bruno 2026-07-11.
+    const legendaLimpa = post.legenda
+      ? String(post.legenda)
+          .replace(/\*\*([^*]+)\*\*/g, "$1").replace(/__([^_]+)__/g, "$1")
+          .replace(/`([^`]+)`/g, "$1").replace(/^[ \t]{0,3}#{1,6}[ \t]+/gm, "").replace(/\*\*/g, "")
+      : undefined;
+
     const res = await graphPublicarPost(conn.igUserId, conn.accessToken, {
       imagens,
-      legenda: post.legenda || undefined,
+      legenda: legendaLimpa,
     });
 
     if (!res.ok) {
