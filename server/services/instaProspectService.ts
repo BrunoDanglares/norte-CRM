@@ -1,7 +1,7 @@
 import { db } from "../db";
 import { instaProspectFlows, instaProspectSessions, conversations, messages, leads } from "@shared/schema";
 import { eq, and, sql } from "drizzle-orm";
-import { sendInstagramDM, replyInstagramComment, upsertInstagramLead } from "./instagramService";
+import { sendInstagramDM, sendInstagramPrivateReply, replyInstagramComment, upsertInstagramLead } from "./instagramService";
 import { storage } from "../storage";
 
 async function resolveLeadName(workspaceId: string, igUserId: string): Promise<string> {
@@ -465,9 +465,14 @@ export async function handleInstaProspectComment(params: {
 
     const commentDelay = matchedFlow.delaySeconds || 0;
     if (commentDelay > 0) await new Promise(r => setTimeout(r, commentDelay * 1000));
-    const commentFirstResult = await sendInstagramDM(accessToken, igAccountUserId, fromIgUserId, firstMsg);
+    // DM pra quem comentou = resposta PRIVADA (comment_id), não mensagem padrão:
+    // comentário não abre janela de 24h, então a mensagem padrão sempre falharia
+    // (erro 2534022/2534014). Private reply tem janela de 7 dias. Bruno 2026-07-11.
+    const commentFirstResult = await sendInstagramPrivateReply(accessToken, igAccountUserId, commentId, firstMsg);
     if (!commentFirstResult.error) {
       await saveOutboundToChat(workspaceId, fromIgUserId, firstMsg);
+    } else {
+      console.warn(`[InstaProspect Comment] private reply falhou: ${commentFirstResult.error}`);
     }
 
     await db.update(instaProspectSessions)

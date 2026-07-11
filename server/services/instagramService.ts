@@ -84,6 +84,43 @@ export async function sendInstagramDM(
   }
 }
 
+// Resposta PRIVADA a um comentário (private reply). Diferente da DM padrão: usa
+// recipient.comment_id (não recipient.id), tem janela de 7 dias a partir do comentário
+// e NÃO exige a janela de 24h (que só abre quando o usuário te manda mensagem). É o
+// mecanismo certo pra "comentou → recebe DM". Limite: 1 por comentário. Bruno 2026-07-11.
+export async function sendInstagramPrivateReply(
+  accessToken: string,
+  igUserId: string,
+  commentId: string,
+  text: string
+): Promise<{ messageId?: string; error?: string }> {
+  try {
+    if (!accessToken || accessToken.length <= 10) return { error: "Token invalido para resposta privada" };
+    const isIg = accessToken.startsWith("IGAA");
+    const apiBase = isIg ? IG_GRAPH_API : GRAPH_API;
+    // IG Login (IGAA): usa "me" — o id de entrega do webhook pode diferir do id do token.
+    // Page token: usa o id da conta (graph.facebook.com aceita o id comercial).
+    const node = isIg ? "me" : igUserId;
+    const res = await fetch(`${apiBase}/${node}/messages`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json; charset=utf-8",
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({
+        recipient: { comment_id: commentId },
+        message: { text },
+      }),
+    });
+    const data = await res.json();
+    if (res.ok) return { messageId: data.message_id };
+    console.error(`[Instagram PrivateReply] Erro:`, JSON.stringify(data));
+    return { error: JSON.stringify(data) };
+  } catch (err: any) {
+    return { error: err.message };
+  }
+}
+
 export async function replyInstagramComment(
   accessToken: string,
   commentId: string,
