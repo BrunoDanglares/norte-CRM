@@ -235,7 +235,12 @@ function PostsTab({ onCreateFlow }: { onCreateFlow: (postId: string) => void }) 
       }
       setNextCursor(data.nextCursor || null);
     } catch (err: any) {
-      setError("Erro ao carregar publicações. Verifique se o token está válido.");
+      // extrai a mensagem REAL do backend/Graph (err.message vem como "400: {\"error\":\"…\"}")
+      let msg = "";
+      try { const j = String(err?.message || "").match(/\{[\s\S]*\}/); if (j) msg = JSON.parse(j[0]).error || ""; } catch { /* ignore */ }
+      setError(msg
+        ? `Erro ao carregar publicações: ${msg}`
+        : "Erro ao carregar publicações. Verifique se o Instagram está conectado e o token válido.");
     }
     setLoading(false);
     setLoadingMore(false);

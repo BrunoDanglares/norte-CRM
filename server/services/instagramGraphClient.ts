@@ -24,13 +24,13 @@ const IG_GRAPH_API = `https://graph.instagram.com/${GRAPH_VERSION}`;
 
 // Tokens de Instagram Login começam com "IGAA" e usam graph.instagram.com;
 // Page Tokens (o caso padrão da nossa conexão) usam graph.facebook.com.
-function apiBaseFor(token: string): string {
+export function apiBaseFor(token: string): string {
   return token?.startsWith("IGAA") ? IG_GRAPH_API : GRAPH_API;
 }
 
 // No Instagram Login (token IGAA) o usuário é referenciado como "me" (o id numérico
 // dá "object does not exist"); no Page Token usa-se o id numérico da conta.
-function nodeFor(igUserId: string, token: string): string {
+export function nodeFor(igUserId: string, token: string): string {
   return token?.startsWith("IGAA") ? "me" : igUserId;
 }
 

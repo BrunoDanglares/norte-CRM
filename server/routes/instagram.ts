@@ -12,6 +12,7 @@ import {
   handleInstaProspectStory,
 } from "../services/instaProspectService";
 import { processInstagramMessage, fetchInstagramProfile } from "../services/instagramMessageProcessor";
+import { apiBaseFor, nodeFor } from "../services/instagramGraphClient";
 
 // Bruno 2026-06-19 (auditoria IG): o `state` do OAuth carrega o workspaceId e
 // ANTES era só base64 (forjável) → CSRF de binding: atacante completava o OAuth
@@ -736,14 +737,19 @@ protectedRouter.get("/posts", requireAuth, async (req: Request, res: Response) =
 
     if (!conn) return res.status(404).json({ error: "Instagram nao conectado" });
 
+    // Base/nó dependem do TIPO de token: Page Token (padrão) → graph.facebook.com + id
+    // numérico; Instagram Login (IGAA) → graph.instagram.com + "me". Antes hardcodava
+    // graph.instagram.com/v19.0, o que quebrava com Page Token ("token inválido"). Bruno 2026-07-10.
+    const token = conn.accessToken;
     const after = typeof req.query.after === "string" ? req.query.after.replace(/[^a-zA-Z0-9=_-]/g, "") : "";
-    let url = `https://graph.instagram.com/v19.0/${conn.igUserId}/media?fields=id,caption,media_type,media_url,thumbnail_url,timestamp,permalink,like_count,comments_count&limit=12&access_token=${conn.accessToken}`;
+    let url = `${apiBaseFor(token)}/${nodeFor(conn.igUserId, token)}/media?fields=id,caption,media_type,media_url,thumbnail_url,timestamp,permalink,like_count,comments_count&limit=12&access_token=${encodeURIComponent(token)}`;
     if (after) url += `&after=${encodeURIComponent(after)}`;
 
     const igRes = await fetch(url);
     const igData = await igRes.json() as any;
 
     if (igData.error) {
+      console.warn("[Instagram] /posts erro do Graph:", igData.error.message || igData.error);
       return res.status(400).json({ error: igData.error.message || "Erro ao buscar posts" });
     }
 
