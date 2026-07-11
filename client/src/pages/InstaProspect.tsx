@@ -532,7 +532,7 @@ function PostDetailModal({ post, onClose }: { post: any; onClose: () => void }) 
                         </p>
                         {(c.replies || []).map((rp: any) => (
                           <p key={rp.id} style={{ fontSize: 12, margin: "6px 0 0 0", paddingLeft: 12, borderLeft: "2px solid var(--border)", lineHeight: 1.4 }} className="text-foreground">
-                            <strong>@{rp.username || "você"}</strong> <span className="text-muted-foreground" style={{ fontSize: 10.5 }}>· {relTime(rp.timestamp)}</span><br />{rp.text}
+                            <strong>@{rp.username || "usuário"}</strong> <span className="text-muted-foreground" style={{ fontSize: 10.5 }}>· {relTime(rp.timestamp)}</span><br />{rp.text}
                           </p>
                         ))}
                         {replyOpen === c.id ? (

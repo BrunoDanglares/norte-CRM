@@ -817,12 +817,23 @@ protectedRouter.get("/posts/:mediaId/comments", requireAuth, async (req: Request
     const r = await fetch(url);
     const data = await r.json() as any;
     if (data.error) return res.status(400).json({ error: data.error.message || "Erro ao buscar comentários" });
+    const raw: any[] = Array.isArray(data.data) ? data.data : [];
+    // Uma RESPOSTA é um comentário que também aparece na lista de TOPO (lá com o username
+    // preenchido), enquanto na expansão replies{} o username vem VAZIO. Então: (1) montamos
+    // um mapa id→username da lista crua e (2) removemos as respostas do topo (senão duplica).
+    // As respostas aninhadas puxam o username desse mapa. Bruno 2026-07-11.
+    const nomePorId = new Map<string, string>();
+    for (const c of raw) if (c?.id && c.username) nomePorId.set(c.id, c.username);
+    const idsResposta = new Set<string>();
+    for (const c of raw) for (const rp of ((c?.replies && c.replies.data) || [])) if (rp?.id) idsResposta.add(rp.id);
+    const nomeDe = (x: any) => x?.username || (x?.id ? nomePorId.get(x.id) : "") || "";
     res.set("Cache-Control", "no-store"); // reflete o Instagram AGORA (comentário apagado some)
     res.json({
-      comments: (data.data || []).map((c: any) => ({
-        id: c.id, text: c.text || "", username: c.username || "", timestamp: c.timestamp, likeCount: c.like_count || 0,
+      ownUsername: conn.igUsername || "",
+      comments: raw.filter((c: any) => !idsResposta.has(c.id)).map((c: any) => ({
+        id: c.id, text: c.text || "", username: nomeDe(c), timestamp: c.timestamp, likeCount: c.like_count || 0,
         replies: ((c.replies && c.replies.data) || []).map((rp: any) => ({
-          id: rp.id, text: rp.text || "", username: rp.username || "", timestamp: rp.timestamp,
+          id: rp.id, text: rp.text || "", username: nomeDe(rp), timestamp: rp.timestamp,
         })),
       })),
     });
