@@ -380,6 +380,13 @@ function PostsTab({ onCreateFlow }: { onCreateFlow: (postId: string) => void }) 
 
 function PostDetailModal({ post, onClose }: { post: any; onClose: () => void }) {
   const [flows, setFlows] = useState<any[]>([]);
+  const [comments, setComments] = useState<any[]>([]);
+  const [loadingC, setLoadingC] = useState(false);
+  const [cError, setCError] = useState("");
+  const [replyOpen, setReplyOpen] = useState<string | null>(null);
+  const [replyText, setReplyText] = useState("");
+  const [sending, setSending] = useState(false);
+  const [capExp, setCapExp] = useState(false);
 
   useEffect(() => {
     apiFetch("/api/insta-prospect/flows").then(f => {
@@ -388,32 +395,76 @@ function PostDetailModal({ post, onClose }: { post: any; onClose: () => void }) 
     }).catch(() => {});
   }, [post.id]);
 
+  async function loadComments() {
+    setLoadingC(true); setCError("");
+    try {
+      const d = await apiFetch(`/api/instagram/posts/${post.id}/comments`);
+      setComments(Array.isArray(d.comments) ? d.comments : []);
+    } catch (e: any) {
+      let msg = ""; try { const j = String(e?.message || "").match(/\{[\s\S]*\}/); if (j) msg = JSON.parse(j[0]).error || ""; } catch {}
+      setCError(msg || "Não deu pra carregar os comentários.");
+    }
+    setLoadingC(false);
+  }
+  useEffect(() => { loadComments(); /* eslint-disable-next-line */ }, [post.id]);
+
+  async function enviarResposta(commentId: string) {
+    const msg = replyText.trim();
+    if (!msg || sending) return;
+    setSending(true); setCError("");
+    try {
+      await apiRequest("POST", `/api/instagram/comments/${commentId}/reply`, { message: msg });
+      setReplyText(""); setReplyOpen(null);
+      await loadComments();
+    } catch (e: any) {
+      let msg2 = ""; try { const j = String(e?.message || "").match(/\{[\s\S]*\}/); if (j) msg2 = JSON.parse(j[0]).error || ""; } catch {}
+      setCError(msg2 || "Não deu pra enviar a resposta.");
+    }
+    setSending(false);
+  }
+
   function formatDate(ts: string) {
     try { return new Date(ts).toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" }); } catch { return ts; }
   }
+  function relTime(ts: string) {
+    try {
+      const d = new Date(ts).getTime(); const diff = (Date.now() - d) / 1000;
+      if (diff < 60) return "agora"; if (diff < 3600) return `${Math.floor(diff / 60)}min`;
+      if (diff < 86400) return `${Math.floor(diff / 3600)}h`; return `${Math.floor(diff / 86400)}d`;
+    } catch { return ""; }
+  }
+
+  const caption = post.caption || "";
+  const capLong = caption.length > 220;
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }} onClick={onClose}>
-      <div className="bg-card border border-border" onClick={e => e.stopPropagation()} style={{ borderRadius: 16, width: "100%", maxWidth: 600, maxHeight: "90vh", overflow: "hidden", display: "flex", flexDirection: "column" }} data-testid="modal-post-detail">
-        {post.mediaUrl && (
-          <div style={{ width: "100%", maxHeight: 320, overflow: "hidden", background: "#000" }}>
-            {post.mediaType === "VIDEO" ? (
-              <video src={post.mediaUrl} controls style={{ width: "100%", maxHeight: 320, objectFit: "contain" }} />
-            ) : (
-              <img src={post.mediaUrl} alt="" style={{ width: "100%", maxHeight: 320, objectFit: "contain" }} />
-            )}
-          </div>
-        )}
-        <div style={{ padding: "1.25rem", overflowY: "auto" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
-            <div>
-              <p className="text-foreground" style={{ fontSize: 14, fontWeight: 500, margin: "0 0 4px", lineHeight: 1.5 }}>{post.caption || "(sem legenda)"}</p>
-              <p className="text-muted-foreground" style={{ fontSize: 11, margin: 0 }}>{formatDate(post.timestamp)}</p>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 16 }} onClick={onClose}>
+      <div className="bg-card border border-border" onClick={e => e.stopPropagation()} style={{ borderRadius: 16, width: "100%", maxWidth: 560, maxHeight: "88vh", overflow: "hidden", display: "flex", flexDirection: "column" }} data-testid="modal-post-detail">
+        {/* Cabeçalho fixo: mídia (enquadrada) + botão fechar sobreposto */}
+        <div style={{ position: "relative", flex: "none" }}>
+          {post.mediaUrl ? (
+            <div style={{ width: "100%", height: 260, overflow: "hidden", background: "#0b0b0f", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              {post.mediaType === "VIDEO"
+                ? <video src={post.mediaUrl} controls style={{ maxWidth: "100%", maxHeight: 260, objectFit: "contain" }} />
+                : <img src={post.mediaUrl} alt="" style={{ maxWidth: "100%", maxHeight: 260, objectFit: "contain" }} />}
             </div>
-            <button onClick={onClose} className="text-muted-foreground" style={{ background: "none", border: "none", cursor: "pointer", fontSize: 16, padding: 4 }} data-testid="button-close-post-detail">✕</button>
-          </div>
+          ) : <div style={{ height: 8 }} />}
+          <button onClick={onClose} aria-label="Fechar" style={{ position: "absolute", top: 10, right: 10, width: 30, height: 30, borderRadius: "50%", background: "rgba(0,0,0,0.55)", color: "#fff", border: "none", cursor: "pointer", fontSize: 15, lineHeight: 1, display: "grid", placeItems: "center" }} data-testid="button-close-post-detail">✕</button>
+        </div>
 
-          <div className="text-muted-foreground" style={{ display: "flex", gap: 16, fontSize: 12, marginBottom: 16 }}>
+        {/* Corpo rolável */}
+        <div style={{ padding: "16px 18px", overflowY: "auto" }}>
+          <p className="text-foreground" style={{ fontSize: 13.5, fontWeight: 400, margin: "0 0 6px", lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
+            {capLong && !capExp ? caption.slice(0, 220) + "… " : caption || "(sem legenda)"}
+            {capLong && (
+              <button onClick={() => setCapExp(v => !v)} className="text-muted-foreground" style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, padding: 0, fontWeight: 600 }}>
+                {capExp ? "ver menos" : "ver mais"}
+              </button>
+            )}
+          </p>
+          <p className="text-muted-foreground" style={{ fontSize: 11, margin: "0 0 14px" }}>{formatDate(post.timestamp)}</p>
+
+          <div className="text-muted-foreground" style={{ display: "flex", gap: 16, fontSize: 12, marginBottom: 16, alignItems: "center" }}>
             <span>❤️ {post.likeCount} curtidas</span>
             <span>💬 {post.commentsCount} comentários</span>
             <a href={post.permalink} target="_blank" rel="noopener noreferrer" style={{ color: "#E1306C", textDecoration: "none", marginLeft: "auto" }}>
@@ -421,7 +472,66 @@ function PostDetailModal({ post, onClose }: { post: any; onClose: () => void }) 
             </a>
           </div>
 
-          <div style={{ borderTop: "1px solid var(--border)", paddingTop: 14, marginTop: 4 }}>
+          {/* ── Comentários (ler + responder) ── */}
+          <div style={{ borderTop: "1px solid var(--border)", paddingTop: 14, marginBottom: 4 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+              <p className="text-foreground" style={{ fontSize: 13, fontWeight: 600, margin: 0 }}>💬 Comentários</p>
+              <button onClick={loadComments} disabled={loadingC} className="text-muted-foreground" style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11 }}>↻ atualizar</button>
+            </div>
+
+            {cError && <p style={{ fontSize: 11.5, color: "#ef4444", margin: "0 0 8px" }}>{cError}</p>}
+
+            {loadingC ? (
+              <p className="text-muted-foreground" style={{ fontSize: 12, textAlign: "center", padding: "10px 0" }}>Carregando comentários…</p>
+            ) : comments.length === 0 ? (
+              <p className="text-muted-foreground" style={{ fontSize: 12, textAlign: "center", padding: "10px 0" }}>Nenhum comentário ainda.</p>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                {comments.map((c: any) => (
+                  <div key={c.id}>
+                    <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+                      <div style={{ flex: "none", width: 28, height: 28, borderRadius: "50%", background: "linear-gradient(135deg,#feda75,#d62976,#4f5bd5)", display: "grid", placeItems: "center", color: "#fff", fontSize: 12, fontWeight: 700 }}>
+                        {(c.username || "?").slice(0, 1).toUpperCase()}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ fontSize: 12.5, margin: 0, lineHeight: 1.45 }} className="text-foreground">
+                          <strong>@{c.username || "usuário"}</strong> <span className="text-muted-foreground" style={{ fontSize: 10.5 }}>· {relTime(c.timestamp)}</span>
+                          <br />{c.text}
+                        </p>
+                        {(c.replies || []).map((rp: any) => (
+                          <p key={rp.id} style={{ fontSize: 12, margin: "6px 0 0 0", paddingLeft: 12, borderLeft: "2px solid var(--border)", lineHeight: 1.4 }} className="text-foreground">
+                            <strong>@{rp.username || "você"}</strong> <span className="text-muted-foreground" style={{ fontSize: 10.5 }}>· {relTime(rp.timestamp)}</span><br />{rp.text}
+                          </p>
+                        ))}
+                        {replyOpen === c.id ? (
+                          <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                            <input
+                              value={replyText} onChange={e => setReplyText(e.target.value)} autoFocus
+                              onKeyDown={e => { if (e.key === "Enter") enviarResposta(c.id); if (e.key === "Escape") { setReplyOpen(null); setReplyText(""); } }}
+                              placeholder={`Responder @${c.username || ""}…`}
+                              className="bg-muted text-foreground border-border"
+                              style={{ flex: 1, padding: "6px 10px", borderRadius: 8, border: "0.5px solid", fontSize: 12.5 }}
+                              data-testid="input-comment-reply"
+                            />
+                            <button onClick={() => enviarResposta(c.id)} disabled={sending || !replyText.trim()}
+                              style={{ padding: "6px 12px", borderRadius: 8, border: "none", background: "#7c3aed", color: "#fff", fontSize: 12, fontWeight: 600, cursor: "pointer", opacity: sending || !replyText.trim() ? 0.6 : 1 }}
+                              data-testid="button-send-reply">{sending ? "…" : "Enviar"}</button>
+                          </div>
+                        ) : (
+                          <button onClick={() => { setReplyOpen(c.id); setReplyText(""); }} className="text-muted-foreground"
+                            style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11.5, padding: "4px 0 0", fontWeight: 600 }} data-testid="button-open-reply">
+                            Responder
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div style={{ borderTop: "1px solid var(--border)", paddingTop: 14, marginTop: 14 }}>
             <p className="text-foreground" style={{ fontSize: 13, fontWeight: 600, margin: "0 0 8px" }}>⚡ Automações neste post</p>
             {flows.length === 0 ? (
               <div style={{ textAlign: "center", padding: "16px 0" }}>

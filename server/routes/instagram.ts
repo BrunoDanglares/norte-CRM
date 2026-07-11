@@ -797,6 +797,67 @@ protectedRouter.get("/posts", requireAuth, async (req: Request, res: Response) =
   }
 });
 
+// Conexão IG ativa MAIS RECENTE do workspace (evita conexão-fantasma de app antigo).
+async function conexaoIgAtiva(workspaceId: string) {
+  const [conn] = await db.select().from(instagramConnections)
+    .where(and(eq(instagramConnections.workspaceId, workspaceId), eq(instagramConnections.isActive, true)))
+    .orderBy(desc(instagramConnections.updatedAt)).limit(1);
+  return conn ?? null;
+}
+
+// Lista os comentários de uma publicação (+ 1 nível de respostas). Bruno 2026-07-11.
+protectedRouter.get("/posts/:mediaId/comments", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const workspaceId = await resolveWorkspaceId(req);
+    const conn = await conexaoIgAtiva(workspaceId);
+    if (!conn) return res.status(404).json({ error: "Instagram nao conectado" });
+    const token = conn.accessToken;
+    const mediaId = String(req.params.mediaId).replace(/[^a-zA-Z0-9_]/g, "");
+    const url = `${apiBaseFor(token)}/${mediaId}/comments?fields=id,text,username,timestamp,like_count,replies{id,text,username,timestamp}&access_token=${encodeURIComponent(token)}`;
+    const r = await fetch(url);
+    const data = await r.json() as any;
+    if (data.error) return res.status(400).json({ error: data.error.message || "Erro ao buscar comentários" });
+    res.json({
+      comments: (data.data || []).map((c: any) => ({
+        id: c.id, text: c.text || "", username: c.username || "", timestamp: c.timestamp, likeCount: c.like_count || 0,
+        replies: ((c.replies && c.replies.data) || []).map((rp: any) => ({
+          id: rp.id, text: rp.text || "", username: rp.username || "", timestamp: rp.timestamp,
+        })),
+      })),
+    });
+  } catch (err: any) {
+    console.error("[Instagram] Erro ao buscar comentários:", err.message);
+    res.status(500).json({ error: "Erro ao buscar comentários" });
+  }
+});
+
+// Responde (reply) a um comentário. Exercita a permissão instagram_business_manage_comments.
+protectedRouter.post("/comments/:commentId/reply", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const workspaceId = await resolveWorkspaceId(req);
+    const message = String(req.body?.message || "").trim();
+    if (!message) return res.status(400).json({ error: "Escreva uma resposta" });
+    if (message.length > 2200) return res.status(400).json({ error: "Resposta muito longa" });
+    const conn = await conexaoIgAtiva(workspaceId);
+    if (!conn) return res.status(404).json({ error: "Instagram nao conectado" });
+    const token = conn.accessToken;
+    const commentId = String(req.params.commentId).replace(/[^a-zA-Z0-9_]/g, "");
+    const form = new URLSearchParams({ message, access_token: token });
+    const r = await fetch(`${apiBaseFor(token)}/${commentId}/replies`, {
+      method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: form.toString(),
+    });
+    const data = await r.json() as any;
+    if (!r.ok || data.error) {
+      console.warn("[Instagram] reply erro do Graph:", data.error?.message || data.error);
+      return res.status(400).json({ error: data.error?.message || "Erro ao responder comentário" });
+    }
+    res.json({ ok: true, id: data.id });
+  } catch (err: any) {
+    console.error("[Instagram] Erro ao responder comentário:", err.message);
+    res.status(500).json({ error: "Erro ao responder comentário" });
+  }
+});
+
 protectedRouter.patch("/automacoes", requireAuth, async (req: Request, res: Response) => {
   try {
     const workspaceId = await resolveWorkspaceId(req);
