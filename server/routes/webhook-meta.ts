@@ -128,22 +128,17 @@ async function processInstagramWebhookPayload(body: any) {
   const { instagramConnections } = await import("@shared/schema");
   const { handleInstaProspectDM, handleInstaProspectComment, handleInstaProspectStory } = await import("../services/instaProspectService");
   const { processInstagramMessage } = await import("../services/instagramMessageProcessor");
+  const { resolveIgConnectionForWebhook } = await import("../services/igWebhookResolver");
 
   for (const entry of body.entry || []) {
     const igUserId = entry.id;
 
-    const conns = await db
-      .select()
-      .from(instagramConnections)
-      .where(and(
-        eq(instagramConnections.igUserId, igUserId),
-        eq(instagramConnections.isActive, true)
-      ));
-
-    if (conns.length === 0) {
+    const conn = await resolveIgConnectionForWebhook(igUserId);
+    if (!conn) {
       console.warn("[Meta Webhook→Instagram] Sem conexao ATIVA para igUserId:", igUserId);
       continue;
     }
+    const conns = [conn];
 
     for (const conn of conns) {
       for (const messaging of entry.messaging || []) {

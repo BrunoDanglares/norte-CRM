@@ -13,6 +13,7 @@ import {
 } from "../services/instaProspectService";
 import { processInstagramMessage, fetchInstagramProfile } from "../services/instagramMessageProcessor";
 import { apiBaseFor, nodeFor } from "../services/instagramGraphClient";
+import { resolveIgConnectionForWebhook } from "../services/igWebhookResolver";
 
 // Garante UMA ÚNICA conexão Instagram ativa por workspace: desativa todas as anteriores
 // antes de (re)ativar a atual. Sem isso, reconectar com OUTRO app Meta (ex.: trocar de app)
@@ -116,11 +117,7 @@ webhookRouter.post("/webhook", async (req: Request, res: Response) => {
   for (const entry of body.entry || []) {
     const igUserId = entry.id;
 
-    const [conn] = await db
-      .select()
-      .from(instagramConnections)
-      .where(eq(instagramConnections.igUserId, igUserId))
-      .limit(1);
+    const conn = await resolveIgConnectionForWebhook(igUserId);
 
     if (!conn) {
       console.warn(
