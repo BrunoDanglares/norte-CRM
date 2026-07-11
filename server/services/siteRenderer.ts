@@ -15,6 +15,7 @@ import puppeteer from "puppeteer";
 import type { Browser } from "puppeteer";
 import { lookup } from "dns/promises";
 import { existsSync } from "fs";
+import { execSync } from "child_process";
 import { assertSafeOutboundUrl, isPrivateHost } from "../utils/ssrfGuard";
 
 const UA_BROWSER =
@@ -68,7 +69,14 @@ function acharChromium(): string | undefined {
   for (const p of ["/usr/bin/chromium", "/usr/bin/chromium-browser", "/usr/bin/google-chrome"]) {
     if (existsSync(p)) return p;
   }
-  return undefined;
+  // Nixpacks/Nix instala o chromium FORA de /usr/bin (nix profile) → resolve pelo PATH.
+  for (const bin of ["chromium", "chromium-browser", "google-chrome-stable", "google-chrome"]) {
+    try {
+      const p = execSync(`command -v ${bin} 2>/dev/null`, { stdio: ["ignore", "pipe", "ignore"], shell: "/bin/sh" }).toString().trim();
+      if (p && existsSync(p)) return p;
+    } catch { /* não encontrado */ }
+  }
+  return undefined; // deixa o puppeteer usar o bundled (dev local)
 }
 
 // Singleton preguiçoso — lança o Chromium na 1ª vez e reusa. Local usa o Chromium

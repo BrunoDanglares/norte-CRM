@@ -1,0 +1,10 @@
+# O EasyPanel builda este app com Nixpacks (não com o Dockerfile). O Instaflix usa um
+# navegador headless (Puppeteer) pra ler sites SPA (preços/planos reais). Aqui instalamos
+# o Chromium do sistema e PULAMOS o download do Chromium bundled do puppeteer (que não
+# roda sem as libs certas) — o código resolve o binário em runtime (siteRenderer.acharChromium,
+# via PATH/`command -v`). Bruno 2026-07-10.
+[phases.setup]
+nixPkgs = ["...", "chromium"]
+
+[variables]
+PUPPETEER_SKIP_DOWNLOAD = "true"
