@@ -14,6 +14,16 @@ import {
 import { processInstagramMessage, fetchInstagramProfile } from "../services/instagramMessageProcessor";
 import { apiBaseFor, nodeFor } from "../services/instagramGraphClient";
 
+// Garante UMA ÚNICA conexão Instagram ativa por workspace: desativa todas as anteriores
+// antes de (re)ativar a atual. Sem isso, reconectar com OUTRO app Meta (ex.: trocar de app)
+// deixava a conexão antiga ativa com token do app velho, e a publicação/DM pegava esse token
+// velho por engano ("user has not authorized application …"). Bruno 2026-07-11.
+async function desativarConexoesInstagram(workspaceId: string) {
+  await db.update(instagramConnections)
+    .set({ isActive: false, updatedAt: new Date() })
+    .where(and(eq(instagramConnections.workspaceId, workspaceId), eq(instagramConnections.isActive, true)));
+}
+
 // Bruno 2026-06-19 (auditoria IG): o `state` do OAuth carrega o workspaceId e
 // ANTES era só base64 (forjável) → CSRF de binding: atacante completava o OAuth
 // injetando o workspaceId da vítima e amarrava a conta IG dele ao tenant alvo
@@ -583,6 +593,7 @@ webhookRouter.get("/ig-callback", async (req: Request, res: Response) => {
     }
 
     const expiresAt = new Date(Date.now() + expiresIn * 1000);
+    await desativarConexoesInstagram(workspaceId); // mata conexão-fantasma de app antigo
     const [existing] = await db.select().from(instagramConnections)
       .where(and(eq(instagramConnections.workspaceId, workspaceId), eq(instagramConnections.igUserId, igUserId)))
       .limit(1);
@@ -631,6 +642,7 @@ protectedRouter.post("/connect-token", requireAuth, async (req: Request, res: Re
       }
       console.warn(`[Instagram] Token validou em graph.instagram mas NAO em graph.facebook — DMs podem nao funcionar. Use um Page Access Token do Facebook para suportar mensagens.`);
       const igUsername = igFallback.username || "unknown";
+      await desativarConexoesInstagram(workspaceId); // mata conexão-fantasma de app antigo
       const [existing] = await db.select().from(instagramConnections).where(and(eq(instagramConnections.workspaceId, workspaceId), eq(instagramConnections.igUserId, igUserId))).limit(1);
       const expiresAt = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000);
       if (existing) {
@@ -644,6 +656,7 @@ protectedRouter.post("/connect-token", requireAuth, async (req: Request, res: Re
 
     const igUsername = igProfile.username || "unknown";
 
+    await desativarConexoesInstagram(workspaceId); // mata conexão-fantasma de app antigo
     const [existing] = await db
       .select()
       .from(instagramConnections)
