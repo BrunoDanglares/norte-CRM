@@ -13,7 +13,7 @@ import {
 } from "../services/instaProspectService";
 import { processInstagramMessage, fetchInstagramProfile } from "../services/instagramMessageProcessor";
 import { apiBaseFor, nodeFor } from "../services/instagramGraphClient";
-import { resolveIgConnectionForWebhook } from "../services/igWebhookResolver";
+import { resolveIgConnectionForWebhook, isOwnAccountComment } from "../services/igWebhookResolver";
 
 // Garante UMA ÚNICA conexão Instagram ativa por workspace: desativa todas as anteriores
 // antes de (re)ativar a atual. Sem isso, reconectar com OUTRO app Meta (ex.: trocar de app)
@@ -181,8 +181,11 @@ webhookRouter.post("/webhook", async (req: Request, res: Response) => {
     for (const change of entry.changes || []) {
       if (change.field === "comments" && change.value) {
         const { value } = change;
-        console.log(`[Instagram] comentário recebido igUser=${igUserId} flow=${commentFlowId || "NENHUM"} comment=${value.id} texto="${(value.text || "").slice(0, 40)}"`);
-        if (commentFlowId) {
+        if (isOwnAccountComment(conn, value.from, igUserId)) {
+          // anti-loop: reply do bot é postado como comentário e voltaria como webhook
+          console.log(`[Instagram] comentário da PRÓPRIA conta ignorado (anti-loop) comment=${value.id}`);
+        } else if (commentFlowId) {
+          console.log(`[Instagram] comentário recebido igUser=${igUserId} flow=${commentFlowId} comment=${value.id} texto="${(value.text || "").slice(0, 40)}"`);
           await handleInstaProspectComment({
             workspaceId: conn.workspaceId,
             connectionId: conn.id,

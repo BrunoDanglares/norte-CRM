@@ -15,6 +15,28 @@ import { eq, or } from "drizzle-orm";
  * entrega ainda não mapeado), retorna null e loga as conexões ativas p/ diagnóstico;
  * o mapeamento é feito setando ig_webhook_id na conexão certa.
  */
+/**
+ * Anti-loop: detecta comentário feito pela PRÓPRIA conta conectada. Sem isso, o reply
+ * público do bot (que é postado como comentário) dispara um novo webhook de `comments`
+ * → o bot responde de novo → loop infinito (gasta OpenAI + spam de comentários).
+ * Análogo ao `is_echo` das DMs. Cobre o autor em qualquer formato de ID + username.
+ */
+export function isOwnAccountComment(
+  conn: { igUserId: string; igWebhookId: string | null; igUsername: string },
+  from: { id?: string; username?: string } | undefined,
+  webhookAccountId: string,
+): boolean {
+  const fromId = from?.id || "";
+  if (fromId && (fromId === webhookAccountId || fromId === conn.igUserId || fromId === conn.igWebhookId)) {
+    return true;
+  }
+  const fromUser = (from?.username || "").trim().toLowerCase();
+  if (fromUser && fromUser === (conn.igUsername || "").trim().toLowerCase()) {
+    return true;
+  }
+  return false;
+}
+
 export async function resolveIgConnectionForWebhook(webhookIgId: string) {
   const matches = await db
     .select()

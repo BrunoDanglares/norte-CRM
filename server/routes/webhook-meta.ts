@@ -128,7 +128,7 @@ async function processInstagramWebhookPayload(body: any) {
   const { instagramConnections } = await import("@shared/schema");
   const { handleInstaProspectDM, handleInstaProspectComment, handleInstaProspectStory } = await import("../services/instaProspectService");
   const { processInstagramMessage } = await import("../services/instagramMessageProcessor");
-  const { resolveIgConnectionForWebhook } = await import("../services/igWebhookResolver");
+  const { resolveIgConnectionForWebhook, isOwnAccountComment } = await import("../services/igWebhookResolver");
 
   for (const entry of body.entry || []) {
     const igUserId = entry.id;
@@ -196,8 +196,11 @@ async function processInstagramWebhookPayload(body: any) {
       for (const change of entry.changes || []) {
         if (change.field === "comments" && change.value) {
           const { value } = change;
-          console.log(`[Meta→IG] comentário recebido igUser=${igUserId} flow=${commentFlowId || "NENHUM"} comment=${value.id} texto="${(value.text || "").slice(0, 40)}"`);
-          if (commentFlowId) {
+          if (isOwnAccountComment(conn, value.from, igUserId)) {
+            // anti-loop: reply do bot é postado como comentário e voltaria como webhook
+            console.log(`[Meta→IG] comentário da PRÓPRIA conta ignorado (anti-loop) comment=${value.id}`);
+          } else if (commentFlowId) {
+            console.log(`[Meta→IG] comentário recebido igUser=${igUserId} flow=${commentFlowId} comment=${value.id} texto="${(value.text || "").slice(0, 40)}"`);
             await handleInstaProspectComment({
               workspaceId: conn.workspaceId,
               connectionId: conn.id,
