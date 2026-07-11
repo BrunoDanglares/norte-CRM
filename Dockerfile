@@ -1,32 +1,30 @@
-FROM node:20-alpine
+# Build controlado por Dockerfile (o Nixpacks, na base Ubuntu, injeta um chromium SNAP ao
+# detectar o puppeteer — e snap não roda em container). Aqui usamos Debian (bookworm), onde
+# o pacote `chromium` do apt é um binário REAL. Node 22 (puppeteer 25/vite 7/sharp exigem >=22/20).
+# Bruno 2026-07-11.
+FROM node:22-bookworm-slim
 WORKDIR /app
-# Bruno 2026-07-09: Instaflix renderiza sites em navegador headless (Puppeteer) pra ler
-# o conteúdo REAL de sites SPA (preços/planos que só existem após o JS rodar). Em Alpine
-# o Chromium bundled do puppeteer NÃO roda (musl libc) → usamos o do sistema (apk) e
-# PULAMOS o download do bundled. As libs abaixo são as deps de runtime do Chromium.
-RUN apk add --no-cache chromium nss freetype harfbuzz ca-certificates ttf-freefont
-# O binário do pacote 'chromium' no Alpine atual é /usr/bin/chromium (no antigo era
-# chromium-browser). O código (siteRenderer.acharChromium) detecta o path certo em runtime,
-# então isto é só a dica preferencial. PUPPETEER_SKIP_DOWNLOAD pula o Chromium bundled (não roda no Alpine).
+
+# Chromium REAL do Debian (não-snap) + libs de fonte pro Instaflix renderizar sites headless.
+# O puppeteer NÃO baixa o bundled (PUPPETEER_SKIP_DOWNLOAD) — usa este, resolvido por
+# PUPPETEER_EXECUTABLE_PATH / siteRenderer.acharChromium.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      chromium ca-certificates fonts-liberation \
+    && rm -rf /var/lib/apt/lists/*
 ENV PUPPETEER_SKIP_DOWNLOAD=true \
     PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+
 COPY package*.json ./
-RUN npm install
+RUN npm install --no-audit --no-fund
 COPY . .
 RUN npm run build
 EXPOSE 5000
 ENV NODE_ENV=production
-# Bruno 2026-06-02: mídia (imagens/áudios/comprovantes recebidos e enviados) é
-# salva em /app/uploads. Sem volume persistente esse diretório é zerado a cada
-# redeploy → imagens viram "Imagem indisponível". Declara o ponto de mount; no
-# EasyPanel é PRECISO anexar um VOLUME PERSISTENTE a /app/uploads pra valer.
+
+# Mídia (uploads) precisa de volume persistente no EasyPanel (senão zera a cada redeploy).
 VOLUME ["/app/uploads"]
-# Bruno 2026-06-20: liveness probe pro Swarm/EasyPanel REINICIAR um container
-# "travado" (processo vivo mas event loop preso) — sem isto, o orquestrador só
-# reage a processo MORTO, não a processo zumbi. /api/health é dependency-free
-# (responde 200 enquanto o event loop roda; NÃO falha por DB fora) → não causa
-# kill-loop. start-period generoso porque o boot faz auto-migrations/seed/restore
-# e "pode demorar minutos" (ver CLAUDE.md). Usa wget do busybox (alpine).
+
+# Liveness probe (Node 22 tem fetch global; bookworm-slim não traz wget/curl).
 HEALTHCHECK --interval=30s --timeout=5s --start-period=240s --retries=3 \
-  CMD wget -qO- "http://127.0.0.1:${PORT:-5000}/api/health" >/dev/null 2>&1 || exit 1
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||5000)+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 CMD ["node", "dist/index.cjs"]
