@@ -11,7 +11,7 @@ import { requireAuth } from "../middleware/auth";
 import { resolveWorkspaceId, upload } from "../utils/helpers";
 import { resolveUploadPath } from "../utils/uploadsDir";
 import fs from "fs";
-import { gerarRascunhoPost, sugerirPilares } from "../services/instaflixStudio";
+import { gerarRascunhoPost, sugerirPilares, sintetizarIdentidadeMarca } from "../services/instaflixStudio";
 import { sincronizarBrandKitDoInstagram } from "../services/instaflixIngest";
 import { sincronizarCRM, sincronizarSite } from "../services/instaflixCrmIngest";
 import { ingerirDocumento, type DocumentoMarca } from "../services/instaflixDocsIngest";
@@ -105,6 +105,22 @@ router.post("/brand-kit/sync-site", requireAuth, async (req, res) => {
   } catch (err: any) {
     console.error("[Instaflix] Erro ao sincronizar site:", err.message);
     res.status(400).json({ error: err.message || "Erro ao sincronizar do site" });
+  }
+});
+
+// "Alimentar dados da marca": a IA lê as fontes já preenchidas (materiais/site/IG) e
+// SINTETIZA a identidade coerente (o que faz, produtos, público, tom, segmento). NÃO
+// salva — devolve os campos pro usuário revisar e salvar. Bruno 2026-07-14.
+router.post("/brand-kit/auto-preencher", requireAuth, async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceId(req);
+    const brandKit = await getBrandKit(workspaceId);
+    const segmentos = Object.values(SEGMENTOS).map((s: any) => ({ slug: s.slug, nome: s.nome }));
+    const out = await sintetizarIdentidadeMarca(workspaceId, brandKit, segmentos);
+    res.json({ ok: true, ...out });
+  } catch (err: any) {
+    console.error("[Instaflix] Erro ao alimentar dados da marca:", err.message);
+    res.status(400).json({ error: err.message || "Erro ao alimentar dados da marca" });
   }
 });
 

@@ -888,3 +888,52 @@ export async function sugerirPilares(
     }))
     .slice(0, 6);
 }
+
+export interface IdentidadeMarca {
+  descricaoNegocio: string;
+  produtosServicos: string;
+  publicoAlvo: string;
+  tomVoz: string;
+  segmento: string; // slug da lista de segmentos, ou "" se nenhum encaixa
+}
+
+// "Alimentar dados da marca": a IA lê as FONTES já preenchidas (materiais enviados,
+// resumo do site, posts/temas do Instagram, produtos) e SINTETIZA a identidade
+// coerente. Corrige campos misturados/errados priorizando as fontes. NÃO salva —
+// o chamador devolve os campos pro usuário revisar e salvar. Bruno 2026-07-14.
+export async function sintetizarIdentidadeMarca(
+  workspaceId: string,
+  brandKit: InstaflixBrandKit | null,
+  segmentosDisponiveis: { slug: string; nome: string }[] = [],
+): Promise<{ campos: IdentidadeMarca; temFontes: boolean }> {
+  const ctx = contextoMarca(brandKit);
+  const temFontes = !!(
+    (Array.isArray(brandKit?.documentos) && (brandKit!.documentos as any[]).some((d) => d?.resumo)) ||
+    brandKit?.siteResumo ||
+    brandKit?.produtosServicos ||
+    (Array.isArray(brandKit?.exemplosLegendas) && (brandKit!.exemplosLegendas as any[]).length > 0) ||
+    (Array.isArray(brandKit?.temasRecorrentes) && (brandKit!.temasRecorrentes as any[]).length > 0)
+  );
+  const segList = segmentosDisponiveis.map((s) => `${s.slug} (${s.nome})`).join("; ");
+  const r = await chamarAgente<IdentidadeMarca>(workspaceId, {
+    model: "gpt-4o-mini",
+    temperature: 0.4,
+    system:
+      "Você preenche a IDENTIDADE de uma marca (pra um app de conteúdo de Instagram) a partir das FONTES reais fornecidas: materiais enviados (PDF/imagem), resumo do site, posts/legendas/temas do Instagram e produtos/serviços. " +
+      "Sintetize campos COERENTES entre si e fiéis ao negócio real. Se os valores atuais parecerem MISTURADOS ou ERRADOS (ex.: o segmento não bate com o que o negócio faz), CORRIJA priorizando as fontes (materiais/site/posts) sobre os valores atuais. " +
+      "Escolha o SEGMENTO da lista fornecida usando o slug EXATO; se nada encaixar, use \"\". Escreva em português brasileiro, direto e sem enrolação. " +
+      "Responda SOMENTE JSON: { descricaoNegocio (1-2 frases claras do que o negócio faz/vende), produtosServicos (lista curta separada por vírgula do que oferece), publicoAlvo (1 frase do cliente ideal), tomVoz (3 a 6 palavras do tom), segmento (slug da lista ou \"\") }.",
+    user: `FONTES DA MARCA (algumas podem estar misturadas — priorize materiais/site/posts):\n${ctx}\n\nSEGMENTOS DISPONÍVEIS (escolha 1 slug exato): ${segList || "(nenhum)"}\n\nSintetize a identidade coerente agora.`,
+  });
+  const slugs = new Set(segmentosDisponiveis.map((s) => s.slug));
+  return {
+    temFontes,
+    campos: {
+      descricaoNegocio: String(r?.descricaoNegocio || "").slice(0, 600),
+      produtosServicos: String(r?.produtosServicos || "").slice(0, 600),
+      publicoAlvo: String(r?.publicoAlvo || "").slice(0, 300),
+      tomVoz: String(r?.tomVoz || "").slice(0, 120),
+      segmento: r?.segmento && slugs.has(String(r.segmento)) ? String(r.segmento) : "",
+    },
+  };
+}

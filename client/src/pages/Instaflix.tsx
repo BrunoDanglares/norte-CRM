@@ -1152,6 +1152,7 @@ function MarcaTab() {
   const [sincronizando, setSincronizando] = useState(false);
   const [sincronizandoCrm, setSincronizandoCrm] = useState(false);
   const [sincronizandoSite, setSincronizandoSite] = useState(false);
+  const [alimentando, setAlimentando] = useState(false);
   const [siteInput, setSiteInput] = useState("");
 
   const [f, setF] = useState<Record<string, string>>({});
@@ -1460,6 +1461,40 @@ function MarcaTab() {
       toast({ title: "Erro ao salvar", description: e.message, variant: "destructive" });
     } finally {
       setSaving(false);
+    }
+  }
+
+  // "Alimentar com IA": sintetiza a identidade a partir das fontes (materiais/site/IG)
+  // e PREENCHE os campos de texto pra revisão (só persiste no Salvar). O segmento tem
+  // save próprio (dropdown), então é aplicado na hora se a IA sugeriu um diferente.
+  async function alimentarComIA() {
+    setAlimentando(true);
+    try {
+      const res = await apiRequest("POST", "/api/instaflix/brand-kit/auto-preencher", {});
+      const json = await res.json();
+      if (json?.error) throw new Error(json.error);
+      const c = json.campos || {};
+      setF((prev) => {
+        const next = { ...prev };
+        if (c.descricaoNegocio) next.descricaoNegocio = c.descricaoNegocio;
+        if (c.produtosServicos) next.produtosServicos = c.produtosServicos;
+        if (c.publicoAlvo) next.publicoAlvo = c.publicoAlvo;
+        if (c.tomVoz) next.tomVoz = c.tomVoz;
+        return next;
+      });
+      let msgSeg = "";
+      if (c.segmento && c.segmento !== (bk?.segmento || "")) {
+        const nomeSeg = (Array.isArray(segmentos) ? segmentos : []).find((s: any) => s.slug === c.segmento)?.nome || c.segmento;
+        await salvarSegmento(c.segmento);
+        msgSeg = ` Segmento ajustado pra "${nomeSeg}".`;
+      }
+      toast(json.temFontes === false
+        ? { title: "Preenchi com o que tinha", description: "Pra ficar mais sob medida, envie materiais e sincronize site/Instagram acima." + msgSeg }
+        : { title: "Campos preenchidos pela IA!", description: "Revise e clique em Salvar." + msgSeg });
+    } catch (e: any) {
+      toast({ title: "Erro ao alimentar", description: e.message, variant: "destructive" });
+    } finally {
+      setAlimentando(false);
     }
   }
 
@@ -1844,10 +1879,14 @@ function MarcaTab() {
               <span className="text-[13px] font-semibold">Identidade da marca</span>
             </div>
             <p className="text-[12px] text-base-content/55 leading-relaxed">
-              É o “cérebro” que alimenta a IA. As fontes acima preenchem isto sozinhas
-              (Instagram, CRM, site) — e você pode refinar à mão.
+              É o “cérebro” que alimenta a IA. Clique em <b>Alimentar com IA</b> pra ela
+              preencher tudo a partir dos materiais, site e Instagram — depois é só revisar e Salvar.
             </p>
-            <Button size="sm" onClick={salvar} disabled={saving} className="mt-3">
+            <Button size="sm" variant="outline" onClick={alimentarComIA} disabled={alimentando || saving} className="mt-3 w-full" data-testid="btn-alimentar-ia">
+              {alimentando ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5 mr-1.5" />}
+              {alimentando ? "Alimentando..." : "Alimentar com IA"}
+            </Button>
+            <Button size="sm" onClick={salvar} disabled={saving} className="mt-2 w-full">
               <Save className="w-3.5 h-3.5 mr-1.5" />
               {saving ? "Salvando..." : "Salvar"}
             </Button>
