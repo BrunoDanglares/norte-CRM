@@ -63,7 +63,7 @@ router.put("/brand-kit", requireAuth, async (req, res) => {
       "logoUrl", "logos", "hashtagsPadrao", "diretrizes", "exemplosLegendas", "temasRecorrentes",
       "fontesConhecimento", "baseConhecimento", "ativo", "instagramConnectionId",
       "produtosServicos", "siteUrl", "faqClientes", "provaSocial", "documentos", "segmento",
-      "onboardingConcluido", "planosValores",
+      "onboardingConcluido", "planosValores", "materiaisVisuais",
     ];
     const data: Record<string, any> = {};
     for (const k of allowed) if (req.body[k] !== undefined) data[k] = req.body[k];
@@ -153,6 +153,37 @@ router.post("/brand-kit/logo/remover", requireAuth, async (req, res) => {
   } catch (err: any) {
     console.error("[Instaflix] Erro ao remover logo:", err.message);
     res.status(500).json({ error: "Erro ao remover logo" });
+  }
+});
+
+// ── Materiais visuais (mascote, selo, padrão…) ────────────────────────────────
+// Upload de UMA variação de material → remove fundo (transparente) → grava /uploads/
+// e DEVOLVE a url. O client põe a url no material certo (nome/tipo/variações) e salva
+// o array inteiro via PUT /brand-kit (campo materiaisVisuais). Bruno 2026-07-11.
+router.post("/brand-kit/material-upload", requireAuth, upload.single("file"), async (req, res) => {
+  try {
+    await resolveWorkspaceId(req); // valida sessão/tenant
+    if (!req.file) return res.status(400).json({ error: "Nenhum arquivo enviado" });
+    if (!/\.(png|jpe?g|webp|gif|bmp)$/i.test(req.file.originalname)) {
+      return res.status(400).json({ error: "O material precisa ser uma imagem (PNG, JPG, WEBP)" });
+    }
+    // Por padrão remove o fundo (mascote/selo ficam transparentes). semFundo=1 mantém
+    // o arquivo original (ex.: padrão de fundo colorido que não deve ser recortado).
+    const manterFundo = String(req.body?.semFundo ?? req.query?.semFundo ?? "") === "1";
+    let url = `/uploads/${req.file.filename}`;
+    if (!manterFundo) {
+      try {
+        const limpa = await removerFundoLogo(fs.readFileSync(req.file.path));
+        const nome = `material-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`;
+        fs.writeFileSync(resolveUploadPath(`/uploads/${nome}`), limpa);
+        url = `/uploads/${nome}`;
+        try { fs.unlinkSync(req.file.path); } catch { /* original com fundo — ok deixar */ }
+      } catch { /* falhou a limpeza → mantém o original enviado */ }
+    }
+    res.json({ ok: true, url });
+  } catch (err: any) {
+    console.error("[Instaflix] Erro ao enviar material:", err.message);
+    res.status(500).json({ error: "Erro ao enviar material" });
   }
 });
 

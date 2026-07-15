@@ -459,6 +459,7 @@ async function runAutoMigrations() {
     `ALTER TABLE instaflix_brand_kits ADD COLUMN IF NOT EXISTS prova_social JSONB DEFAULT '[]'::jsonb`,
     `ALTER TABLE instaflix_brand_kits ADD COLUMN IF NOT EXISTS documentos JSONB DEFAULT '[]'::jsonb`,
     `ALTER TABLE instaflix_brand_kits ADD COLUMN IF NOT EXISTS logos JSONB DEFAULT '[]'::jsonb`,
+    `ALTER TABLE instaflix_brand_kits ADD COLUMN IF NOT EXISTS materiais_visuais JSONB DEFAULT '[]'::jsonb`,
     `CREATE TABLE IF NOT EXISTS instagram_data_deletions (
       id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       confirmation_code  TEXT NOT NULL UNIQUE,

@@ -1312,6 +1312,10 @@ export const instaflixBrandKits = pgTable("instaflix_brand_kits", {
   fontes: jsonb("fontes").default({}),                 // tipografia preferida
   logoUrl: text("logo_url"),                           // logo "primária" (= logos[0]; compat retroativa)
   logos: jsonb("logos").default([]),                   // variações da logo: [{ url }] — a IA escolhe a que combina com o fundo de cada arte
+  // Materiais visuais além da logo (mascote, selo, carimbo, padrão...). Cada material
+  // tem um nome, um tipo e 1+ variações; a IA escolhe QUAL usar por arte, QUAL variação
+  // e onde colar (Fase 1: "colado"/overlay). Item: { id, nome, tipo, variacoes:[{url}], ativo }.
+  materiaisVisuais: jsonb("materiais_visuais").default([]),
   hashtagsPadrao: jsonb("hashtags_padrao").default([]),
   diretrizes: text("diretrizes"),                      // do/don't da marca
   exemplosLegendas: jsonb("exemplos_legendas").default([]), // aprendidos do feed

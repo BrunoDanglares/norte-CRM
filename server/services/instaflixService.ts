@@ -41,6 +41,31 @@ export function brandLogoUrls(bk: InstaflixBrandKit | null): string[] {
   return bk.logoUrl ? [bk.logoUrl] : [];
 }
 
+// Um material visual da marca (mascote, selo, padrão...) com suas variações, já
+// normalizado pra geração: só materiais ativos, com pelo menos 1 variação válida.
+export interface BrandMaterialAsset {
+  nome: string;
+  tipo: string;
+  variacoes: string[];    // URLs das variações (a IA escolhe qual usar por arte)
+}
+
+// Materiais visuais além da logo, prontos pra IA usar na composição das artes.
+// Fonte: campo `materiaisVisuais` do brand kit ([{ nome, tipo, variacoes:[{url}], ativo }]).
+export function brandMaterialAssets(bk: InstaflixBrandKit | null): BrandMaterialAsset[] {
+  if (!bk) return [];
+  const arr = Array.isArray((bk as any).materiaisVisuais) ? ((bk as any).materiaisVisuais as any[]) : [];
+  return arr
+    .filter((m) => m && m.ativo !== false)
+    .map((m) => ({
+      nome: typeof m?.nome === "string" ? m.nome : "",
+      tipo: typeof m?.tipo === "string" ? m.tipo : "material",
+      variacoes: (Array.isArray(m?.variacoes) ? m.variacoes : [])
+        .map((v: any) => (typeof v === "string" ? v : v?.url))
+        .filter((u: any): u is string => typeof u === "string" && !!u),
+    }))
+    .filter((m) => m.variacoes.length > 0);
+}
+
 export async function upsertBrandKit(workspaceId: string, data: Record<string, any>): Promise<InstaflixBrandKit> {
   const existing = await getBrandKit(workspaceId);
   if (existing) {

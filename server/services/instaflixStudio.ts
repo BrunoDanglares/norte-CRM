@@ -14,7 +14,7 @@
 import { getOpenAIClient } from "./openaiClient";
 import { resolveOpenAIKeys } from "./openaiKeyResolver";
 import { gerarImagemIA, type TamanhoImagem } from "./instaflixImageService";
-import { brandLogoUrls } from "./instaflixService";
+import { brandLogoUrls, brandMaterialAssets } from "./instaflixService";
 import { resolveSegmento } from "./instaflixSegmentos";
 import { datasComemorativasProximas } from "./datasComemorativas";
 import type { InstaflixBrandKit, InstaflixPillar } from "@shared/schema";
@@ -780,6 +780,7 @@ Gere EXATAMENTE ${nSlides} slide(s) com estilo visual CONSISTENTE entre si. Esco
       size: opts.tamanho || "1024x1536",
       baseUrl: opts.baseUrl,
       logos: brandLogoUrls(opts.brandKit),
+      materiais: brandMaterialAssets(opts.brandKit),
       textoOverlay: s.textoOverlay,
       paleta: (opts.brandKit?.paletaCores as string[] | undefined) || undefined,
       estilo: estiloLetreiro,

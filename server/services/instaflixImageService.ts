@@ -265,6 +265,78 @@ async function escolherLogoPorVisao(
   }
 }
 
+// ── Materiais visuais (mascote, selo, padrão…) ───────────────────────────────
+// Diferente da logo (pequena, no canto): o material é MAIOR e vai na lateral, em
+// meia-altura, longe da logo (topo) e do texto (rodapé). A IA (visão) decide SE usa
+// um material nesta arte, QUAL e de que lado; a variação é escolhida por contraste.
+// Bruno 2026-07-11.
+type LadoMaterial = "left" | "right";
+
+// A IA olha a arte + 1 thumbnail por material e devolve: usar ou não, qual e o lado.
+// null = sem chave/erro (chamador cai no default: 1º material, direita).
+async function escolherMaterialPorVisao(
+  workspaceId: string | undefined,
+  artBuf: Buffer,
+  thumbs: Buffer[],
+  nomes: string[],
+): Promise<{ use: boolean; materialIndex: number; side: LadoMaterial } | null> {
+  if (!workspaceId) return null;
+  const [cand] = await resolveOpenAIKeys(workspaceId);
+  if (!cand) return null;
+  try {
+    const client = getOpenAIClient({ apiKey: cand.apiKey, baseURL: cand.baseURL, timeout: 45_000 });
+    const arte = (await sharp(artBuf).resize({ width: 512, withoutEnlargement: true }).jpeg({ quality: 72 }).toBuffer()).toString("base64");
+    const mats = await Promise.all(
+      thumbs.map(async (b) => (await sharp(b).resize({ width: 200, height: 200, fit: "contain", background: { r: 255, g: 255, b: 255, alpha: 0 } }).png().toBuffer()).toString("base64")),
+    );
+    const lista = nomes.map((n, i) => `${i + 1}=${n || "material"}`).join(", ");
+    const content: any[] = [
+      { type: "text", text:
+        `IMAGE 1 is a finished Instagram artwork (a photo with a caption bar at the BOTTOM and a small logo in a TOP corner). ` +
+        `The next ${thumbs.length} image(s) are the brand's VISUAL ASSETS (e.g. mascot, seal, sticker), numbered 1..${thumbs.length} (${lista}). ` +
+        `You may stamp AT MOST ONE of them onto a SIDE of the artwork to enrich it. Decide if it genuinely improves the art; if so pick which asset and which side. ` +
+        `Choose the side (left or right) where it will LEAST cover the main subject — never over the bottom caption or the top logo. If none fits well, skip. ` +
+        `Return ONLY JSON: { "use": <boolean>, "asset": <1-based integer from 1 to ${thumbs.length}>, "side": "left" | "right" }.` },
+      { type: "image_url", image_url: { url: `data:image/jpeg;base64,${arte}`, detail: "low" } },
+      ...mats.map((b: string) => ({ type: "image_url", image_url: { url: `data:image/png;base64,${b}`, detail: "low" } })),
+    ];
+    const resp = await client.chat.completions.create({
+      model: "gpt-4o-mini", temperature: 0, response_format: { type: "json_object" },
+      messages: [{ role: "user", content: content as any }],
+    });
+    const j = JSON.parse(resp.choices?.[0]?.message?.content || "{}");
+    const use = j.use !== false;
+    const mi = Math.round(Number(j.asset)) - 1;
+    const materialIndex = mi >= 0 && mi < thumbs.length ? mi : 0;
+    const side: LadoMaterial = j.side === "left" ? "left" : "right";
+    return { use, materialIndex, side };
+  } catch {
+    return null;
+  }
+}
+
+// Dentro do material escolhido, pega a variação de MAIOR contraste com a região
+// lateral onde ela vai (clara sobre área escura e vice-versa). 1 variação → índice 0.
+async function melhorVariacaoPorContraste(artBuf: Buffer, variacaoBufs: Buffer[], side: LadoMaterial, W: number, H: number): Promise<number> {
+  if (variacaoBufs.length <= 1) return 0;
+  try {
+    const boxW = Math.round(W * 0.32), boxH = Math.round(H * 0.5);
+    const pad = Math.round(W * 0.02);
+    const left = side === "left" ? pad : Math.max(0, W - boxW - pad);
+    const top = Math.max(0, Math.round((H - boxH) / 2));
+    const w = Math.max(1, Math.min(boxW, W - left));
+    const h = Math.max(1, Math.min(boxH, H - top));
+    const st = await sharp(artBuf).extract({ left, top, width: w, height: h }).greyscale().stats();
+    const bgLum = st.channels?.[0]?.mean ?? 128;
+    let index = 0, best = -1;
+    for (let i = 0; i < variacaoBufs.length; i++) {
+      const d = Math.abs((await lumOpacaLogo(variacaoBufs[i])) - bgLum);
+      if (d > best) { best = d; index = i; }
+    }
+    return index;
+  } catch { return 0; }
+}
+
 // "Híbrido": compõe letreiro (texto PT) + logo da marca sobre a arte gerada.
 // Estilos (a IA escolhe por post): 'faixa' (degradê da cor da marca), 'cartao'
 // (cartão arredondado), 'editorial' (scrim + selo). Usa a paleta da marca; sem
@@ -273,11 +345,12 @@ async function escolherLogoPorVisao(
 // original. Bruno 2026-07-07.
 export async function aplicarOverlayMarca(
   buffer: Buffer,
-  opts: { logos?: string[]; logoUrl?: string; textoOverlay?: string; paleta?: string[]; estilo?: EstiloLetreiro; faixaCor?: string; ctaSelo?: string; workspaceId?: string },
+  opts: { logos?: string[]; logoUrl?: string; textoOverlay?: string; paleta?: string[]; estilo?: EstiloLetreiro; faixaCor?: string; ctaSelo?: string; workspaceId?: string; materiais?: { nome: string; tipo: string; variacoes: string[] }[] },
 ): Promise<Buffer> {
   const texto = (opts.textoOverlay || "").trim();
   const logoUrls = opts.logos && opts.logos.length ? opts.logos : opts.logoUrl ? [opts.logoUrl] : [];
-  if (!texto && !logoUrls.length) return buffer;
+  const temMateriais = !!(opts.materiais && opts.materiais.length);
+  if (!texto && !logoUrls.length && !temMateriais) return buffer;
 
   try {
     const base = sharp(buffer);
@@ -378,6 +451,46 @@ export async function aplicarOverlayMarca(
       } catch { /* logo inválido — ignora */ }
     }
 
+    // Materiais visuais (mascote, selo…) — a IA escolhe SE usa, QUAL material e o lado;
+    // a variação é por contraste. Estampa MAIOR que a logo (~30% da largura), na lateral
+    // em meia-altura, longe da logo (topo) e do texto (rodapé). Bruno 2026-07-11.
+    const materiais = (opts.materiais || []).filter((m) => m && Array.isArray(m.variacoes) && m.variacoes.length);
+    if (materiais.length) {
+      try {
+        const thumbs: Buffer[] = [];
+        const validos: typeof materiais = [];
+        for (const m of materiais) {
+          const b = await carregarLogo(m.variacoes[0]);
+          if (b) { thumbs.push(b); validos.push(m); }
+        }
+        if (validos.length) {
+          const dec = await escolherMaterialPorVisao(opts.workspaceId, buffer, thumbs, validos.map((m) => m.nome));
+          // dec null = sem visão → default (1º material, direita); dec.use false = IA optou por não usar.
+          const escolha = dec === null
+            ? { materialIndex: 0, side: "right" as LadoMaterial }
+            : dec.use ? { materialIndex: dec.materialIndex, side: dec.side } : null;
+          if (escolha) {
+            const mat = validos[escolha.materialIndex] ?? validos[0];
+            const varBufs: Buffer[] = [];
+            for (const u of mat.variacoes) { const b = await carregarLogo(u); if (b) varBufs.push(b); }
+            if (varBufs.length) {
+              const vi = await melhorVariacaoPorContraste(buffer, varBufs, escolha.side, W, H);
+              const chosen = varBufs[vi] ?? varBufs[0];
+              const mw = Math.round(W * 0.30);
+              const mh = Math.round(H * 0.55); // limita a altura → fica na faixa central, longe da logo (topo) e do texto (rodapé)
+              const rmat = await sharp(chosen).resize({ width: mw, height: mh, fit: "inside", withoutEnlargement: true }).png().toBuffer();
+              const mm = await sharp(rmat).metadata();
+              const rw = mm.width || mw, rh = mm.height || mw;
+              const pad = Math.round(W * 0.02);
+              const left = escolha.side === "left" ? pad : Math.max(0, W - rw - pad);
+              const top = Math.max(0, Math.round((H - rh) / 2));
+              composites.push({ input: rmat, top, left });
+            }
+          }
+        }
+      } catch { /* material inválido — ignora */ }
+    }
+
     if (!composites.length) return buffer;
     return await base.composite(composites).png().toBuffer();
   } catch {
@@ -400,6 +513,7 @@ export interface GerarImagemOpts {
   faixaCor?: string;                // cor manual da faixa (hex); sobrepõe paleta[0] só na faixa
   ctaSelo?: string;                 // selo de CTA no letreiro 'editorial' (só se objetivo de venda)
   referencias?: string[];           // modo "inspirar nos materiais": imagens de referência (/uploads/…). Vazio = geração normal.
+  materiais?: { nome: string; tipo: string; variacoes: string[] }[]; // materiais visuais (mascote, selo…): a IA escolhe qual usar por arte (overlay)
 }
 
 export interface GerarImagemResult {
@@ -503,7 +617,7 @@ export async function gerarImagemIA(opts: GerarImagemOpts): Promise<GerarImagemR
     // Balanço de branco (gray-world) é calibrado pro cast amarelado das FOTOS do
     // gpt-image-1; numa arte referenciada na marca ele lavaria a cor da marca → pula.
     if (!usarRef) buffer = await corrigirBalancoBranco(buffer);
-    buffer = await aplicarOverlayMarca(buffer, { logos: opts.logos, logoUrl: opts.logoUrl, textoOverlay: opts.textoOverlay, paleta, estilo: opts.estilo, faixaCor: opts.faixaCor, ctaSelo: opts.ctaSelo, workspaceId: opts.workspaceId });
+    buffer = await aplicarOverlayMarca(buffer, { logos: opts.logos, logoUrl: opts.logoUrl, textoOverlay: opts.textoOverlay, paleta, estilo: opts.estilo, faixaCor: opts.faixaCor, ctaSelo: opts.ctaSelo, workspaceId: opts.workspaceId, materiais: opts.materiais });
 
     const filename = `instaflix-${Date.now()}-${randomUUID().slice(0, 8)}.png`;
     fs.writeFileSync(path.join(uploadsDir, filename), buffer);

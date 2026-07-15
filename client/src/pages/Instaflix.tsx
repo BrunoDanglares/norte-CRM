@@ -1168,7 +1168,11 @@ function MarcaTab() {
   const [logoLink, setLogoLink] = useState("");
   const [enviandoLink, setEnviandoLink] = useState(false);
   const [removendoLogo, setRemovendoLogo] = useState<string | null>(null);
+  const [salvandoMat, setSalvandoMat] = useState(false);
+  const [enviandoVar, setEnviandoVar] = useState<string | null>(null);
   const documentos: any[] = Array.isArray(bk?.documentos) ? bk.documentos : [];
+  // Materiais visuais (mascote, selo…): [{ id, nome, tipo, variacoes:[{url}], ativo }]
+  const materiais: any[] = Array.isArray(bk?.materiaisVisuais) ? bk.materiaisVisuais : [];
   // Variações da logo (campo novo `logos`); cai na logo única antiga (compat).
   const logos: string[] = (() => {
     const arr = Array.isArray(bk?.logos) ? (bk.logos as any[]).map((l) => l?.url).filter(Boolean) : [];
@@ -1290,6 +1294,55 @@ function MarcaTab() {
       toast({ title: "Erro ao remover variação", description: e.message, variant: "destructive" });
     } finally {
       setRemovendoLogo(null);
+    }
+  }
+
+  // ── Materiais visuais (mascote, selo…) — o array inteiro é salvo via PUT /brand-kit.
+  async function salvarMateriais(next: any[]) {
+    setSalvandoMat(true);
+    try {
+      const res = await apiRequest("PUT", "/api/instaflix/brand-kit", { materiaisVisuais: next });
+      const json = await res.json();
+      if (json?.error) throw new Error(json.error);
+      qc.invalidateQueries({ queryKey: ["/api/instaflix/brand-kit"] });
+    } catch (e: any) {
+      toast({ title: "Erro ao salvar materiais", description: e.message, variant: "destructive" });
+    } finally {
+      setSalvandoMat(false);
+    }
+  }
+  function novoId() { try { return crypto.randomUUID(); } catch { return `m-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`; } }
+  function addMaterial() {
+    salvarMateriais([...materiais, { id: novoId(), nome: "", tipo: "mascote", variacoes: [], ativo: true }]);
+  }
+  function patchMaterial(id: string, patch: any) {
+    salvarMateriais(materiais.map((m) => (m.id === id ? { ...m, ...patch } : m)));
+  }
+  function removeMaterial(id: string) {
+    salvarMateriais(materiais.filter((m) => m.id !== id));
+  }
+  function removerVariacao(id: string, url: string) {
+    salvarMateriais(materiais.map((m) => (m.id === id
+      ? { ...m, variacoes: (m.variacoes || []).filter((v: any) => (v?.url || v) !== url) }
+      : m)));
+  }
+  async function enviarVariacao(id: string, file?: File | null) {
+    if (!file) return;
+    setEnviandoVar(id);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await apiUpload("/api/instaflix/brand-kit/material-upload", fd);
+      const json = await res.json();
+      if (json?.error) throw new Error(json.error);
+      await salvarMateriais(materiais.map((m) => (m.id === id
+        ? { ...m, variacoes: [...(m.variacoes || []), { url: json.url }] }
+        : m)));
+      toast({ title: "Variação adicionada!", description: "A IA escolhe qual material e variação usar em cada arte." });
+    } catch (e: any) {
+      toast({ title: "Erro ao enviar material", description: e.message, variant: "destructive" });
+    } finally {
+      setEnviandoVar(null);
     }
   }
 
@@ -1525,7 +1578,7 @@ function MarcaTab() {
         <div className="flex items-center gap-2 mb-3">
           <Upload className="w-4 h-4 text-primary" />
           <span className="text-[13px] font-semibold">Logo e materiais</span>
-          <span className="text-[11px] text-muted-foreground">— a logo entra nas artes; os materiais (PDF/imagem) a IA lê pra aprender do negócio</span>
+          <span className="text-[11px] text-muted-foreground">— logo e materiais visuais (mascote…) entram nas artes; os materiais do negócio (PDF/imagem) a IA lê pra aprender</span>
         </div>
         <div className="space-y-2.5">
           {/* Logo — variações (a IA escolhe a que combina com o fundo de cada arte) */}
@@ -1595,6 +1648,89 @@ function MarcaTab() {
                 Usar link
               </Button>
             </div>
+          </div>
+
+          {/* Materiais visuais (mascote, selo, carimbo…) — a IA escolhe qual usar e como */}
+          <div className="rounded-box border border-base-300 p-2.5">
+            <div className="flex items-center gap-3 flex-wrap">
+              <div className="w-8 h-8 rounded-field bg-primary/10 flex items-center justify-center flex-shrink-0">
+                <Sparkles className="w-4 h-4 text-primary" />
+              </div>
+              <div className="grow min-w-0">
+                <p className="text-[12.5px] font-medium">Materiais visuais — mascote, selo, carimbo…</p>
+                <p className="text-[11px] text-muted-foreground">
+                  Personagens/elementos da marca, com variações. A IA escolhe qual material e qual variação combina com cada arte e onde encaixar (sem tapar o texto).
+                </p>
+              </div>
+              <button onClick={addMaterial} disabled={salvandoMat}
+                className={`btn btn-sm btn-outline ${salvandoMat ? "pointer-events-none opacity-60" : ""}`} data-testid="btn-add-material">
+                {salvandoMat ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Plus className="w-3.5 h-3.5 mr-1.5" />}
+                Adicionar material
+              </button>
+            </div>
+
+            {materiais.length > 0 && (
+              <div className="mt-2.5 space-y-2">
+                {materiais.map((m) => (
+                  <div key={m.id} className="rounded-field border border-base-300 bg-base-200/30 p-2" data-testid={`material-${m.id}`}>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Input defaultValue={m.nome || ""}
+                        onBlur={(e) => { const v = e.target.value.trim(); if (v !== (m.nome || "")) patchMaterial(m.id, { nome: v }); }}
+                        placeholder="Nome (ex.: Mascote Zé)" className="h-7 text-[11.5px] max-w-[170px]" />
+                      <select value={m.tipo || "mascote"} onChange={(e) => patchMaterial(m.id, { tipo: e.target.value })}
+                        className="select select-bordered select-xs text-[11px] h-7">
+                        <option value="mascote">Mascote</option>
+                        <option value="selo">Selo</option>
+                        <option value="carimbo">Carimbo</option>
+                        <option value="padrao">Padrão</option>
+                        <option value="outro">Outro</option>
+                      </select>
+                      <label className="flex items-center gap-1 text-[11px] cursor-pointer select-none">
+                        <input type="checkbox" checked={m.ativo !== false}
+                          onChange={(e) => patchMaterial(m.id, { ativo: e.target.checked })} className="checkbox checkbox-xs" />
+                        ativo
+                      </label>
+                      <div className="grow" />
+                      <label className={`btn btn-xs btn-outline cursor-pointer ${enviandoVar === m.id ? "pointer-events-none opacity-60" : ""}`} data-testid={`btn-add-variacao-${m.id}`}>
+                        {enviandoVar === m.id ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Plus className="w-3 h-3 mr-1" />}
+                        Variação
+                        <input type="file" accept="image/*" className="hidden" disabled={enviandoVar === m.id}
+                          onChange={(e) => { enviarVariacao(m.id, e.target.files?.[0]); e.currentTarget.value = ""; }} />
+                      </label>
+                      <button onClick={() => removeMaterial(m.id)} className="text-base-content/40 hover:text-red-600 shrink-0" title="Remover material" data-testid={`btn-remover-material-${m.id}`}>
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    {m.variacoes?.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {(m.variacoes || []).map((v: any, i: number) => {
+                          const url = v?.url || v;
+                          return (
+                            <div key={url || i}
+                              className="relative group w-14 h-14 rounded-field border border-base-300 overflow-hidden flex-shrink-0"
+                              style={{
+                                backgroundImage:
+                                  "linear-gradient(45deg,#8881 25%,transparent 25%),linear-gradient(-45deg,#8881 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#8881 75%),linear-gradient(-45deg,transparent 75%,#8881 75%)",
+                                backgroundSize: "12px 12px",
+                                backgroundPosition: "0 0,0 6px,6px -6px,-6px 0",
+                              }}
+                              title={i === 0 ? "Variação principal" : `Variação ${i + 1}`}>
+                              <img src={midiaSrc(url)} alt="" className="w-full h-full object-contain p-1" />
+                              <button onClick={() => removerVariacao(m.id, url)}
+                                className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                                title="Remover variação">
+                                <X className="w-2.5 h-2.5" />
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Materiais */}
