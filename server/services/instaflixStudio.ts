@@ -851,12 +851,27 @@ export async function sugerirPilares(
   const evitar = existentes.length
     ? `Já existem estes pilares (NÃO repita, sugira DIFERENTES): ${existentes.join("; ")}.`
     : "";
+  // Há fontes ricas (materiais enviados / site / posts do Instagram)? Se sim, o prompt
+  // COBRA aterrissar os pilares nelas em vez de sugerir genéricos. Bruno 2026-07-14.
+  const temFontes = !!(
+    (Array.isArray(brandKit?.documentos) && (brandKit!.documentos as any[]).some((d) => d?.resumo)) ||
+    brandKit?.siteResumo ||
+    brandKit?.produtosServicos ||
+    (Array.isArray(brandKit?.exemplosLegendas) && (brandKit!.exemplosLegendas as any[]).length > 0) ||
+    (Array.isArray(brandKit?.temasRecorrentes) && (brandKit!.temasRecorrentes as any[]).length > 0)
+  );
   const r = await chamarAgente<{ pilares: PilarSugerido[] }>(workspaceId, {
     model: "gpt-4o-mini",
     temperature: 0.85,
     system:
-      "Você é um estrategista de conteúdo de Instagram. Sugira de 5 a 6 PILARES de CONTEÚDO sob medida pro negócio (qualquer segmento). Um pilar é um tema-guia recorrente que a marca posta. REGRA IMPORTANTE: NÃO sugira pilares de PROMOÇÃO / OFERTA / DESCONTO / CUPOM / combo / venda direta — isso tem uma ÁREA EXCLUSIVA no app; aqui foque só em CONTEÚDO (autoridade, engajamento, bastidores, educativo, comunidade). Varie os objetivos. Responda SOMENTE JSON: { pilares: [{ nome (2-3 palavras, SEM 'promoção/oferta/desconto'), objetivo (exatamente um de: autoridade, engajamento, bastidores), descricao (1 frase curta, SEM oferta/desconto), promptGuia (1 frase de direção pra IA criar posts desse pilar, SEM promoção) }] }.",
-    user: `MARCA:\n${marca}\n\n${evitar}\nSugira os pilares agora — NENHUM de promoção/oferta (isso tem área própria).`,
+      "Você é um estrategista de conteúdo de Instagram. Sugira de 5 a 6 PILARES de CONTEÚDO sob medida pro negócio (qualquer segmento). Um pilar é um tema-guia recorrente que a marca posta. " +
+      "ATERRISSE os pilares no que a marca REALMENTE trata: extraia os assuntos dos MATERIAIS enviados (PDF/imagem), do SITE e dos EXEMPLOS DE LEGENDAS / TEMAS RECORRENTES do Instagram fornecidos no bloco MARCA. Reflita produtos, serviços, público e linguagem reais da marca; EVITE pilares genéricos que caberiam em qualquer negócio. " +
+      "REGRA IMPORTANTE: NÃO sugira pilares de PROMOÇÃO / OFERTA / DESCONTO / CUPOM / combo / venda direta — isso tem uma ÁREA EXCLUSIVA no app; aqui foque só em CONTEÚDO (autoridade, engajamento, bastidores, educativo, comunidade). Varie os objetivos. Responda SOMENTE JSON: { pilares: [{ nome (2-3 palavras, SEM 'promoção/oferta/desconto'), objetivo (exatamente um de: autoridade, engajamento, bastidores), descricao (1 frase curta, SEM oferta/desconto), promptGuia (1 frase de direção pra IA criar posts desse pilar, SEM promoção) }] }.",
+    user: `MARCA:\n${marca}\n\n${evitar}\n` +
+      (temFontes
+        ? "Baseie os pilares ESPECIALMENTE nos materiais enviados, no site e nos posts/temas do Instagram acima — reflita os assuntos e produtos reais da marca, não genéricos."
+        : "Há pouca informação da marca; sugira pilares plausíveis pro segmento (sem promoção). Peça ao usuário, se possível, pra enviar materiais e sincronizar site/Instagram pra pilares mais sob medida.") +
+      "\nSugira os pilares agora — NENHUM de promoção/oferta (isso tem área própria).",
   });
   // Sem 'vendas': promoções têm área própria no app (Bruno 2026-07-09). Fallback → autoridade.
   const OBJ = new Set(["autoridade", "engajamento", "bastidores"]);
