@@ -12,6 +12,11 @@ import { formatDateBR } from "../utils/dateFormat";
 
 const MAX_NODE_EXECUTIONS = 50;
 
+// Bolhas do nó de IA (Bruno 2026-07-16): teto de partes por resposta (evita a IA
+// picotar demais / spammar o cliente) e o respiro entre uma bolha e outra.
+const AI_MAX_BOLHAS = 5;
+const AI_BOLHA_DELAY_MS = 1800;
+
 // Rejeita regex de exit-trigger (config livre do tenant) com risco de backtracking
 // exponencial — roda no event loop compartilhado a cada mensagem (ReDoS = DoS global).
 // Conservador: bloqueia padrão longo, quantificador sobre grupo que já contém
@@ -2181,9 +2186,28 @@ async function executeNodeReal(
         let messageSent = false;
         console.log(`[AutomationEngine] Sending reply: content_len=${content.length}, phone=${ctx.phone || "NONE"}, channel=${(ctx as any).channel || "NONE"}`);
         if (content && ctx.phone) {
-          const sendResult = await sendAutomationMessage(ctx, content);
-          messageSent = sendResult.sent;
-          console.log(`[AutomationEngine] Send result: sent=${sendResult.sent}, error=${sendResult.error || "none"}`);
+          // Bruno 2026-07-16: a IA pode quebrar a resposta em BOLHAS separadas usando
+          // o marcador [MSG] entre elas — cada parte vira uma mensagem, com um respiro
+          // no meio (lê como gente conversando, não como textão). Antes só o PIX do ISP
+          // tinha isso (hardcoded); agora é genérico pra qualquer agente. SEM o marcador
+          // nada muda: continua UMA mensagem só, como sempre.
+          const bolhas = content
+            .split(/\s*\[MSG\]\s*/gi)
+            .map((p) => p.trim())
+            .filter(Boolean)
+            .slice(0, AI_MAX_BOLHAS);
+          if (bolhas.length > 1) {
+            for (let i = 0; i < bolhas.length; i++) {
+              const r = await sendAutomationMessage(ctx, bolhas[i]);
+              if (i === 0) messageSent = r.sent;
+              if (i < bolhas.length - 1) await new Promise((res) => setTimeout(res, AI_BOLHA_DELAY_MS));
+            }
+            console.log(`[AutomationEngine] Reply enviada em ${bolhas.length} bolhas`);
+          } else {
+            const sendResult = await sendAutomationMessage(ctx, bolhas[0] || content);
+            messageSent = sendResult.sent;
+            console.log(`[AutomationEngine] Send result: sent=${sendResult.sent}, error=${sendResult.error || "none"}`);
+          }
         } else {
           console.warn(`[AutomationEngine] SKIP send: content=${!!content}, phone=${!!ctx.phone}`);
         }
