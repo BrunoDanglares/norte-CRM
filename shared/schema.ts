@@ -1316,6 +1316,10 @@ export const instaflixBrandKits = pgTable("instaflix_brand_kits", {
   // tem um nome, um tipo e 1+ variações; a IA escolhe QUAL usar por arte, QUAL variação
   // e onde colar (Fase 1: "colado"/overlay). Item: { id, nome, tipo, variacoes:[{url}], ativo }.
   materiaisVisuais: jsonb("materiais_visuais").default([]),
+  // Modo de geração da ARTE: 'foto' (IA gpt-image-1 + overlay via sharp — padrão) ou
+  // 'template' (layouts HTML/CSS de marca renderizados por Chromium — arte de campanha,
+  // nítida, com logo/mascote/paleta/fontes reais). Bruno 2026-07-15 (Instaflix híbrido).
+  estiloArte: text("estilo_arte").default("foto"),
   hashtagsPadrao: jsonb("hashtags_padrao").default([]),
   diretrizes: text("diretrizes"),                      // do/don't da marca
   exemplosLegendas: jsonb("exemplos_legendas").default([]), // aprendidos do feed

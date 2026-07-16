@@ -14,6 +14,8 @@
 import { getOpenAIClient } from "./openaiClient";
 import { resolveOpenAIKeys } from "./openaiKeyResolver";
 import { gerarImagemIA, type TamanhoImagem } from "./instaflixImageService";
+import { gerarImagemTemplate } from "./instaflixTemplateService";
+import { LAYOUT_VARIANTS, ICON_NAMES, type LayoutVariant, type LayoutCopy } from "./instaflixLayouts";
 import { brandLogoUrls, brandMaterialAssets } from "./instaflixService";
 import { resolveSegmento } from "./instaflixSegmentos";
 import { datasComemorativasProximas } from "./datasComemorativas";
@@ -540,6 +542,74 @@ function blocoTemporal(ref: Date, timeZone: string, o: { agendado: boolean; para
   ].join("\n");
 }
 
+// ── Modo TEMPLATE (híbrido): Diretor de Arte de LAYOUT + geração por Chromium ──
+// A IA não descreve imagem — escreve a COPY estruturada e escolhe o LAYOUT de marca;
+// a arte é montada por template (logo/mascote/paleta/fontes reais) e sai nítida.
+interface ArteTemplateParams {
+  workspaceId: string;
+  brandKit?: InstaflixBrandKit | null;
+  marca: string;
+  direcaoCtx: string;
+  pilarCtx: string;
+  estrategia: { tema: string; angulo?: string; resumo?: string; pontosChave?: string[] };
+  temporalCtxArte: string;
+  nSlides: number;
+  modelo: string;
+  baseUrl?: string;
+  onProgress?: (p: number) => void;
+}
+
+async function gerarArteTemplate(p: ArteTemplateParams): Promise<{ midias: MidiaGerada[]; briefArte: any }> {
+  const system =
+    `Você é DIRETOR DE ARTE de posts de Instagram (feed 4:5) para uma marca. A arte é montada por TEMPLATE com a LOGO, MASCOTE, PALETA e FONTES REAIS da marca — você NÃO descreve imagem: escreve a COPY estruturada e escolhe o LAYOUT. Português do Brasil. Texto de CARTAZ: curto, forte, escaneável — NUNCA parágrafos.
+
+Escolha, para CADA slide, o LAYOUT que melhor serve ao TEMA/ângulo:
+
+1) "grade" — grade de recursos/serviços sobre fundo da cor da marca. Ótimo pra visão geral ("tudo que fazemos", lista de serviços/benefícios).
+   Campos: kicker (2-4 palavras), titulo (headline forte, até ~6 palavras), subtitulo (1 linha), tiles (3 a 6, cada { icone, titulo (1-3 palavras), desc (frase curta) }), rodape (frase-fecho curta).
+2) "heroi" — herói escuro com o MASCOTE da marca. Ótimo pra manifesto/posicionamento.
+   Campos: kicker (2-4 palavras), titulo (headline; use *asteriscos* pra destacar 1-2 palavras na cor da marca), subtitulo (curto, até 8 palavras), chips (EXATAMENTE 4, cada { icone, texto (2-3 palavras) }), rodape (faixa curta, exibida em CAIXA ALTA).
+3) "prova" — prova de conversa estilo WhatsApp. Ótimo pra mostrar o produto RESOLVENDO (atendimento, cobrança, suporte, venda).
+   Campos: kicker (ex "Prova real"), titulo (headline; *destaque* permitido), chat (2 a 3 mensagens, cada { who: "them" (cliente) ou "us" (a marca), text }), pix (opcional, ex "PIX 000..."), rodape (frase curta).
+4) "numero" — número/impacto gigante. Ótimo pra estatística/benefício marcante.
+   Campos: kicker (2-4 palavras), numero (curto: "80%", "24h", "3x", "-40%"), subtitulo (frase com *destaque*), rodape (CTA curto).
+
+ÍCONES permitidos (use os nomes EXATOS no campo "icone"): ${ICON_NAMES.join(", ")}. Escolha o mais adequado; se nenhum servir, use "sparkles".
+
+REGRAS: escreva SÓ os campos do layout escolhido. Copy curta e concreta (é cartaz). Fatos/números só se forem REAIS (respeite as REGRAS INVIOLÁVEIS). Sem markdown além de *ênfase* pontual no titulo/subtitulo. ${p.nSlides > 1 ? `Gere ${p.nSlides} slides com layouts VARIADOS e sequência coerente (capa "grade"/"heroi" → "numero"/"prova" → fecho).` : `Gere 1 slide com o layout que melhor vende o tema.`}
+
+Responda em JSON: { "slides": [ { "ordem": 1, "layout": "grade|heroi|prova|numero", ...campos do layout } ] }.`;
+  const user = `MARCA:\n${p.marca}\n\n${p.direcaoCtx}\n\n${p.pilarCtx}\n\nTEMA: ${p.estrategia.tema}\nÂNGULO: ${p.estrategia.angulo || ""}\nPONTOS-CHAVE: ${(p.estrategia.pontosChave || []).join("; ")}\n${p.temporalCtxArte}\n\nCrie o roteiro de ${p.nSlides} slide(s) seguindo a DIREÇÃO EDITORIAL e o TEMA.`;
+
+  const out = await chamarAgente<{ slides: any[] }>(p.workspaceId, { model: p.modelo, temperature: 0.7, system, user });
+  const slides = Array.isArray(out.slides) ? out.slides.slice(0, p.nSlides) : [];
+  if (slides.length === 0) throw new Error("Diretor de arte (template) não retornou slides");
+
+  const logos = brandLogoUrls(p.brandKit ?? null);
+  const materiais = brandMaterialAssets(p.brandKit ?? null);
+  const paleta = (p.brandKit?.paletaCores as string[] | undefined) || undefined;
+
+  const midias: MidiaGerada[] = [];
+  for (let i = 0; i < slides.length; i++) {
+    const s = slides[i] || {};
+    const variant: LayoutVariant = LAYOUT_VARIANTS.includes(s.layout) ? s.layout : "heroi";
+    const copy: LayoutCopy = {
+      kicker: s.kicker, titulo: s.titulo, subtitulo: s.subtitulo, rodape: s.rodape,
+      tiles: Array.isArray(s.tiles) ? s.tiles.slice(0, 6) : undefined,
+      chips: Array.isArray(s.chips) ? s.chips.slice(0, 4) : undefined,
+      chat: Array.isArray(s.chat) ? s.chat.slice(0, 4) : undefined,
+      pix: s.pix, numero: s.numero,
+    };
+    const img = await gerarImagemTemplate({ workspaceId: p.workspaceId, variant, copy, logos, materiais, paleta, baseUrl: p.baseUrl });
+    midias.push({
+      ordem: s.ordem ?? i + 1, url: img.url || "", tipo: "image",
+      promptIa: `template:${variant}`, textoOverlay: s.titulo, erro: img.ok ? undefined : img.error,
+    });
+    p.onProgress?.(35 + Math.round(((i + 1) / slides.length) * 58));
+  }
+  return { midias, briefArte: { modo: "template", slides } };
+}
+
 export async function gerarRascunhoPost(opts: GerarRascunhoOpts): Promise<RascunhoPost> {
   const marca = contextoMarca(opts.brandKit);
   // Perfil de segmento (Fase 1): dá "a cara" do nicho (herói, gênero de foto, luz, se pode
@@ -696,6 +766,41 @@ export async function gerarRascunhoPost(opts: GerarRascunhoOpts): Promise<Rascun
     },
   );
   opts.onProgress?.(24);
+
+  // ── MODO TEMPLATE (híbrido) ──────────────────────────────────────────────────
+  // Brand kit em estiloArte='template': a arte NÃO é foto de IA — é um LAYOUT de marca
+  // (logo/mascote/paleta/fontes reais) renderizado por Chromium. A IA escreve a COPY
+  // estruturada + escolhe o layout; sai nítido e no padrão. O resto (legenda/QA/retorno)
+  // é o mesmo. Bruno 2026-07-15.
+  if ((opts.brandKit as any)?.estiloArte === "template") {
+    const { midias: midiasTpl, briefArte } = await gerarArteTemplate({
+      workspaceId: opts.workspaceId, brandKit: opts.brandKit, marca,
+      direcaoCtx, pilarCtx, estrategia, temporalCtxArte, nSlides, modelo,
+      baseUrl: opts.baseUrl, onProgress: opts.onProgress,
+    });
+    const okTpl = midiasTpl.filter((m) => m.url && !m.erro);
+    if (okTpl.length === 0) {
+      throw new Error(`Falha ao gerar imagens (template): ${midiasTpl.map((m) => m.erro).filter(Boolean).join("; ")}`);
+    }
+    // QA da legenda — idêntico ao caminho foto (limites do IG + rede anti-oferta).
+    const hashtagsTpl = (Array.isArray(copy.hashtags) ? copy.hashtags : [])
+      .map((h) => String(h).replace(/^#/, "").trim()).filter(Boolean).slice(0, HASHTAGS_MAX);
+    let legendaTpl = limparMarkdown(String(copy.legenda || ""));
+    if (OFERTA_RE.test(legendaTpl)) legendaTpl = sanitizarLegendaComValores(legendaTpl, fonteValores) || legendaTpl;
+    const rodapeTagsTpl = hashtagsTpl.length ? "\n\n" + hashtagsTpl.map((h) => `#${h}`).join(" ") : "";
+    if ((legendaTpl + rodapeTagsTpl).length > LEGENDA_MAX) {
+      legendaTpl = legendaTpl.slice(0, LEGENDA_MAX - rodapeTagsTpl.length - 1).trim();
+    }
+    opts.onProgress?.(96);
+    return {
+      tema: estrategia.tema,
+      briefIa: { estrategia, copy: { cta: copy.cta }, arte: briefArte },
+      legenda: legendaTpl + rodapeTagsTpl,
+      hashtags: hashtagsTpl,
+      midias: okTpl.map((m, idx) => ({ ...m, ordem: idx + 1 })),
+      formato: okTpl.length > 1 ? "carrossel" : "imagem",
+    };
+  }
 
   // Regra de tela por segmento: SaaS/eletrônicos/contabilidade PRECISAM mostrar tela/UI
   // (o herói é a tela); os demais não podem mostrar app/tela. Fase 1.

@@ -470,6 +470,7 @@ async function runAutoMigrations() {
     `ALTER TABLE instaflix_brand_kits ADD COLUMN IF NOT EXISTS segmento TEXT`,
     `ALTER TABLE instaflix_brand_kits ADD COLUMN IF NOT EXISTS onboarding_concluido BOOLEAN DEFAULT false`,
     `ALTER TABLE instaflix_brand_kits ADD COLUMN IF NOT EXISTS planos_valores TEXT`,
+    `ALTER TABLE instaflix_brand_kits ADD COLUMN IF NOT EXISTS estilo_arte TEXT DEFAULT 'foto'`,
     `CREATE TABLE IF NOT EXISTS instaflix_pillars (
       id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       workspace_id  UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
