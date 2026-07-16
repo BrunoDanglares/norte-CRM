@@ -339,7 +339,6 @@ export default function Leads() {
   const [profileLead, setProfileLead] = useState<Lead | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>(null);
   const [sortAsc, setSortAsc] = useState(true);
-  const [fadingCards, setFadingCards] = useState<Set<number>>(new Set());
   const [draggingId, setDraggingId] = useState<number | null>(null);
   const [landingId, setLandingId] = useState<number | null>(null);
   const [overColumn, setOverColumn] = useState<string | null>(null);
@@ -382,21 +381,10 @@ export default function Leads() {
     queryClient.invalidateQueries({ queryKey: ["/api/leads/situation-tags"] });
   }, []);
 
-  // Handler quando backend move card pra final stage (finalizado): ativa o
-  // fade-out 2s antes de remover visualmente, igual ao drag manual.
-  const handleWsLeadStageUpdated = useCallback((payload: any) => {
-    const toStage = payload?.toStage || payload?.stageKey || '';
-    const leadId = payload?.leadId;
-    const isFinal = typeof toStage === 'string' && /ativado|perdido|resolvido|escalado|cancelado|inadimplente|fechado|finalizado/i.test(toStage);
-    if (isFinal && typeof leadId === 'number') {
-      setFadingCards((prev) => new Set(prev).add(leadId));
-      setTimeout(() => {
-        setFadingCards((prev) => { const n = new Set(prev); n.delete(leadId); return n; });
-        queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
-      }, 2000);
-    } else {
-      queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
-    }
+  // Handler quando backend move card de etapa. Cards em coluna terminal NÃO
+  // somem mais (Bruno 2026-07-16) — basta recarregar e o bucketing posiciona.
+  const handleWsLeadStageUpdated = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
   }, []);
 
   // Backend arquivou o lead (ex.: conversa mudou de setor — UMA conversa só
@@ -699,25 +687,19 @@ export default function Leads() {
         old ? old.map((l) => (l.id === leadId ? { ...l, ...patch } : l)) : []);
     const rollback = () => {
       if (prev) queryClient.setQueryData(["/api/leads"], prev);
-      setFadingCards((p) => { const n = new Set(p); n.delete(leadId); return n; });
       toast({ title: "Erro ao mover card", variant: "destructive" });
     };
 
-    // 1) TERMINAL (Ganho/Perdido): finaliza no bot + arquiva com o motivo certo.
+    // 1) TERMINAL (Ganho/Perdido): finaliza no bot (status=finalizado BLOQUEIA o
+    // agente) e ESTACIONA o card na coluna. O card fica visível ali — o arquivo
+    // só acontece no backend quando o mesmo cliente iniciar um NOVO ciclo
+    // (upsertPipelineLead) ou por limpeza supervisionada.
     if (col.isTerminal) {
       const finalKey = universalKeyFor("finalizado");
       const body: any = finalKey ? { status: finalKey, displayColumn: col.key } : { displayColumn: col.key };
       optimistic(body);
-      setFadingCards((p) => new Set(p).add(leadId));
-      setTimeout(() => {
-        setFadingCards((p) => { const n = new Set(p); n.delete(leadId); return n; });
-        queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
-      }, 2000);
       apiRequest("PATCH", `/api/leads/${leadId}`, body)
-        .then(() => {
-          apiRequest("PATCH", `/api/history/leads/${leadId}/archive`, { reason: col.terminalReason || "finalizado" }).catch(() => {});
-          queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
-        })
+        .then(() => queryClient.invalidateQueries({ queryKey: ["/api/leads"] }))
         .catch(rollback);
       toast({ title: `Card movido para ${col.label}` });
       return;
@@ -1155,14 +1137,8 @@ export default function Leads() {
                     />
 
                     <div className="flex-1 overflow-y-auto p-2 flex flex-col gap-[7px] min-h-[80px]">
-                      {stageLeads.filter((lead) => {
-                        // Colunas terminais (Ganho/Perdido) só mostram o card durante
-                        // o fade-out de 2s antes de sumir (o lead é arquivado).
-                        if (!isFinalStageColumn) return true;
-                        return fadingCards.has(lead.id);
-                      }).map((lead) => {
+                      {stageLeads.map((lead) => {
                         const isFinalStage = isFinalStageColumn;
-                        const isFading = fadingCards.has(lead.id);
                         const prioColors: Record<string, string> = { alta: "#ef4444", media: "#FED30E", baixa: "#10b981" };
                         const prioKey = (lead as any).prioridade || "media";
                         const leadProtos = lead.telefone ? (protocolsByPhone[lead.telefone] || protocolsByPhone[lead.telefone.replace(/\D/g, "")] || []) : [];
@@ -1198,8 +1174,6 @@ export default function Leads() {
                                 ? "kanban-card-dragging"
                                 : isLanding
                                 ? "kanban-card-land"
-                                : isFading
-                                ? "kanban-card-fadeout"
                                 : "cursor-grab active:cursor-grabbing hover:-translate-y-[2px] hover:border-base-300 transition-all duration-200"
                               }`}
                             style={{

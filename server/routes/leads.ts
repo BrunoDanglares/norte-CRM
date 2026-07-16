@@ -269,11 +269,15 @@ export function registerLeadRoutes(app: Express) {
         workspaceId: wsId,
       }).catch((err: any) => console.error('[StageHistory] Manual move error:', err.message));
 
-      // Quando card vai pra etapa FINALIZADO: arquiva o lead (some do Kanban
-      // após o fade-out UI de 2s) E fecha protocolos vinculados. Também vale
-      // pras etapas terminais legadas (resolvido/fechado/ativado/perdido/etc).
+      // Quando card vai pra etapa FINALIZADO: arquiva o lead E fecha protocolos
+      // vinculados. Também vale pras etapas terminais legadas
+      // (resolvido/fechado/ativado/perdido/etc).
+      // EXCEÇÃO (Bruno 2026-07-16): card ESTACIONADO numa coluna do funil
+      // (display_column setado — ex.: arrastado pra Ganho/Perdido) NÃO é
+      // arquivado — fica visível na coluna até o cliente iniciar novo ciclo.
       const finalPrefixes = /^(finalizado|resolvido|fechado|ativado|cliente_ativado|perdido|cliente_perdido|cancelado|inadimplente|escalado_noc|pago_regularizado|nao_resolvido)$/i;
-      if (finalPrefixes.test(toPrefix)) {
+      const isParkedOnFunnel = Boolean((lead as any).displayColumn);
+      if (finalPrefixes.test(toPrefix) && !isParkedOnFunnel) {
         (async () => {
           try {
             // 1) Arquiva o lead — não aparece mais em listagens ativas.

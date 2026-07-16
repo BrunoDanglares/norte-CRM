@@ -457,7 +457,33 @@ export async function upsertPipelineLead(
         )
       );
 
-      const activeLead = existingLeads.find(l => !l.archivedAt);
+      let activeLead = existingLeads.find(l => !l.archivedAt);
+
+      // Novo ciclo de negócio (Bruno 2026-07-16): card arrastado pra coluna
+      // TERMINAL (Ganho/Perdido) fica VISÍVEL no funil — não é mais arquivado
+      // no arraste. O arquivo acontece AQUI, quando o mesmo cliente volta a
+      // movimentar o pipeline: o deal antigo sai com o motivo da coluna e um
+      // card NOVO nasce na esteira (mesmo comportamento de antes, só que o
+      // card não some na hora do arraste).
+      if (activeLead && (activeLead as any).displayColumn) {
+        try {
+          const cols = await storage.getPipelineColumns(workspaceId, pipelineKey);
+          const parked = cols.find((c) => c.key === (activeLead as any).displayColumn);
+          if (parked?.isTerminal) {
+            await db.update(leads).set({
+              archivedAt: new Date(),
+              archivalReason: parked.terminalReason === 'perdido' ? 'perdido' : 'ativado',
+            }).where(eq(leads.id, activeLead.id));
+            broadcastToWorkspace(workspaceId, 'lead_archived', {
+              leadId: activeLead.id,
+              pipeline: pipelineKey,
+              reason: 'novo_ciclo',
+            });
+            console.log(`[${label}Pipeline] Lead #${activeLead.id} (coluna terminal "${parked.label}") arquivado — cliente iniciou novo ciclo`);
+            activeLead = undefined;
+          }
+        } catch { /* sem colunas configuradas → segue fluxo normal */ }
+      }
 
       if (activeLead) {
         const currentPrefix = activeLead.status.replace(/_[a-f0-9]{8}$/, '');
@@ -638,16 +664,17 @@ export async function finalizeLeadOnConversationResolve(params: {
 
     if (!activeLead) return;
 
-    // Guard funil de vendas (Bruno 2026-06-28): se o vendedor parou o card numa
-    // coluna MANUAL não-terminal (ex: "Proposta enviada"), o deal SOBREVIVE ao
-    // encerramento da conversa — não arquiva. Só Ganho/Perdido (terminais) ou
-    // cards seguindo o bot (display_column NULL) são finalizados/arquivados.
+    // Guard funil de vendas (Bruno 2026-06-28, ampliado 2026-07-16): card que o
+    // vendedor estacionou MANUALMENTE em QUALQUER coluna (inclusive Ganho/Perdido)
+    // SOBREVIVE ao encerramento da conversa — não arquiva. Só cards seguindo o
+    // bot (display_column NULL) são finalizados/arquivados aqui. O card terminal
+    // é arquivado depois, quando o cliente inicia novo ciclo (upsertPipelineLead).
     if ((activeLead as any).displayColumn) {
       try {
         const cols = await storage.getPipelineColumns(workspaceId, pipelineKey);
         const parked = cols.find((c) => c.key === (activeLead as any).displayColumn);
-        if (parked && !parked.isTerminal) {
-          console.log(`[PipelineResolve] Lead #${activeLead.id} preso em coluna manual "${parked.label}" — deal preservado (não arquiva)`);
+        if (parked) {
+          console.log(`[PipelineResolve] Lead #${activeLead.id} estacionado na coluna "${parked.label}" — deal preservado (não arquiva)`);
           return;
         }
       } catch { /* sem colunas configuradas → segue o fluxo normal de arquivar */ }

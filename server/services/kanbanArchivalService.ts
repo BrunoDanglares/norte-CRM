@@ -70,12 +70,16 @@ export async function archiveEndOfShift(): Promise<{ archived: number }> {
   const keys = Array.from(keyToReason.keys());
   if (keys.length === 0) return { archived: 0 };
 
+  // Bruno 2026-07-16: card ESTACIONADO manualmente no funil (display_column
+  // setado — ex.: arrastado pra Ganho/Perdido) sobrevive à varredura de fim
+  // de expediente. Só cards que seguem o bot (display_column NULL) são varridos.
   const leadsToArchive = await db
     .select({ id: leads.id, status: leads.status })
     .from(leads)
     .where(
       and(
         isNull(leads.archivedAt),
+        isNull(leads.displayColumn),
         sql`${leads.status} = ANY(${sql.raw(`ARRAY[${keys.map(k => `'${k}'`).join(",")}]`)})`
       )
     );
