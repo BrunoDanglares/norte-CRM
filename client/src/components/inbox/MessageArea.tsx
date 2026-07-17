@@ -98,6 +98,48 @@ function MediaRetryBubble({
   );
 }
 
+// Bruno 2026-07-16: o áudio chega e é salvo certinho, mas a transcrição pode
+// falhar por motivo TRANSITÓRIO — o caso real foi a chave OpenAI estourar quota
+// (429) e o circuit breaker do resolveTranscriptionCandidates bloquear a chave
+// por 5min: nessa janela a transcrição volta vazia e o texto fica "[áudio]".
+// Este botão re-roda o Whisper no arquivo que JÁ está no disco (não re-baixa
+// nada — o arquivo está íntegro). Aparece só em áudio inbound sem transcrição.
+function TranscribeButton({ msgId }: { msgId: number }) {
+  const { toast } = useToast();
+  const [loading, setLoading] = useState(false);
+  const handleTranscribe = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setLoading(true);
+    try {
+      const res = await apiRequest("POST", `/api/messages/${msgId}/transcribe`, {});
+      const data = await res.json();
+      if (data?.ok && data.texto) {
+        toast({ description: "Áudio transcrito." });
+        queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
+      } else {
+        toast({ description: data?.error || "Não consegui transcrever este áudio.", variant: "destructive" });
+      }
+    } catch (err: any) {
+      toast({ description: err?.message || "Erro ao transcrever.", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  };
+  return (
+    <button
+      type="button"
+      onClick={handleTranscribe}
+      disabled={loading}
+      title="Transcrever este áudio"
+      className="mt-1 inline-flex items-center gap-1.5 text-[11px] font-medium px-2 py-0.5 rounded-md bg-background/70 border border-border hover:bg-accent transition-colors disabled:opacity-50"
+      data-testid={`msg-transcribe-button-${msgId}`}
+    >
+      {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <FileText className="w-3 h-3" />}
+      {loading ? "Transcrevendo..." : "Transcrever"}
+    </button>
+  );
+}
+
 // Separador horizontal entre atendimentos no chat. Marca o início de um novo
 // protocolo, organizando visualmente o histórico quando o mesmo contato passa
 // por várias conversas. Também serve de âncora para rolagem ao abrir um
@@ -1431,11 +1473,15 @@ export default function MessageArea({
                               contactName={selected?.nome}
                               contactAvatarUrl={contactAvatarUrl}
                             />
-                            {hasTranscription && (
+                            {hasTranscription ? (
                               <p className="mt-0.5 italic whitespace-pre-wrap break-words" style={{ fontSize: "0.75rem", opacity: 0.7 }} data-testid={`msg-transcription-${msg.id}`}>
                                 📝 {texto}
                               </p>
-                            )}
+                            ) : msg.direction === "in" ? (
+                              // Áudio recebido que ficou sem transcrição (texto = "[áudio]"):
+                              // oferece re-rodar o Whisper. Ver TranscribeButton. Bruno 2026-07-16.
+                              <TranscribeButton msgId={msg.id} />
+                            ) : null}
                           </div>
                         );
                       }

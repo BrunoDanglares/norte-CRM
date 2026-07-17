@@ -1131,6 +1131,49 @@ export function registerMessageRoutes(app: Express) {
   // Webhook grava metadata.mediaId + downloadFailed=true em vez de URL CDN
   // ephemeral. UI chama esse endpoint pelo botão "Re-baixar". Funciona ENQUANTO
   // o mediaId continuar válido na Meta (típicamente alguns dias).
+  // Re-transcreve um áudio JÁ baixado. Bruno 2026-07-16.
+  // Diferente do retry-media (que re-BAIXA a mídia): aqui o arquivo está íntegro
+  // no disco — o que falhou foi o Whisper, tipicamente por motivo TRANSITÓRIO
+  // (caso real: chave OpenAI estourou quota → 429 → o circuit breaker do
+  // resolver bloqueia a chave por 5min → a transcrição volta vazia e o texto
+  // fica "[áudio]"). Este endpoint roda o Whisper de novo no mesmo arquivo e
+  // grava em messages.texto (é lá que a transcrição mora — não há coluna própria).
+  app.post("/api/messages/:id/transcribe", requireAuth, async (req, res) => {
+    const id = parseId(req.params.id as string);
+    if (!id) return res.status(400).json({ message: "ID inválido" });
+    const wsId = await resolveWorkspaceId(req);
+
+    const { db } = await import("../db");
+    const { messages } = await import("@shared/schema");
+    const { eq, and } = await import("drizzle-orm");
+
+    const [msg] = await db.select().from(messages)
+      .where(and(eq(messages.id, id), eq(messages.workspaceId, wsId)))
+      .limit(1);
+    if (!msg) return res.status(404).json({ error: "Mensagem não encontrada" });
+    if (msg.tipo !== "audio") return res.status(400).json({ error: "Mensagem não é áudio" });
+    if (!msg.arquivo) return res.status(400).json({ error: "Áudio sem arquivo — use o Re-baixar" });
+
+    try {
+      const { transcribeAudioDirect } = await import("../services/automationEngine");
+      const texto = await transcribeAudioDirect(msg.arquivo, wsId);
+      // transcribeAudioDirect NUNCA lança: devolve "" quando não há chave, quando
+      // o Whisper falha ou quando o guard de alucinação descarta o resultado.
+      if (!texto || !texto.trim()) {
+        return res.status(422).json({
+          error: "Não consegui transcrever. Verifique se a chave OpenAI do workspace tem crédito e tente de novo.",
+        });
+      }
+      await db.update(messages).set({ texto }).where(eq(messages.id, id));
+      broadcastToWorkspace(wsId, "message-updated", { id, conversationId: msg.conversationId, texto });
+      console.log(`[Transcribe] msg #${id} re-transcrita (${texto.length} chars)`);
+      return res.json({ ok: true, texto });
+    } catch (e: any) {
+      console.error(`[Transcribe] msg #${id} erro:`, e?.message);
+      return res.status(500).json({ error: "Erro ao transcrever o áudio" });
+    }
+  });
+
   app.post("/api/messages/:id/retry-media", requireAuth, async (req, res) => {
     const id = parseId(req.params.id as string);
     if (!id) return res.status(400).json({ message: "ID inválido" });
