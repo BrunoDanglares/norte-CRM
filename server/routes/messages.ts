@@ -493,31 +493,56 @@ export function registerMessageRoutes(app: Express) {
         // visível porque o inbound dele reabre e o do Meta cria conv nova). Reabre só a
         // nível de status/atribuição — NÃO reseta CPF/sessão ISP nem religa o bot
         // (o humano está conduzindo). Channel-agnostic.
-        if (senderName && conv.status === "resolved") {
+        //
+        // Bruno 2026-07-15: TAKEOVER automático em QUALQUER conversa (não só na
+        // resolvida). Antes, responder numa conversa ABERTA não assumia nem pausava →
+        // o bot seguia respondendo POR CIMA do atendente. Agora responder = assume +
+        // aiPaused na hora (sai de "Automação" e entra em "Em Andamento"). Espelha o
+        // "ponto firme" do /send-template: NÃO rouba conversa de outro atendente ativo.
+        if (senderName && agenteField !== "Banana AI") {
           try {
             const { db: dbReopen } = await import("../db");
             const { conversations: convReopen } = await import("@shared/schema");
             const { eq: eqRe, and: andRe } = await import("drizzle-orm");
-            await dbReopen.update(convReopen).set({
-              status: "open",
-              pendente: false,
-              aiPaused: true,
-              assignedUserId: senderId ?? conv.assignedUserId ?? null,
+            const wasResolved = String((conv as any).status || "").toLowerCase() === "resolved";
+            // Conversa resolvida guarda o assignedUserId do atendimento ANTERIOR — não
+            // é dono ativo. Só respeita "dono diferente" se a conversa estiver ativa.
+            const ownedByOther = !wasResolved
+              && !!(conv as any).assignedUserId
+              && (conv as any).assignedUserId !== (senderId ?? null);
+            const assignFields: Record<string, any> = ownedByOther ? {} : {
+              assignedUserId: senderId ?? (conv as any).assignedUserId ?? null,
               assignedUserName: senderName,
-              resolvedAt: null,
-              updatedAt: new Date(),
-            }).where(andRe(eqRe(convReopen.id, conversationId), eqRe(convReopen.workspaceId, wsId)));
-            broadcastToWorkspace(wsId, "conversation_updated", {
-              id: conversationId,
-              status: "open",
+              aiPaused: true,   // tira a conversa do alcance do bot
               pendente: false,
-              aiPaused: true,
-              assigned_user_id: senderId ?? conv.assignedUserId ?? null,
-              assigned_user_name: senderName,
-            });
-            console.log(`[Messages] conversa ${conversationId} REABERTA por outbound de ${senderName}`);
+            };
+            const reopenFields: Record<string, any> = wasResolved
+              ? { status: "open", resolvedAt: null }
+              : {};
+            if (Object.keys(assignFields).length || Object.keys(reopenFields).length) {
+              await dbReopen.update(convReopen).set({
+                ...reopenFields,
+                ...assignFields,
+                updatedAt: new Date(),
+              }).where(andRe(eqRe(convReopen.id, conversationId), eqRe(convReopen.workspaceId, wsId)));
+              broadcastToWorkspace(wsId, "conversation_updated", {
+                id: conversationId,
+                ...(wasResolved ? { status: "open" } : {}),
+                ...(Object.keys(assignFields).length ? {
+                  pendente: false,
+                  aiPaused: true,
+                  assigned_user_id: senderId ?? (conv as any).assignedUserId ?? null,
+                  assigned_user_name: senderName,
+                } : {}),
+              });
+              console.log(
+                `[Messages] conv=${conversationId} outbound de ${senderName}` +
+                `${wasResolved ? " → REABERTA" : ""}` +
+                `${ownedByOther ? " — dono diferente, não assumiu" : " → assumida + aiPaused (bot pausado)"}`,
+              );
+            }
           } catch (eRe: any) {
-            console.warn("[Messages] reopen on outbound falhou:", eRe?.message);
+            console.warn("[Messages] takeover on outbound falhou:", eRe?.message);
           }
         }
       }
