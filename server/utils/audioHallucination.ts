@@ -90,11 +90,32 @@ function looksRepetitive(normText: string): boolean {
   const words = normText.split(' ').filter(Boolean);
   if (words.length < 4) return false;
 
-  // Trigrama repetido 3+ vezes → "deixe eu ver" x3.
-  if (maxNgramRepeat(words, 3) >= 3) return true;
-  // Bigrama repetido 4+ vezes.
-  if (maxNgramRepeat(words, 2) >= 4) return true;
-  // Pouquíssimas palavras distintas em texto de tamanho razoável.
+  // Bruno 2026-07-16 (BUG DE FALSO POSITIVO): os limites eram ABSOLUTOS (trigrama
+  // 3x, bigrama 4x). Foram calibrados pra alucinação CURTA — "deixe eu ver" x3,
+  // onde a frase repetida É o texto inteiro. Em fala LONGA natural isso vira
+  // armadilha: quanto mais o cliente fala, mais conectivo ele repete.
+  // Caso real: áudio de 74s/189 palavras explicando o financeiro foi DESCARTADO
+  // porque "se o cliente" apareceu 4x e "o boleto" 5x — português normal. O
+  // cliente via "[áudio]" e o bot respondia "não consegui entender". Os 4 áudios
+  // que falharam eram justamente os 4 MAIS LONGOS.
+  //
+  // O critério agora é COBERTURA, não contagem: alucinação é a mesma frase
+  // DOMINANDO o texto. Contar repetição sem olhar o tamanho é sinal ruim.
+  //   "deixe eu ver" x3 em 9 palavras   → cobre 100% → corta (como antes)
+  //   "se o cliente" x5 em 130 palavras → cobre  11% → passa
+  // Efeito colateral ACEITO: um loop curto no FIM de uma fala longa e real deixa
+  // de ser cortado — e é o certo, porque descartar 100 palavras verdadeiras por
+  // causa de um "obrigado obrigado" na cauda é pior do que manter o conteúdo.
+  const cobertura = (n: number): number => {
+    const rep = maxNgramRepeat(words, n);
+    return rep >= 2 ? (n * rep) / words.length : 0;
+  };
+  const DOMINA = 0.5;
+  if (cobertura(3) >= DOMINA) return true;
+  if (cobertura(2) >= DOMINA) return true;
+  if (cobertura(1) >= DOMINA) return true;
+  // Pouquíssimas palavras distintas em texto de tamanho razoável. Esta continua
+  // absoluta de propósito: pega o texto degenerado independente do tamanho.
   if (words.length >= 6) {
     const uniqRatio = new Set(words).size / words.length;
     if (uniqRatio <= 0.3) return true;
