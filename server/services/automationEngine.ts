@@ -412,6 +412,26 @@ function evaluateCondition(resolvedValue: any, operator: string, compareValue: a
   }
 }
 
+// Monta o system prompt ESTRUTURADO do nó "Agente" (Fase 1) a partir dos campos de
+// config (papel/objetivo/escopo/limites/tom). O resto do motor de IA (memória da
+// conversa, CRM, bolhas [MSG], gatilhos de saída) é reaproveitado do "ai_response".
+// Bruno 2026-07-19.
+function montarPersonaAgente(c: Record<string, any>): string {
+  const s = (v: any) => (typeof v === "string" ? v.trim() : "");
+  const nome = s(c.nome), papel = s(c.papel), objetivo = s(c.objetivo);
+  const escopo = s(c.escopo), limites = s(c.limites), tom = s(c.tomVoz);
+  const linhas: string[] = [];
+  linhas.push(nome
+    ? `Você é ${nome}${papel ? `, ${papel}` : ""}.`
+    : (papel ? `Você é ${papel}.` : "Você é um agente de atendimento."));
+  if (objetivo) linhas.push(`SEU OBJETIVO: ${objetivo}.`);
+  if (escopo) linhas.push(`VOCÊ CUIDA DE: ${escopo}. Se o cliente pedir algo claramente fora disso, ajude no que der e encaminhe/transfira em vez de inventar.`);
+  if (limites) linhas.push(`O QUE VOCÊ NUNCA FAZ: ${limites}.`);
+  if (tom) linhas.push(`TOM DE VOZ: ${tom}.`);
+  linhas.push("Escreva como no WhatsApp: mensagens curtas e naturais, sem markdown pesado e sem listar tudo que você faz. Não invente dados que você não tem.");
+  return linhas.join("\n");
+}
+
 async function executeNodeReal(
   node: FlowNode,
   ctx: ExecutionContext,
@@ -420,6 +440,14 @@ async function executeNodeReal(
   logEntries: any[],
 ): Promise<NodeResult> {
   const c = node.config || {};
+
+  // Nó "Agente" (Fase 1): é o "Resposta IA" com persona ESTRUTURADA. Monta o
+  // systemPrompt dos campos do agente e roda como ai_response — reaproveitando TODO o
+  // motor de IA (memória, bolhas, CRM, gatilhos de saída). O log mantém o type "agente".
+  if (node.type === "agente") {
+    if (!c.prompt_slug && !c.custom_prompt) c.systemPrompt = montarPersonaAgente(c);
+    return executeNodeReal({ ...node, type: "ai_response" }, ctx, nodesArr, flowId, logEntries);
+  }
 
   switch (node.type) {
     case "trigger":
@@ -904,7 +932,7 @@ async function executeNodeReal(
               lines.push(`[Lead atribuido a atendente] Estrategia: ${cfg.strategy || ""}`);
             } else if (entry.type === "update_lead") {
               lines.push(`[Pipeline atualizada] ${cfg.pipelineLabel || cfg.pipeline || ""} -> ${cfg.stageLabel || cfg.stage || ""}`);
-            } else if (entry.type === "ai_response") {
+            } else if (entry.type === "ai_response" || entry.type === "agente") {
               if (entry.output?.response_preview) {
                 lines.push(`[IA respondeu anteriormente] "${(entry.output.response_preview || "").substring(0, 300)}"`);
               }
@@ -3310,7 +3338,7 @@ export async function runFlowFromNode(
     }
   }
 
-  const lastAiEntry = [...logEntries].reverse().find(e => e.type === "ai_response" && e.status === "success");
+  const lastAiEntry = [...logEntries].reverse().find(e => (e.type === "ai_response" || e.type === "agente") && e.status === "success");
   if (lastAiEntry && ctx.phone && ctx.leadId && !ctx.variables?.__flow_finalized) {
     try {
       const { db: dbClean } = await import("../db");

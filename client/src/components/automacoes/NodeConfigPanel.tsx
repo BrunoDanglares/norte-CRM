@@ -1500,6 +1500,54 @@ export const ConfigPanel = memo(function ConfigPanel({
           </div>
         )}
 
+        {node.type === "agente" && (
+          <div className="space-y-3">
+            <div className="text-[10px] text-muted-foreground p-2.5 bg-[#7C3AED]/10 border border-[#7C3AED]/25 rounded-lg leading-relaxed flex items-start gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-[#7C3AED]" />
+              <span>Um agente com papel e limites definidos. Ja tem memoria da conversa e usa a chave OpenAI do seu workspace. Deixe claro o que ele faz — e o que <b>nao</b> faz.</span>
+            </div>
+            <div>
+              <Label className="text-[10.5px] uppercase font-bold text-muted-foreground block mb-1">Nome do agente</Label>
+              <Input className="text-xs" placeholder="Ex.: Teo" value={c.nome || ""} onChange={(e) => onUpdateCfg(node.id, "nome", e.target.value)} data-testid="input-agente-nome" />
+            </div>
+            <div>
+              <Label className="text-[10.5px] uppercase font-bold text-muted-foreground block mb-1">Papel / persona</Label>
+              <Textarea className="text-xs" rows={2} placeholder="Ex.: vendedor consultivo de internet fibra, simpatico e direto" value={c.papel || ""} onChange={(e) => onUpdateCfg(node.id, "papel", e.target.value)} data-testid="input-agente-papel" />
+            </div>
+            <div>
+              <Label className="text-[10.5px] uppercase font-bold text-muted-foreground block mb-1">Objetivo</Label>
+              <Textarea className="text-xs" rows={2} placeholder="Ex.: entender a necessidade e agendar uma visita/instalacao" value={c.objetivo || ""} onChange={(e) => onUpdateCfg(node.id, "objetivo", e.target.value)} data-testid="input-agente-objetivo" />
+            </div>
+            <div>
+              <Label className="text-[10.5px] uppercase font-bold text-muted-foreground block mb-1">O que ele cuida (escopo)</Label>
+              <Textarea className="text-xs" rows={2} placeholder="Ex.: planos, precos, cobertura e agendamento" value={c.escopo || ""} onChange={(e) => onUpdateCfg(node.id, "escopo", e.target.value)} data-testid="input-agente-escopo" />
+            </div>
+            <div>
+              <Label className="text-[10.5px] uppercase font-bold text-muted-foreground block mb-1">O que ele NUNCA faz</Label>
+              <Textarea className="text-xs" rows={2} placeholder="Ex.: nao da desconto por conta propria, nao promete prazo de tecnico" value={c.limites || ""} onChange={(e) => onUpdateCfg(node.id, "limites", e.target.value)} data-testid="input-agente-limites" />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label className="text-[10.5px] uppercase font-bold text-muted-foreground block mb-1">Modelo</Label>
+                <Select value={c.model || "gpt-4o-mini"} onValueChange={(v) => onUpdateCfg(node.id, "model", v)}>
+                  <SelectTrigger className="text-xs" data-testid="select-agente-model"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="gpt-4o-mini">gpt-4o-mini (rapido)</SelectItem>
+                    <SelectItem value="gpt-4o">gpt-4o (mais capaz)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-[10.5px] uppercase font-bold text-muted-foreground block mb-1">Tom de voz</Label>
+                <Input className="text-xs" placeholder="Ex.: proximo e objetivo" value={c.tomVoz || ""} onChange={(e) => onUpdateCfg(node.id, "tomVoz", e.target.value)} data-testid="input-agente-tom" />
+              </div>
+            </div>
+            <div className="text-[10px] text-muted-foreground p-2.5 bg-muted/40 border border-border rounded-lg leading-relaxed">
+              Dica: ligue este Agente aos proximos blocos normalmente. Quando ele terminar (ou o cliente pedir algo fora do escopo), use uma <b>Condicao</b> ou <b>Atribuir Atendente</b> para escalar — o handoff ja pausa o bot automaticamente.
+            </div>
+          </div>
+        )}
+
         {node.type === "split_ia" && (
           <div className="space-y-3">
             <div>

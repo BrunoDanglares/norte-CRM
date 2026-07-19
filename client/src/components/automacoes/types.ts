@@ -2,7 +2,7 @@ import {
   Zap, MessageSquare, Clock, GitBranch, Tag, UserCheck, PenLine, Brain, Flag,
   Pause, Play, Globe, ImagePlus, List, CreditCard, Webhook,
   Variable, GitMerge, Split, Timer, Repeat, Bell, FileOutput, Wifi, ShieldCheck,
-  Bot,
+  Bot, Sparkles,
 } from "lucide-react";
 
 export interface FlowNode {
@@ -41,6 +41,7 @@ export const NODE_TYPES: Record<string, { icon: typeof Zap; color: string; label
   assign_agent:  { icon: UserCheck,      color: "#a78bfa", label: "Atribuir Atendente" },
   update_lead:   { icon: PenLine,        color: "#2dd4bf", label: "Atualizar Pipeline" },
   ai_response:   { icon: Brain,          color: "#e879f9", label: "Resposta IA" },
+  agente:        { icon: Sparkles,       color: "#7C3AED", label: "Agente" },
   webhook:       { icon: Globe,          color: "#fb7185", label: "Webhook" },
   send_image:    { icon: ImagePlus,      color: "#f472b6", label: "Enviar Imagem/PDF" },
   lista_opcoes:  { icon: List,           color: "#8B5CF6", label: "Lista de Opcoes" },
@@ -67,7 +68,7 @@ export const NODE_CATEGORIES: { key: string; label: string; types: string[] }[] 
   {
     key: "avancados",
     label: "Avançados",
-    types: ["ai_response", "advanced_condition", "split_ia", "set_variable", "wait_event", "loop", "alerta_interno", "gerar_documento"],
+    types: ["agente", "ai_response", "advanced_condition", "split_ia", "set_variable", "wait_event", "loop", "alerta_interno", "gerar_documento"],
   },
   {
     key: "integracoes",
@@ -87,6 +88,7 @@ export const NODE_DESCRIPTIONS: Record<string, string> = {
   assign_agent: "Atribui o contato a um atendente da equipe. Estrategias: Round Robin, Menos Ocupado, Especifico ou IA decide.\n\nExemplos de uso:\n- Distribuir novos contatos igualmente entre 3 vendedores (Round Robin).\n- Atribuir ao atendente com menos conversas abertas (Menos Ocupado).\n- Enviar contatos VIP sempre para o gerente comercial (Especifico).",
   update_lead: "Move o contato para uma etapa especifica de um pipeline. Avanca contatos automaticamente no funil de vendas.\n\nExemplos de uso:\n- Mover o contato para 'Proposta Enviada' apos enviar o orcamento.\n- Avancar para 'Negociacao' quando o cliente pedir desconto.\n- Mover para 'Fechado/Ganho' apos confirmacao de pagamento.",
   ai_response: "Usa inteligencia artificial (OpenAI GPT-4o) para gerar respostas automaticas. Processa texto, imagens, audio e documentos.\n\nExemplos de uso:\n- Responder perguntas sobre produtos usando um prompt treinado.\n- Analisar uma foto enviada pelo cliente e descrever o produto.\n- Transcrever um audio do cliente e gerar uma resposta personalizada.",
+  agente: "Um AGENTE de IA com papel, objetivo e limites definidos — mais poderoso que a Resposta IA solta. Entende a conversa (tem memoria), age dentro do escopo que voce definir e encaminha o que foge dele.\n\nExemplos de uso:\n- Agente de Vendas que qualifica, contorna objecoes e conduz ao fechamento.\n- Agente SDR que separa lead quente de frio e agenda.\n- Agente de Suporte que resolve duvidas e escala o que e humano.",
   webhook: "Envia dados para uma URL externa via HTTP POST. Integra com sistemas externos e APIs de terceiros.\n\nExemplos de uso:\n- Enviar dados do contato para o seu ERP quando ele for qualificado.\n- Notificar um sistema externo sempre que uma venda for fechada.\n- Registrar atividades do contato em um banco de dados externo.",
   lista_opcoes: "Apresenta uma lista de opcoes para o cliente escolher (como um menu). Cada opcao direciona para um caminho diferente.\n\nExemplos de uso:\n- Perguntar 'O que deseja? 1-Vendas, 2-Suporte, 3-Financeiro' e direcionar.\n- Oferecer '1-Agendar consulta, 2-Ver precos, 3-Falar com atendente'.\n- Criar um menu de produtos: '1-Produto A, 2-Produto B, 3-Outro'.",
   stripe_payment: "Gera um link de pagamento via Stripe com valor, descricao e moeda configurados.\n\nExemplos de uso:\n- Gerar link de R$99,90 para a assinatura mensal e enviar ao cliente.\n- Criar cobranca de US$49 para servico de consultoria.\n- Enviar link de pagamento personalizado apos aprovacao de orcamento.",
@@ -277,6 +279,12 @@ export function getNodePreview(node: FlowNode): string {
       const filesCount = (c.aiFiles || []).length;
       const filesTag = filesCount > 0 ? ` | ${filesCount} arquivo${filesCount > 1 ? "s" : ""}` : "";
       return c.model ? `${c.model}${filesTag}` : "Configure o modelo";
+    }
+    case "agente": {
+      const nome = (c.nome || "").trim();
+      const papel = (c.papel || "").trim();
+      if (nome || papel) return `${nome || "Agente"}${papel ? " · " + papel.slice(0, 26) : ""}`;
+      return "Configure o agente";
     }
     case "webhook": return c.url ? (c.url as string).replace("https://", "").slice(0, 40) : "Configure a URL";
     case "lista_opcoes": {

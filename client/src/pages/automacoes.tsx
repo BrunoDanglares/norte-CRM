@@ -212,7 +212,10 @@ export default function Automacoes() {
     pushUndo();
     const id = genId();
     const conf = NODE_TYPES[type] || NODE_TYPES.end;
-    const defaultConfig: Record<string, any> = type === "ai_response" ? { replyDelay: 10, replyDelayUnit: "seconds" } : {};
+    const defaultConfig: Record<string, any> =
+      type === "ai_response" ? { replyDelay: 10, replyDelayUnit: "seconds" }
+      : type === "agente" ? { model: "gpt-4o-mini", temperature: 0.6, replyDelay: 8, replyDelayUnit: "seconds", nome: "", papel: "", objetivo: "", escopo: "", limites: "", tomVoz: "" }
+      : {};
     setNodes((prev) => [...prev, { id, type, label: conf.label, config: defaultConfig, x, y, next: [] }]);
     setSelNode(id);
     setIsDirty(true);
