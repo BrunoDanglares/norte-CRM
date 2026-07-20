@@ -405,6 +405,40 @@ export function ImplementarPrompt({ currentPrompt, onApply }: { currentPrompt: s
   );
 }
 
+// Fase 1 (Agente ↔ Agenda): escolhe serviço/profissional que o agente usa pra
+// agendar. Vazio = automático (o motor cria/usa um "Reunião" padrão). Bruno 2026-07-19.
+function AgendaAlvoPicker({ nodeId, config: c, onUpdateCfg }: { nodeId: string; config: any; onUpdateCfg: (id: string, field: string, value: any) => void }) {
+  const { data: servicos = [] } = useQuery<any[]>({ queryKey: ["/api/agenda/servicos"] });
+  const { data: profissionais = [] } = useQuery<any[]>({ queryKey: ["/api/agenda/profissionais"] });
+  const svcAtivos = (servicos || []).filter((s: any) => s.ativo);
+  const profAtivos = (profissionais || []).filter((p: any) => p.ativo);
+  return (
+    <div className="mt-2 pl-7 space-y-1.5">
+      <p className="text-[9px] text-muted-foreground leading-snug">Onde agendar (automático cria/usa um serviço "Reunião" padrão):</p>
+      <div className="grid grid-cols-2 gap-1.5">
+        <select
+          className="text-[11px] h-7 rounded-md border border-border bg-background px-1.5"
+          value={c.agendaServicoId ? String(c.agendaServicoId) : ""}
+          onChange={(e) => onUpdateCfg(nodeId, "agendaServicoId", e.target.value ? Number(e.target.value) : null)}
+          data-testid="select-agente-agenda-servico"
+        >
+          <option value="">Serviço: automático</option>
+          {svcAtivos.map((s: any) => <option key={s.id} value={String(s.id)}>{s.nome}</option>)}
+        </select>
+        <select
+          className="text-[11px] h-7 rounded-md border border-border bg-background px-1.5"
+          value={c.agendaProfissionalId ? String(c.agendaProfissionalId) : ""}
+          onChange={(e) => onUpdateCfg(nodeId, "agendaProfissionalId", e.target.value ? Number(e.target.value) : null)}
+          data-testid="select-agente-agenda-prof"
+        >
+          <option value="">Profissional: automático</option>
+          {profAtivos.map((p: any) => <option key={p.id} value={String(p.id)}>{p.nome}</option>)}
+        </select>
+      </div>
+    </div>
+  );
+}
+
 export function AiFilesConfig({ nodeId, config: c, onUpdateCfg }: { nodeId: string; config: any; onUpdateCfg: (id: string, field: string, value: any) => void }) {
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -1691,6 +1725,7 @@ export const ConfigPanel = memo(function ConfigPanel({
                   testId={`toggle-agente-${cap.key}`}
                 />
               ))}
+              {c.aiCrmAgenda !== false && <AgendaAlvoPicker nodeId={node.id} config={c} onUpdateCfg={onUpdateCfg} />}
             </AgenteCap>
 
             {/* ── Fase 3 — Saídas inteligentes: portas que tiram o fluxo do modo IA. ── */}

@@ -10,8 +10,8 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { db } from "../db";
-import { and, eq, ne, or, isNull, lt, gt } from "drizzle-orm";
-import { agendaServicos, agendaDisponibilidade, agendaBloqueios, agendaAgendamentos, leads } from "@shared/schema";
+import { and, eq, ne, or, isNull, lt, gt, asc } from "drizzle-orm";
+import { agendaServicos, agendaProfissionais, agendaDisponibilidade, agendaBloqueios, agendaAgendamentos, leads } from "@shared/schema";
 import { storage } from "../storage";
 
 const TZ = "America/Sao_Paulo";
@@ -143,4 +143,109 @@ export async function findOrCreateLeadForAgenda(workspaceId: string, nome: strin
     } as any);
     return lead?.id ?? null;
   } catch { return null; }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Integração com o AGENTE (bot) — Fase 1: agendar de verdade pelo WhatsApp.
+// "As duas": usa o serviço/profissional configurado no nó; se não houver, cai
+// num alvo genérico ("Reunião" + um profissional padrão criado sob demanda com
+// disponibilidade seg–sex 09–18). Assim funciona out-of-box e dá pra afinar.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const DEFAULT_SERVICO_NOME = "Reunião";
+const DEFAULT_PROF_NOME = "Atendimento";
+const pidv = (v: any): number => { const n = Number(v); return Number.isInteger(n) && n > 0 ? n : 0; };
+
+export interface AgendaAlvo { servicoId: number; profissionalId: number; }
+
+// Resolve (e cria se preciso) o serviço + profissional que o agente usa pra agendar.
+export async function resolveAgendaAlvo(workspaceId: string, config: Record<string, any>): Promise<AgendaAlvo | null> {
+  try {
+    // ── serviço ──
+    let servicoId = pidv(config?.agendaServicoId);
+    if (servicoId) {
+      const [s] = await db.select({ id: agendaServicos.id }).from(agendaServicos)
+        .where(and(eq(agendaServicos.id, servicoId), eq(agendaServicos.workspaceId, workspaceId), eq(agendaServicos.ativo, true)));
+      if (!s) servicoId = 0;
+    }
+    if (!servicoId) {
+      const [ex] = await db.select({ id: agendaServicos.id }).from(agendaServicos)
+        .where(and(eq(agendaServicos.workspaceId, workspaceId), eq(agendaServicos.nome, DEFAULT_SERVICO_NOME), eq(agendaServicos.ativo, true))).limit(1);
+      if (ex) servicoId = ex.id;
+      else {
+        const [novo] = await db.insert(agendaServicos).values({ workspaceId, nome: DEFAULT_SERVICO_NOME, duracaoMin: 30, ativo: true }).returning({ id: agendaServicos.id });
+        servicoId = novo.id;
+      }
+    }
+    // ── profissional ──
+    let profissionalId = pidv(config?.agendaProfissionalId);
+    if (profissionalId) {
+      const [p] = await db.select({ id: agendaProfissionais.id }).from(agendaProfissionais)
+        .where(and(eq(agendaProfissionais.id, profissionalId), eq(agendaProfissionais.workspaceId, workspaceId), eq(agendaProfissionais.ativo, true)));
+      if (!p) profissionalId = 0;
+    }
+    if (!profissionalId) {
+      const [first] = await db.select({ id: agendaProfissionais.id }).from(agendaProfissionais)
+        .where(and(eq(agendaProfissionais.workspaceId, workspaceId), eq(agendaProfissionais.ativo, true)))
+        .orderBy(asc(agendaProfissionais.ordem)).limit(1);
+      if (first) profissionalId = first.id;
+      else {
+        const [novo] = await db.insert(agendaProfissionais).values({ workspaceId, nome: DEFAULT_PROF_NOME, ativo: true }).returning({ id: agendaProfissionais.id });
+        profissionalId = novo.id;
+        // disponibilidade padrão: seg(1)–sex(5) 09:00–18:00, pra existir slot livre.
+        await db.insert(agendaDisponibilidade).values([1, 2, 3, 4, 5].map(dia => ({
+          workspaceId, profissionalId, diaSemana: dia, horaInicio: "09:00", horaFim: "18:00", ativo: true,
+        })));
+      }
+    }
+    return { servicoId, profissionalId };
+  } catch {
+    return null;
+  }
+}
+
+// Resumo compacto dos horários livres REAIS nos próximos dias — injetado no prompt
+// pra o agente oferecer só o que existe (anti-alucinação de horário).
+export async function slotsResumoParaAgente(workspaceId: string, alvo: AgendaAlvo, dias = 7): Promise<string> {
+  const DIAS_PT = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
+  const hojeWall = new Date(Date.now() + tzOffsetMin() * 60000); // relógio de parede
+  const linhas: string[] = [];
+  let diasComVaga = 0;
+  for (let i = 0; i < dias && diasComVaga < 5; i++) {
+    const d = new Date(Date.UTC(hojeWall.getUTCFullYear(), hojeWall.getUTCMonth(), hojeWall.getUTCDate() + i));
+    const dataStr = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+    const slots = await computeSlotsLivres({ workspaceId, profissionalId: alvo.profissionalId, servicoId: alvo.servicoId, data: dataStr });
+    if (!slots.length) continue;
+    diasComVaga++;
+    const horas = slots.slice(0, 6).map(s => s.hora).join(", ");
+    linhas.push(`${DIAS_PT[d.getUTCDay()]} ${String(d.getUTCDate()).padStart(2, "0")}/${String(d.getUTCMonth() + 1).padStart(2, "0")}/${d.getUTCFullYear()}: ${horas}${slots.length > 6 ? "…" : ""}`);
+  }
+  return linhas.join("\n");
+}
+
+// Agenda de verdade via agente. dataStr = DD/MM/AAAA, horaStr = HH:MM (hora local).
+export async function agendarViaAgente(opts: {
+  workspaceId: string; alvo: AgendaAlvo; dataStr: string; horaStr: string; titulo: string;
+  clienteNome: string; clienteTelefone?: string | null;
+}): Promise<{ ok: boolean; error?: string }> {
+  const { workspaceId, alvo, dataStr, horaStr, titulo, clienteNome, clienteTelefone } = opts;
+  const dm = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec((dataStr || "").trim());
+  const hm = /^(\d{1,2}):(\d{2})$/.exec((horaStr || "").trim());
+  if (!dm || !hm) return { ok: false, error: "data/hora inválida" };
+  const y = +dm[3], mo = +dm[2], d = +dm[1], hh = +hm[1], mi = +hm[2];
+  const [servico] = await db.select().from(agendaServicos).where(and(eq(agendaServicos.id, alvo.servicoId), eq(agendaServicos.workspaceId, workspaceId)));
+  if (!servico) return { ok: false, error: "serviço não encontrado" };
+  const inicio = wallDate(y, mo, d, hh * 60 + mi);
+  if (isNaN(+inicio)) return { ok: false, error: "data/hora inválida" };
+  const fim = new Date(inicio.getTime() + (servico.duracaoMin || 30) * 60000);
+  const livre = await intervaloLivre({ workspaceId, profissionalId: alvo.profissionalId, inicio, fim });
+  if (!livre) return { ok: false, error: "horário ocupado" };
+  const nome = (clienteNome || "").trim() || (clienteTelefone || "Cliente");
+  const leadId = await findOrCreateLeadForAgenda(workspaceId, nome, clienteTelefone);
+  await db.insert(agendaAgendamentos).values({
+    workspaceId, servicoId: alvo.servicoId, profissionalId: alvo.profissionalId, leadId,
+    clienteNome: nome, clienteTelefone: clienteTelefone || null,
+    inicio, fim, status: "confirmado", origem: "bot", observacoes: (titulo || "").trim() || null,
+  });
+  return { ok: true };
 }

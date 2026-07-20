@@ -8,6 +8,7 @@ import OpenAI from "openai";
 import { fetchWithTimeout } from "../utils/helpers";
 import { safeOutboundFetch, assertSafeOutboundUrl } from "../utils/ssrfGuard";
 import { sendMessage as channelRouterSend } from "./channel-router";
+import { resolveAgendaAlvo, slotsResumoParaAgente, agendarViaAgente } from "./agendaService";
 import { formatDateBR } from "../utils/dateFormat";
 
 const MAX_NODE_EXECUTIONS = 50;
@@ -900,8 +901,24 @@ async function executeNodeReal(
         systemPrompt += etBlock.join("\n");
       }
 
-      if (c.aiCrmAgenda !== false) {
-        systemPrompt += `\n\n[AGENDAMENTO DE REUNIAO]\nVoce pode agendar reunioes/compromissos usando a tag [AGENDAR_REUNIAO:data:hora:titulo].\nOnde:\n- data = data no formato DD/MM/AAAA (ex: 25/03/2026)\n- hora = horario no formato HH:MM (ex: 14:00)\n- titulo = breve descricao da reuniao\nExemplo: [AGENDAR_REUNIAO:25/03/2026:14:00:Demonstracao ChatBanana CRM]\nIMPORTANTE: Confirme data e horario com o cliente ANTES de usar a tag. Quando usar a tag, inclua uma mensagem confirmando o agendamento ao cliente.\nO sistema criara automaticamente o compromisso na agenda.\n[FIM AGENDAMENTO]`;
+      if (c.aiCrmAgenda !== false && ctx.workspaceId) {
+        // Fase 1 (Bruno 2026-07-19): agenda REAL. Ancoramos o agente com os horários
+        // livres de verdade (ele só oferece o que existe → sem inventar horário) e a
+        // tag [AGENDAR_REUNIAO] passa a gravar na agenda real (ver handler abaixo).
+        try {
+          const alvoAg = await resolveAgendaAlvo(ctx.workspaceId, c);
+          if (alvoAg) {
+            ctx.variables.__agenda_alvo = JSON.stringify(alvoAg);
+            const resumoSlots = await slotsResumoParaAgente(ctx.workspaceId, alvoAg, 7);
+            systemPrompt += `\n\n[AGENDAMENTO — AGENDA REAL]\nVoce pode agendar na agenda REAL da empresa.\n`
+              + (resumoSlots
+                  ? `HORARIOS LIVRES REAIS (ofereca SOMENTE estes; NUNCA invente horario):\n${resumoSlots}\n`
+                  : `No momento nao ha horarios livres configurados. Se o cliente quiser agendar, diga que vai verificar a disponibilidade com a equipe — NAO invente horario.\n`)
+              + `Para confirmar um agendamento, escolha um horario da lista acima, confirme data e hora com o cliente e inclua a tag [AGENDAR_REUNIAO:DD/MM/AAAA:HH:MM:motivo] na resposta (a tag e removida antes de enviar). So agende horarios da lista. Depois de agendar, confirme ao cliente a data e a hora.\n[FIM AGENDAMENTO]`;
+          }
+        } catch (agPromptErr: any) {
+          console.warn("[AutomationEngine] agenda prompt indisponivel:", agPromptErr?.message);
+        }
       }
 
       systemPrompt += `\n\n[INSTRUCOES DE CONTEXTO E COMPORTAMENTO]\nVoce DEVE manter dominio completo de toda a conversa. Antes de responder, releia todo o historico disponivel. Nunca pergunte algo que o cliente ja respondeu. Se o cliente ja informou endereco, pedido, ou qualquer dado, use essa informacao diretamente. Seja coerente com tudo que ja foi dito.\n\n[PROATIVIDADE — REGRA CRITICA]\nVoce e um assistente PRO-ATIVO, nao reativo. Isso significa:\n- Quando o cliente demonstra interesse em algo, ACAO IMEDIATA. Nao fique pedindo confirmacao atras de confirmacao.\n- Se o cliente diz "sim", "quero", "manda", "pode ser", "ok" — EXECUTE a acao. Nao pergunte novamente.\n- Se voce tem um arquivo relevante para o momento (cardapio, tabela de precos, catalogo), ENVIE junto com a resposta. Nao diga "vou enviar" sem enviar de fato.\n- Se o cliente ja disse o que quer, ANOTE O PEDIDO. Nao pergunte "o que voce gostaria?" de novo.\n- Entenda o CONTEXTO da conversa inteira. Se ha 2 mensagens atras o cliente pediu o cardapio e voce ainda nao enviou, ENVIE AGORA.\n- NUNCA responda "um momento" ou "aguarde" e depois nao faca nada. Se precisa fazer algo, FACA NA MESMA RESPOSTA.\n- NUNCA peca nome, telefone ou numero do cliente. Voce JA TEM essas informacoes nos DADOS DO CLIENTE. Use o nome dele em todas as mensagens.\n\n[FINALIZACAO DO ATENDIMENTO]\nQuando o atendimento estiver completamente finalizado (pedido confirmado, dados coletados, pagamento definido), voce DEVE incluir a tag [FINALIZADO] no final da sua ultima mensagem. Isso sinaliza ao sistema que a conversa foi concluida. Exemplo: "Pedido confirmado! Obrigado! [FINALIZADO]". So use [FINALIZADO] quando TUDO estiver realmente concluido. Se o cliente ainda tiver duvidas ou pendencias, NAO use a tag.\n\n[LEMBRETE CRM — OBRIGATORIO]\nNAO ESQUECA: Voce DEVE incluir tags [CRM_...] em CADA resposta. Releia as instrucoes CRM no INICIO deste prompt. As tags sao removidas antes de enviar ao cliente.`;
@@ -1883,43 +1900,33 @@ async function executeNodeReal(
 
         const agendarTagRegex = /\[AGENDAR_REUNIAO:([^\]:]+):([^\]:]+):([^\]]+)\]/gi;
         const agendarMatches = [...content.matchAll(agendarTagRegex)];
-        if (agendarMatches.length > 0) {
+        if (agendarMatches.length > 0 && ctx.workspaceId) {
+          // Fase 1 (Bruno 2026-07-19): agenda REAL — grava em agenda_agendamentos
+          // (antes gravava numa tabela `appointments` inexistente = confirmação
+          // fantasma). Reusa o mesmo alvo (serviço+profissional) do prompt.
+          let alvoAg: any = null;
+          try { alvoAg = JSON.parse(ctx.variables.__agenda_alvo || "null"); } catch {}
+          if (!alvoAg) alvoAg = await resolveAgendaAlvo(ctx.workspaceId, c);
           for (const agMatch of agendarMatches) {
             const dataStr = agMatch[1].trim();
             const horaStr = agMatch[2].trim();
             const tituloStr = agMatch[3].trim();
             try {
-              // DÍVIDA: tabela `appointments` NÃO existe no schema (shared/schema.ts).
-              // Esse bloco falha silencioso em runtime — a IA gera a tag
-              // [AGENDAR_REUNIAO:...] mas NADA é persistido. Cliente pode receber
-              // mensagem de "agendamento confirmado" sem registro real.
-              // Fix completo exige: criar tabela appointments + migration + UI.
-              // Por ora mantemos o código mas com log explícito pra detectar uso.
-              console.warn(`[AutomationEngine] ⚠️ AGENDAR_REUNIAO recebido mas tabela 'appointments' não existe — agendamento NÃO foi salvo (titulo="${tituloStr}", data=${dataStr}, hora=${horaStr}, phone=${ctx.phone})`);
-              // @ts-expect-error — appointments table missing in schema; see note above
-              await db.insert(appointments).values({
-                titulo: tituloStr,
-                data: dataStr,
-                hora: horaStr,
-                tipo: "reuniao",
-                status: "agendado",
-                contato: ctx.phone || null,
-                notas: `Agendado via IA - Lead: ${ctx.variables?.nome || ctx.phone || "Desconhecido"}`,
-                workspaceId: ctx.workspaceId,
+              if (!alvoAg) { console.warn("[AutomationEngine] AGENDAR_REUNIAO sem alvo de agenda — ignorado"); continue; }
+              const r = await agendarViaAgente({
+                workspaceId: ctx.workspaceId, alvo: alvoAg, dataStr, horaStr, titulo: tituloStr,
+                clienteNome: ctx.variables?.nome || "", clienteTelefone: ctx.phone,
               });
-
-              if (ctx.leadId) {
-                try {
-                  const qualStage = await db.select().from(pipelineStages)
-                    .where(and(eq(pipelineStages.pipeline, "comercial"), eq(pipelineStages.key, "qualificado")))
-                    .limit(1);
-                  if (qualStage.length > 0) {
-                    await db.update(leads).set({ status: "qualificado", pipeline: "comercial" }).where(and(eq(leads.id, ctx.leadId), eq(leads.workspaceId, ctx.workspaceId)));
-                  }
-                } catch {}
+              if (r.ok) {
+                if (ctx.leadId) {
+                  try { await db.update(leads).set({ status: "qualificado", pipeline: "comercial" }).where(and(eq(leads.id, ctx.leadId), eq(leads.workspaceId, ctx.workspaceId))); } catch {}
+                }
+              } else {
+                // Falhou (horário ocupado/ inválido) → NÃO cria registro fantasma; loga.
+                console.warn(`[AutomationEngine] AGENDAR_REUNIAO não gravado (${r.error}) data=${dataStr} hora=${horaStr} phone=${ctx.phone}`);
               }
             } catch (agErr: any) {
-              console.error(`[AutomationEngine] Failed to create appointment:`, agErr.message);
+              console.error("[AutomationEngine] agendarViaAgente erro:", agErr?.message);
             }
           }
           content = content.replace(agendarTagRegex, "").replace(/\n{3,}/g, "\n\n").trim();
