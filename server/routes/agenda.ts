@@ -20,6 +20,8 @@ import { computeSlotsLivres, intervaloLivre, findOrCreateLeadForAgenda } from ".
 const STATUS_VALIDOS = ["pendente", "confirmado", "concluido", "cancelado", "faltou"];
 const pid = (v: any) => { const n = Number(v); return Number.isInteger(n) && n > 0 ? n : 0; };
 const cleanIds = (a: any): number[] => Array.isArray(a) ? [...new Set(a.map(pid).filter(Boolean))] : [];
+const qDate = (v: any): Date | null => { const d = new Date(String(v)); return isNaN(+d) ? null : d; };
+const precoCent = (v: any): number | null => { if (v == null) return null; const p = Math.round(Number(v)); return Number.isFinite(p) ? Math.max(0, p) : null; };
 
 export function registerAgendaRoutes(app: Express) {
   // ── Serviço ↔ profissional (N:N) ────────────────────────────────────────
@@ -66,7 +68,7 @@ export function registerAgendaRoutes(app: Express) {
       const [row] = await db.insert(agendaServicos).values({
         workspaceId: wsId, nome: String(b.nome).trim(),
         duracaoMin: Math.max(5, Math.min(600, Number(b.duracaoMin) || 30)),
-        precoCentavos: b.precoCentavos != null ? Math.max(0, Math.round(Number(b.precoCentavos))) : null,
+        precoCentavos: precoCent(b.precoCentavos),
         cor: typeof b.cor === "string" ? b.cor : null,
         ativo: b.ativo === false ? false : true,
         ordem: Number.isInteger(b.ordem) ? b.ordem : 0,
@@ -79,10 +81,13 @@ export function registerAgendaRoutes(app: Express) {
     try {
       const wsId = await resolveWorkspaceId(req); const id = pid(req.params.id);
       if (!id) return res.status(400).json({ error: "id inválido" });
+      const [existe] = await db.select({ id: agendaServicos.id }).from(agendaServicos)
+        .where(and(eq(agendaServicos.id, id), eq(agendaServicos.workspaceId, wsId)));
+      if (!existe) return res.status(404).json({ error: "Serviço não encontrado" });
       const b = req.body || {}; const patch: any = {};
       if (typeof b.nome === "string" && b.nome.trim()) patch.nome = b.nome.trim();
       if (b.duracaoMin != null) patch.duracaoMin = Math.max(5, Math.min(600, Number(b.duracaoMin) || 30));
-      if (b.precoCentavos !== undefined) patch.precoCentavos = b.precoCentavos != null ? Math.max(0, Math.round(Number(b.precoCentavos))) : null;
+      if (b.precoCentavos !== undefined) patch.precoCentavos = precoCent(b.precoCentavos);
       if (b.cor !== undefined) patch.cor = typeof b.cor === "string" ? b.cor : null;
       if (typeof b.ativo === "boolean") patch.ativo = b.ativo;
       if (Number.isInteger(b.ordem)) patch.ordem = b.ordem;
@@ -137,6 +142,9 @@ export function registerAgendaRoutes(app: Express) {
     try {
       const wsId = await resolveWorkspaceId(req); const id = pid(req.params.id);
       if (!id) return res.status(400).json({ error: "id inválido" });
+      const [existe] = await db.select({ id: agendaProfissionais.id }).from(agendaProfissionais)
+        .where(and(eq(agendaProfissionais.id, id), eq(agendaProfissionais.workspaceId, wsId)));
+      if (!existe) return res.status(404).json({ error: "Profissional não encontrado" });
       const b = req.body || {}; const patch: any = {};
       if (typeof b.nome === "string" && b.nome.trim()) patch.nome = b.nome.trim();
       if (b.avatarUrl !== undefined) patch.avatarUrl = typeof b.avatarUrl === "string" ? b.avatarUrl : null;
@@ -189,8 +197,9 @@ export function registerAgendaRoutes(app: Express) {
     try {
       const wsId = await resolveWorkspaceId(req);
       const conds: any[] = [eq(agendaBloqueios.workspaceId, wsId)];
-      if (req.query.inicio) conds.push(gte(agendaBloqueios.inicio, new Date(String(req.query.inicio))));
-      if (req.query.fim) conds.push(lt(agendaBloqueios.inicio, new Date(String(req.query.fim))));
+      const bi = qDate(req.query.inicio), bf = qDate(req.query.fim);
+      if (bi) conds.push(gte(agendaBloqueios.inicio, bi));
+      if (bf) conds.push(lt(agendaBloqueios.inicio, bf));
       const rows = await db.select().from(agendaBloqueios).where(and(...conds)).orderBy(asc(agendaBloqueios.inicio));
       res.json(rows);
     } catch (e: any) { console.error("[Agenda] bloqueios GET:", e?.message); res.status(500).json({ error: "Erro ao listar folgas" }); }
@@ -234,8 +243,9 @@ export function registerAgendaRoutes(app: Express) {
     try {
       const wsId = await resolveWorkspaceId(req);
       const conds: any[] = [eq(agendaAgendamentos.workspaceId, wsId)];
-      if (req.query.inicio) conds.push(gte(agendaAgendamentos.inicio, new Date(String(req.query.inicio))));
-      if (req.query.fim) conds.push(lt(agendaAgendamentos.inicio, new Date(String(req.query.fim))));
+      const ai = qDate(req.query.inicio), af = qDate(req.query.fim);
+      if (ai) conds.push(gte(agendaAgendamentos.inicio, ai));
+      if (af) conds.push(lt(agendaAgendamentos.inicio, af));
       if (req.query.profissionalId) conds.push(eq(agendaAgendamentos.profissionalId, pid(req.query.profissionalId)));
       const rows = await db.select({
         id: agendaAgendamentos.id, servicoId: agendaAgendamentos.servicoId, profissionalId: agendaAgendamentos.profissionalId,
@@ -246,8 +256,8 @@ export function registerAgendaRoutes(app: Express) {
         profNome: agendaProfissionais.nome, profCor: agendaProfissionais.cor,
       })
         .from(agendaAgendamentos)
-        .leftJoin(agendaServicos, eq(agendaAgendamentos.servicoId, agendaServicos.id))
-        .leftJoin(agendaProfissionais, eq(agendaAgendamentos.profissionalId, agendaProfissionais.id))
+        .leftJoin(agendaServicos, and(eq(agendaAgendamentos.servicoId, agendaServicos.id), eq(agendaServicos.workspaceId, wsId)))
+        .leftJoin(agendaProfissionais, and(eq(agendaAgendamentos.profissionalId, agendaProfissionais.id), eq(agendaProfissionais.workspaceId, wsId)))
         .where(and(...conds)).orderBy(asc(agendaAgendamentos.inicio));
       res.json(rows);
     } catch (e: any) { console.error("[Agenda] agendamentos GET:", e?.message); res.status(500).json({ error: "Erro ao listar agendamentos" }); }
@@ -298,9 +308,15 @@ export function registerAgendaRoutes(app: Express) {
       const novoProf = b.profissionalId !== undefined ? pid(b.profissionalId) : atual.profissionalId;
       const novoServico = b.servicoId !== undefined ? pid(b.servicoId) : atual.servicoId;
       const mudouTempoOuRecurso = b.inicio !== undefined || b.profissionalId !== undefined || b.servicoId !== undefined;
-      if (mudouTempoOuRecurso) {
+      // Reativar um cancelado (status→ativo) também re-checa conflito: enquanto cancelado
+      // o slot fica livre e pode ter sido tomado por outro; sem isto, reativar dá double-book.
+      const reativando = atual.status === "cancelado" && !!patch.status && patch.status !== "cancelado";
+      if (mudouTempoOuRecurso || reativando) {
         const [servico] = await db.select().from(agendaServicos).where(and(eq(agendaServicos.id, novoServico), eq(agendaServicos.workspaceId, wsId)));
         if (!servico) return res.status(404).json({ error: "Serviço não encontrado" });
+        // Valida posse do profissional (evita gravar FK de outro tenant / id inválido → 500).
+        const [prof] = await db.select({ id: agendaProfissionais.id }).from(agendaProfissionais).where(and(eq(agendaProfissionais.id, novoProf), eq(agendaProfissionais.workspaceId, wsId)));
+        if (!prof) return res.status(404).json({ error: "Profissional não encontrado" });
         const inicio = b.inicio !== undefined ? new Date(b.inicio) : atual.inicio;
         if (isNaN(+inicio)) return res.status(400).json({ error: "Início inválido" });
         const fim = new Date(inicio.getTime() + (servico.duracaoMin || 30) * 60000);

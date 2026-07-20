@@ -9,7 +9,7 @@
 // e construímos ISO via Date.UTC — assim o dígito 14:00 vai e volta intacto. Bruno 2026-07-11.
 // ═══════════════════════════════════════════════════════════════════════════
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -113,11 +113,9 @@ export default function AgendaPage() {
 }
 
 // ═══════════════════════════ AGENDA VISUAL (dia) ═══════════════════════════
-const GRID_START = 7 * 60;   // 07:00
-const GRID_END = 22 * 60;    // 22:00
 const PX_H = 56;             // px por hora
 const PXM = PX_H / 60;
-const GRID_H = ((GRID_END - GRID_START) / 60) * PX_H;
+const hhmmToMin = (s: string) => { const [h, m] = String(s || "").split(":").map(Number); return (h || 0) * 60 + (m || 0); };
 
 function AgendaVisual({ servicos, profissionais }: { servicos: any[]; profissionais: any[] }) {
   const [data, setData] = useState(hojeStr());
@@ -127,10 +125,36 @@ function AgendaVisual({ servicos, profissionais }: { servicos: any[]; profission
   const { data: ags = [], isLoading } = useQuery<any[]>({
     queryKey: [`/api/agenda/agendamentos?inicio=${bounds.inicio}&fim=${bounds.fim}`],
   });
-  const invalidate = () => qc.invalidateQueries({ predicate: (q) => String(q.queryKey?.[0] || "").startsWith("/api/agenda/agendamentos") });
+  // Invalida agendamentos E slots (o slot recém-ocupado não pode continuar "livre" no cache).
+  const invalidate = () => qc.invalidateQueries({ predicate: (q) => String(q.queryKey?.[0] || "").startsWith("/api/agenda/") });
 
-  const horas = useMemo(() => { const a: number[] = []; for (let h = GRID_START / 60; h <= GRID_END / 60; h++) a.push(h); return a; }, []);
-  const colProfs = profissionais.length ? profissionais : [];
+  // Faixa do grid derivada do dia: cobre 07–22h e estica pra caber agendamentos e a
+  // disponibilidade fora dessa janela (barbearia até tarde, laboratório cedo).
+  const { gridStart, gridEnd } = useMemo(() => {
+    let s = 7 * 60, e = 22 * 60;
+    for (const a of ags) { s = Math.min(s, minutosDeISO(a.inicio)); e = Math.max(e, minutosDeISO(a.fim)); }
+    const wd = diaSemanaDe(data);
+    for (const p of profissionais) for (const d of (p.disponibilidade || [])) {
+      if (d.diaSemana === wd && d.ativo !== false) { s = Math.min(s, hhmmToMin(d.horaInicio)); e = Math.max(e, hhmmToMin(d.horaFim)); }
+    }
+    return { gridStart: Math.floor(s / 60) * 60, gridEnd: Math.ceil(e / 60) * 60 };
+  }, [ags, profissionais, data]);
+  const gridH = ((gridEnd - gridStart) / 60) * PX_H;
+  const horas = useMemo(() => { const a: number[] = []; for (let h = gridStart / 60; h <= gridEnd / 60; h++) a.push(h); return a; }, [gridStart, gridEnd]);
+
+  // Colunas: profissionais ativos + "fantasmas" (arquivados) que ainda têm agendamento no dia,
+  // pra os agendamentos deles não sumirem da tela (senão ficam invisíveis/ingerenciáveis).
+  const colProfs = useMemo(() => {
+    const base: any[] = [...profissionais];
+    const known = new Set(base.map((p) => p.id));
+    for (const a of ags) {
+      if (a.profissionalId && !known.has(a.profissionalId)) {
+        known.add(a.profissionalId);
+        base.push({ id: a.profissionalId, nome: `${a.profNome || "Profissional"} (arquivado)`, cor: a.profCor, _arquivado: true });
+      }
+    }
+    return base;
+  }, [profissionais, ags]);
 
   return (
     <div className="space-y-3">
@@ -159,7 +183,7 @@ function AgendaVisual({ servicos, profissionais }: { servicos: any[]; profission
           <div className="overflow-x-auto">
             <div className="flex min-w-max">
               {/* Gutter de horas */}
-              <div className="flex-none w-12 border-r border-border pt-[34px]" style={{ height: GRID_H + 34 }}>
+              <div className="flex-none w-12 border-r border-border pt-[34px]" style={{ height: gridH + 34 }}>
                 {horas.map((h) => (
                   <div key={h} className="relative text-[10px] text-muted-foreground text-right pr-1.5" style={{ height: PX_H }}>
                     <span className="absolute -top-1.5 right-1.5">{pad2(h)}:00</span>
@@ -175,13 +199,13 @@ function AgendaVisual({ servicos, profissionais }: { servicos: any[]; profission
                       <span className="w-2.5 h-2.5 rounded-full flex-none" style={{ background: prof.cor || "#7c3aed" }} />
                       <span className="text-[12px] font-medium truncate">{prof.nome}</span>
                     </div>
-                    <div className="relative cursor-pointer" style={{ height: GRID_H }} onClick={() => setDialog({ open: true, presetProf: prof.id })}>
+                    <div className="relative cursor-pointer" style={{ height: gridH }} onClick={() => { if (!prof._arquivado) setDialog({ open: true, presetProf: prof.id }); }}>
                       {/* linhas de hora */}
-                      {horas.map((h) => (<div key={h} className="absolute left-0 right-0 border-t border-border/60" style={{ top: (h * 60 - GRID_START) * PXM }} />))}
+                      {horas.map((h) => (<div key={h} className="absolute left-0 right-0 border-t border-border/60" style={{ top: (h * 60 - gridStart) * PXM }} />))}
                       {/* blocos */}
                       {doDia.map((a) => {
                         const ini = minutosDeISO(a.inicio), fim = minutosDeISO(a.fim);
-                        const top = Math.max(0, (ini - GRID_START) * PXM);
+                        const top = Math.max(0, (ini - gridStart) * PXM);
                         const h = Math.max(20, (fim - ini) * PXM - 2);
                         const cor = a.servicoCor || prof.cor || "#7c3aed";
                         const cancelado = a.status === "cancelado";
@@ -244,8 +268,11 @@ function AppointmentDialog({ servicos, profissionais, data, edit, presetProf, on
     return linkados.length ? linkados : profissionais;
   }, [servicoId, profissionais]);
 
-  // Se o profissional atual não atende o serviço, reseta.
+  // Se o profissional atual não atende o serviço, reseta — MAS não na 1ª render
+  // (senão apagaria o profissional pré-selecionado pelo clique na coluna / edição).
+  const primeiraRender = useRef(true);
   useEffect(() => {
+    if (primeiraRender.current) { primeiraRender.current = false; return; }
     if (profId && !elegiveis.some((p) => String(p.id) === profId)) setProfId("");
   }, [servicoId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -279,13 +306,6 @@ function AppointmentDialog({ servicos, profissionais, data, edit, presetProf, on
       let msg = "Erro ao salvar"; try { const j = String(e?.message || "").match(/\{[\s\S]*\}/); if (j) msg = JSON.parse(j[0]).error || msg; } catch {}
       toast({ title: msg, variant: "destructive" });
     } finally { setSalvando(false); }
-  }
-
-  async function mudarStatus(novo: string) {
-    setStatus(novo);
-    if (!isEdit) return;
-    try { await apiRequest("PATCH", `/api/agenda/agendamentos/${edit.id}`, { status: novo }); toast({ title: "Status atualizado" }); onSaved(); }
-    catch { toast({ title: "Erro ao mudar status", variant: "destructive" }); }
   }
 
   async function excluir() {
@@ -353,7 +373,7 @@ function AppointmentDialog({ servicos, profissionais, data, edit, presetProf, on
               <Label className="text-[12px]">Status</Label>
               <div className="flex flex-wrap gap-1.5 mt-1.5">
                 {Object.entries(STATUS_META).map(([k, v]) => (
-                  <button key={k} onClick={() => mudarStatus(k)}
+                  <button key={k} onClick={() => setStatus(k)}
                     className="px-2.5 py-1 rounded-md text-[12px] border transition-colors"
                     style={status === k ? { background: v.cor, borderColor: v.cor, color: "#fff" } : { borderColor: "var(--border)" }}>
                     {v.label}
