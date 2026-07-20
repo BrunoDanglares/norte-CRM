@@ -659,7 +659,7 @@ async function executeNodeReal(
 
       systemPrompt += `\n\n[REGRA SOBRE NOME E NUMERO DO CLIENTE]\nVoce JA SABE o nome e numero do cliente (veja DADOS DO CLIENTE acima). NUNCA peca o nome, telefone ou numero do cliente — voce ja tem essas informacoes. O numero de WhatsApp do cliente E o telefone dele. Chame o cliente SEMPRE pelo nome de forma natural e amigavel em todas as mensagens. Se o nome do cliente parecer incompleto ou generico, use o nome que tem mesmo assim. Exemplo: se o nome e "Bruno", chame de "Bruno". NUNCA pergunte "qual seu nome?" ou "pode me informar seu telefone?" — isso irrita o cliente porque ele sabe que voce ja tem esses dados.`;
 
-      const aiFiles: { id: string; name: string; description: string; url: string; fileType: string; originalName: string }[] = c.aiFiles || [];
+      const aiFiles: { id: string; name: string; description: string; url: string; fileType: string; originalName: string; extractedText?: string }[] = c.aiFiles || [];
       if (aiFiles.length > 0) {
         const filesBlock: string[] = [];
         filesBlock.push("\n\n[ARQUIVOS DISPONIVEIS PARA ENVIO — LEIA COM ATENCAO]");
@@ -680,6 +680,15 @@ async function executeNodeReal(
           const desc = af.description ? ` — Conteudo/Descricao: ${af.description}` : "";
           const tipo = af.fileType === "pdf" ? "PDF" : "Imagem";
           filesBlock.push(`- Nome: "${label}" | Tipo: ${tipo}${desc}`);
+          // Fase 4 (RAG): se o texto do documento foi extraido no upload, injeta o
+          // conteudo REAL como base de conhecimento (nao so a descricao digitada).
+          // Cap por arquivo pra nao estourar o contexto; a extracao ja trunca na origem.
+          const conteudo = (af.extractedText || "").trim();
+          if (conteudo) {
+            filesBlock.push(`  >> CONTEUDO DE "${label}" (use para responder com precisao):`);
+            filesBlock.push(conteudo.slice(0, 4000));
+            if (conteudo.length > 4000) filesBlock.push("  [conteudo truncado...]");
+          }
         }
         filesBlock.push(`\nEXEMPLO CORRETO: Cliente pergunta "tem cardapio?" e existe arquivo "Cardapio" → Responda: "Claro! Aqui esta nosso cardapio completo! 😊 [ENVIAR_ARQUIVO:Cardapio]"`);
         filesBlock.push(`EXEMPLO ERRADO: Cliente pergunta "tem cardapio?" → Responder "Sim, temos! Vou enviar em um momento." (SEM a tag — isso NAO envia nada!)`);

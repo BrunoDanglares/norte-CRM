@@ -20,6 +20,7 @@ import {
   Variable, GitMerge, Split, Timer, Repeat, Bell,
   FileOutput, Info, Paperclip, Globe, Link, ShieldCheck, Sparkles, Wifi,
   ImagePlus, UserCheck, ExternalLink, MousePointerClick, MessageSquare, Bot,
+  Columns, Calendar, ClipboardCheck, LogOut,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -27,6 +28,104 @@ import { apiRequest } from "@/lib/queryClient";
 import {
   FlowNode, NODE_TYPES, NODE_DESCRIPTIONS, TRIGGER_OPTIONS, getNodePreview,
 } from "./types";
+
+// ── Nó "Agente" (Fases 2-4): seções de capacidade no painel lateral estreito ──
+// O nó Agente roda como ai_response no motor, então reaproveita as MESMAS chaves de
+// config que a "Resposta IA" já lê (aiCrm*, exitTriggers, aiFiles). Estas seções só
+// EXPÕEM esses controles com linguagem de agente — sem tocar no backend. Bruno 2026-07-19.
+function AgenteCap({ title, icon: Icon, defaultOpen, children }: {
+  title: string; icon: typeof Tag; defaultOpen?: boolean; children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(!!defaultOpen);
+  return (
+    <div className="rounded-lg border border-[#7C3AED]/20 overflow-hidden bg-[#7C3AED]/[0.03]">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center gap-2 px-2.5 py-2 hover:bg-[#7C3AED]/[0.06] transition-colors"
+      >
+        <Icon className="w-3.5 h-3.5 text-[#7C3AED] flex-shrink-0" />
+        <span className="text-[11px] font-semibold flex-1 text-left">{title}</span>
+        <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && <div className="px-2.5 pb-2.5 pt-2 space-y-2 border-t border-[#7C3AED]/15">{children}</div>}
+    </div>
+  );
+}
+
+function AgenteToggleRow({ icon: Icon, label, desc, enabled, onToggle, testId }: {
+  icon: typeof Tag; label: string; desc: string; enabled: boolean; onToggle: () => void; testId?: string;
+}) {
+  return (
+    <div className={`rounded-md border p-2 flex items-start gap-2 transition-all ${enabled ? "bg-[#7C3AED]/[0.07] border-[#7C3AED]/25" : "bg-muted/20 border-border opacity-70"}`}>
+      <Icon className={`w-3.5 h-3.5 mt-0.5 flex-shrink-0 ${enabled ? "text-[#7C3AED]" : "text-muted-foreground"}`} />
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center justify-between gap-2">
+          <span className={`text-[10.5px] font-semibold ${enabled ? "" : "text-muted-foreground"}`}>{label}</span>
+          <button
+            type="button"
+            onClick={onToggle}
+            className={`relative inline-flex h-4 w-7 items-center rounded-full flex-shrink-0 transition-colors ${enabled ? "bg-[#7C3AED]" : "bg-muted-foreground/30"}`}
+            data-testid={testId}
+          >
+            <span className={`inline-block h-3 w-3 rounded-full bg-white shadow-sm transition-transform ${enabled ? "translate-x-[13px]" : "translate-x-[2px]"}`} />
+          </button>
+        </div>
+        <p className="text-[9.5px] text-muted-foreground mt-0.5 leading-snug">{desc}</p>
+      </div>
+    </div>
+  );
+}
+
+// Fase 3 — Saídas inteligentes: editor compacto dos exitTriggers (mesmo shape que o
+// motor lê). Cada saída = frase-gatilho + tipo de match + label do nó-alvo. O agente
+// também pode decidir sair sozinho via [SAIDA_GATILHO] (descrito no systemPrompt).
+function AgenteSaidas({ nodeId, config: c, onUpdateCfg }: { nodeId: string; config: any; onUpdateCfg: (id: string, field: string, value: any) => void }) {
+  const triggers: { id: string; matchType: string; keywords: string; targetNodeLabel?: string }[] = c.exitTriggers || [];
+  const setList = (list: any[]) => onUpdateCfg(nodeId, "exitTriggers", list);
+  const add = () => setList([...triggers, { id: `et_${Date.now()}`, matchType: "contains", keywords: "", targetNodeLabel: "" }]);
+  const patch = (id: string, field: string, value: string) => setList(triggers.map((t) => (t.id === id ? { ...t, [field]: value } : t)));
+  const remove = (id: string) => setList(triggers.filter((t) => t.id !== id));
+  const matchOpts = [
+    { value: "contains", label: "Contém" },
+    { value: "exact", label: "Exato" },
+    { value: "starts_with", label: "Começa com" },
+    { value: "regex", label: "Regex" },
+  ];
+  return (
+    <div className="space-y-2">
+      <p className="text-[9.5px] text-muted-foreground leading-snug -mt-1">
+        Quando o cliente pedir algo fora do escopo, o agente encerra o modo IA e o fluxo segue pro nó-alvo. Ele também decide sair sozinho pelo contexto.
+      </p>
+      {triggers.length === 0 && (
+        <div className="text-[10px] text-muted-foreground text-center py-2 rounded-md border border-dashed border-border">
+          Sem saídas — o agente conversa até o fim do fluxo.
+        </div>
+      )}
+      {triggers.map((t, idx) => (
+        <div key={t.id} className="rounded-md border border-border bg-muted/20 p-2 space-y-1.5" data-testid={`agente-saida-${idx}`}>
+          <div className="flex items-center justify-between">
+            <span className="text-[9.5px] font-bold text-muted-foreground uppercase tracking-wide">Saída {idx + 1}</span>
+            <button type="button" onClick={() => remove(t.id)} className="text-destructive/70 hover:text-destructive" data-testid={`button-remove-agente-saida-${idx}`}>
+              <Trash2 className="w-3 h-3" />
+            </button>
+          </div>
+          <Input className="text-xs h-7" placeholder="atendente, humano, cancelar" value={t.keywords} onChange={(e) => patch(t.id, "keywords", e.target.value)} data-testid={`input-agente-saida-kw-${idx}`} />
+          <div className="flex gap-1.5">
+            <Select value={t.matchType} onValueChange={(v) => patch(t.id, "matchType", v)}>
+              <SelectTrigger className="text-[10px] h-7 w-[96px] flex-shrink-0" data-testid={`select-agente-saida-match-${idx}`}><SelectValue /></SelectTrigger>
+              <SelectContent>{matchOpts.map((o) => <SelectItem key={o.value} value={o.value} className="text-xs">{o.label}</SelectItem>)}</SelectContent>
+            </Select>
+            <Input className="text-xs h-7 flex-1 min-w-0" placeholder="Nó-alvo (ex.: Falar com humano)" value={t.targetNodeLabel || ""} onChange={(e) => patch(t.id, "targetNodeLabel", e.target.value)} data-testid={`input-agente-saida-target-${idx}`} />
+          </div>
+        </div>
+      ))}
+      <button type="button" onClick={add} className="w-full py-1.5 rounded-md border border-dashed border-[#7C3AED]/40 text-[10.5px] font-semibold text-[#7C3AED] hover:bg-[#7C3AED]/[0.06] transition-all flex items-center justify-center gap-1" data-testid="button-add-agente-saida">
+        <Plus className="w-3 h-3" /> Adicionar saída
+      </button>
+    </div>
+  );
+}
 
 function SendImageConfig({ nodeId, config: c, onUpdateCfg }: { nodeId: string; config: any; onUpdateCfg: (id: string, field: string, value: any) => void }) {
   const [uploading, setUploading] = useState(false);
@@ -332,7 +431,7 @@ export function AiFilesConfig({ nodeId, config: c, onUpdateCfg }: { nodeId: stri
       const lower = file.name.toLowerCase();
       const isPdf = lower.endsWith(".pdf");
       const isVideo = lower.endsWith(".mp4") || lower.endsWith(".mov") || lower.endsWith(".avi") || lower.endsWith(".webm") || lower.endsWith(".mkv");
-      const newFile = {
+      const newFile: any = {
         id: `f_${Date.now()}`,
         name: "",
         description: "",
@@ -342,6 +441,24 @@ export function AiFilesConfig({ nodeId, config: c, onUpdateCfg }: { nodeId: stri
       };
       onUpdateCfg(nodeId, "aiFiles", [...files, newFile]);
       toast({ title: "Arquivo adicionado", description: file.name });
+
+      // Fase 4 (RAG): extrai o texto do PDF pra virar base de conhecimento do agente.
+      // Best-effort — o arquivo já aparece; se a extração falhar, resta a descrição manual.
+      if (isPdf) {
+        try {
+          const exRes = await fetch("/api/ai-files/extract", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+            body: JSON.stringify({ url: data.url }),
+          });
+          const ex = await exRes.json();
+          if (exRes.ok && ex.ok && ex.text) {
+            onUpdateCfg(nodeId, "aiFiles", [...files, newFile].map((f) =>
+              f.id === newFile.id ? { ...f, extractedText: ex.text } : f));
+            toast({ title: "Conhecimento lido", description: `${ex.chars} caracteres extraídos de ${file.name}` });
+          }
+        } catch { /* extração best-effort */ }
+      }
     } catch {
       toast({ title: "Erro", description: "Falha ao enviar arquivo", variant: "destructive" });
     } finally {
@@ -413,6 +530,14 @@ export function AiFilesConfig({ nodeId, config: c, onUpdateCfg }: { nodeId: stri
               data-testid={`input-ai-file-desc-${f.id}`}
             />
           </div>
+
+          {/* Fase 4 (RAG): selo quando o texto do PDF virou conhecimento do agente. */}
+          {(f as any).extractedText && (
+            <div className="flex items-center gap-1 text-[9.5px] text-emerald-600 dark:text-emerald-400 font-medium" data-testid={`ai-file-knowledge-${f.id}`}>
+              <ClipboardCheck className="w-3 h-3" />
+              Conhecimento lido — {String((f as any).extractedText).length} caracteres
+            </div>
+          )}
         </div>
       ))}
 
@@ -1542,8 +1667,48 @@ export const ConfigPanel = memo(function ConfigPanel({
                 <Input className="text-xs" placeholder="Ex.: proximo e objetivo" value={c.tomVoz || ""} onChange={(e) => onUpdateCfg(node.id, "tomVoz", e.target.value)} data-testid="input-agente-tom" />
               </div>
             </div>
+            {/* ── Fase 2 — Ações: o que o agente faz sozinho no CRM lendo a conversa.
+                Escreve nas MESMAS chaves aiCrm* que o motor já lê (default = LIGADO). ── */}
+            <AgenteCap title="Ações no CRM" icon={Settings2} defaultOpen>
+              <p className="text-[9.5px] text-muted-foreground leading-snug -mt-1">
+                O que este agente executa sozinho, lendo a conversa em tempo real. Desligue o que ele <b>não</b> deve fazer.
+              </p>
+              {[
+                { key: "aiCrmPipeline", icon: Columns, label: "Mover no funil", desc: "Leva o card pra etapa certa do Kanban conforme a conversa evolui." },
+                { key: "aiCrmAgenda", icon: Calendar, label: "Agendar", desc: "Marca compromisso na agenda quando o cliente combina dia e horário." },
+                { key: "aiCrmTags", icon: Tag, label: "Marcar com tags", desc: "Aplica etiquetas (Quente, VIP, Urgente…) pelo contexto." },
+                { key: "aiCrmPrioridade", icon: Flag, label: "Definir prioridade", desc: "Classifica o lead em alta, média ou baixa pela urgência." },
+                { key: "aiCrmAtribuir", icon: UserCheck, label: "Atribuir a atendente", desc: "Encaminha a conversa pro membro ou equipe mais adequado." },
+                { key: "aiCrmPesquisaSatisfacao", icon: ClipboardCheck, label: "Pesquisa de satisfação", desc: "Envia a pesquisa ao fim do atendimento e registra a nota." },
+              ].map((cap) => (
+                <AgenteToggleRow
+                  key={cap.key}
+                  icon={cap.icon}
+                  label={cap.label}
+                  desc={cap.desc}
+                  enabled={c[cap.key] !== false}
+                  onToggle={() => onUpdateCfg(node.id, cap.key, c[cap.key] === false)}
+                  testId={`toggle-agente-${cap.key}`}
+                />
+              ))}
+            </AgenteCap>
+
+            {/* ── Fase 3 — Saídas inteligentes: portas que tiram o fluxo do modo IA. ── */}
+            <AgenteCap title="Saídas inteligentes" icon={LogOut}>
+              <AgenteSaidas nodeId={node.id} config={c} onUpdateCfg={onUpdateCfg} />
+            </AgenteCap>
+
+            {/* ── Fase 4 — Base de conhecimento: arquivos que o agente lê pra responder
+                ancorado (RAG). O motor extrai o texto do PDF/doc no upload. ── */}
+            <AgenteCap title="Base de conhecimento" icon={FileText}>
+              <p className="text-[9.5px] text-muted-foreground leading-snug -mt-1 mb-1">
+                Anexe catálogo, tabela de preços, FAQ ou PDF. O agente <b>conhece</b> o conteúdo e responde a partir dele — sem precisar enviar o arquivo (mas também pode enviar quando fizer sentido).
+              </p>
+              <AiFilesConfig nodeId={node.id} config={c} onUpdateCfg={onUpdateCfg} />
+            </AgenteCap>
+
             <div className="text-[10px] text-muted-foreground p-2.5 bg-muted/40 border border-border rounded-lg leading-relaxed">
-              Dica: ligue este Agente aos proximos blocos normalmente. Quando ele terminar (ou o cliente pedir algo fora do escopo), use uma <b>Condicao</b> ou <b>Atribuir Atendente</b> para escalar — o handoff ja pausa o bot automaticamente.
+              Dica: conecte o Agente aos próximos blocos normalmente. As <b>Saídas inteligentes</b> acima já fazem o handoff (que pausa o bot). Sem saídas, ele conversa até o fim do fluxo.
             </div>
           </div>
         )}
