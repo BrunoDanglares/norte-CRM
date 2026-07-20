@@ -581,6 +581,111 @@ export const insertDisponibilidadeSchema = createInsertSchema(disponibilidade).o
 export type InsertDisponibilidade = z.infer<typeof insertDisponibilidadeSchema>;
 export type Disponibilidade = typeof disponibilidade.$inferSelect;
 
+// ═══════════════════════════════════════════════════════════════════════════
+// AGENDA (agendamentos) — módulo genérico multi-segmento (clínica, laboratório,
+// consultório, barbearia…). Serviços + profissionais + disponibilidade + folgas
+// → agendamentos. Isolado por workspace_id. A tabela `disponibilidade` acima é
+// legado órfão (por user); a agenda usa `agendaDisponibilidade` (por profissional).
+// Bruno 2026-07-11.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Quem executa o serviço (barbeiro, médico, sala/recurso). Não precisa ter login;
+// userId opcional liga a um usuário do sistema quando fizer sentido.
+export const agendaProfissionais = pgTable("agenda_profissionais", {
+  id: serial("id").primaryKey(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id),
+  nome: text("nome").notNull(),
+  avatarUrl: text("avatar_url"),
+  userId: integer("user_id").references(() => users.id),   // opcional: liga a um login
+  cor: text("cor"),                                         // cor no calendário (hex)
+  ativo: boolean("ativo").notNull().default(true),
+  ordem: integer("ordem").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+export const insertAgendaProfissionalSchema = createInsertSchema(agendaProfissionais).omit({ id: true, createdAt: true });
+export type InsertAgendaProfissional = z.infer<typeof insertAgendaProfissionalSchema>;
+export type AgendaProfissional = typeof agendaProfissionais.$inferSelect;
+
+// Serviços oferecidos (nome, duração em minutos, preço em centavos, cor).
+export const agendaServicos = pgTable("agenda_servicos", {
+  id: serial("id").primaryKey(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id),
+  nome: text("nome").notNull(),
+  duracaoMin: integer("duracao_min").notNull().default(30),
+  precoCentavos: integer("preco_centavos"),               // opcional
+  cor: text("cor"),
+  ativo: boolean("ativo").notNull().default(true),
+  ordem: integer("ordem").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+export const insertAgendaServicoSchema = createInsertSchema(agendaServicos).omit({ id: true, createdAt: true });
+export type InsertAgendaServico = z.infer<typeof insertAgendaServicoSchema>;
+export type AgendaServico = typeof agendaServicos.$inferSelect;
+
+// N:N serviço ↔ profissional (quais profissionais executam quais serviços).
+export const agendaServicoProfissional = pgTable("agenda_servico_profissional", {
+  id: serial("id").primaryKey(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id),
+  servicoId: integer("servico_id").notNull().references(() => agendaServicos.id),
+  profissionalId: integer("profissional_id").notNull().references(() => agendaProfissionais.id),
+});
+export const insertAgendaServicoProfissionalSchema = createInsertSchema(agendaServicoProfissional).omit({ id: true });
+export type InsertAgendaServicoProfissional = z.infer<typeof insertAgendaServicoProfissionalSchema>;
+export type AgendaServicoProfissional = typeof agendaServicoProfissional.$inferSelect;
+
+// Disponibilidade semanal por profissional (uma linha por faixa; almoço = 2 faixas
+// no mesmo dia). diaSemana: 0=domingo … 6=sábado. Horas em "HH:MM" (hora local).
+export const agendaDisponibilidade = pgTable("agenda_disponibilidade", {
+  id: serial("id").primaryKey(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id),
+  profissionalId: integer("profissional_id").notNull().references(() => agendaProfissionais.id),
+  diaSemana: integer("dia_semana").notNull(),
+  horaInicio: text("hora_inicio").notNull(),
+  horaFim: text("hora_fim").notNull(),
+  ativo: boolean("ativo").notNull().default(true),
+});
+export const insertAgendaDisponibilidadeSchema = createInsertSchema(agendaDisponibilidade).omit({ id: true });
+export type InsertAgendaDisponibilidade = z.infer<typeof insertAgendaDisponibilidadeSchema>;
+export type AgendaDisponibilidade = typeof agendaDisponibilidade.$inferSelect;
+
+// Bloqueios/folgas pontuais (feriado, férias, compromisso). profissionalId null =
+// vale pra todos. Faixa [inicio, fim) — bloqueia os slots que caem dentro.
+export const agendaBloqueios = pgTable("agenda_bloqueios", {
+  id: serial("id").primaryKey(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id),
+  profissionalId: integer("profissional_id").references(() => agendaProfissionais.id),
+  inicio: timestamp("inicio").notNull(),
+  fim: timestamp("fim").notNull(),
+  motivo: text("motivo"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+export const insertAgendaBloqueioSchema = createInsertSchema(agendaBloqueios).omit({ id: true, createdAt: true });
+export type InsertAgendaBloqueio = z.infer<typeof insertAgendaBloqueioSchema>;
+export type AgendaBloqueio = typeof agendaBloqueios.$inferSelect;
+
+// Agendamentos. status: pendente | confirmado | concluido | cancelado | faltou.
+// origem: manual | publico | bot. leadId liga ao CRM (funil).
+export const agendaAgendamentos = pgTable("agenda_agendamentos", {
+  id: serial("id").primaryKey(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id),
+  servicoId: integer("servico_id").notNull().references(() => agendaServicos.id),
+  profissionalId: integer("profissional_id").notNull().references(() => agendaProfissionais.id),
+  leadId: integer("lead_id").references(() => leads.id),
+  clienteNome: text("cliente_nome").notNull(),
+  clienteTelefone: text("cliente_telefone"),
+  inicio: timestamp("inicio").notNull(),
+  fim: timestamp("fim").notNull(),
+  status: text("status").notNull().default("confirmado"),
+  origem: text("origem").notNull().default("manual"),
+  observacoes: text("observacoes"),
+  confirmacaoToken: text("confirmacao_token"),            // Fase 3 (confirmar/cancelar público)
+  lembreteEnviadoAt: timestamp("lembrete_enviado_at"),    // Fase 3 (lembrete WhatsApp)
+  createdAt: timestamp("created_at").defaultNow(),
+});
+export const insertAgendaAgendamentoSchema = createInsertSchema(agendaAgendamentos).omit({ id: true, createdAt: true });
+export type InsertAgendaAgendamento = z.infer<typeof insertAgendaAgendamentoSchema>;
+export type AgendaAgendamento = typeof agendaAgendamentos.$inferSelect;
+
 export const insertUserSchema = createInsertSchema(users).omit({ id: true });
 export const insertLeadSchema = createInsertSchema(leads).omit({ id: true, createdAt: true });
 export const insertLeadTagSchema = createInsertSchema(leadTags).omit({ id: true, createdAt: true });

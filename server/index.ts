@@ -553,6 +553,77 @@ async function runAutoMigrations() {
     // ID de entrega do webhook da Meta (pode diferir do ig_user_id do IG Login). Bruno 2026-07-11.
     `ALTER TABLE instagram_connections ADD COLUMN IF NOT EXISTS ig_webhook_id TEXT`,
     `CREATE INDEX IF NOT EXISTS instagram_connections_ig_webhook_id_idx ON instagram_connections(ig_webhook_id)`,
+    // ── Agenda (agendamentos) — módulo multi-segmento. Bruno 2026-07-11. ──
+    `CREATE TABLE IF NOT EXISTS agenda_profissionais (
+      id SERIAL PRIMARY KEY,
+      workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+      nome TEXT NOT NULL,
+      avatar_url TEXT,
+      user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      cor TEXT,
+      ativo BOOLEAN NOT NULL DEFAULT true,
+      ordem INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMP DEFAULT now()
+    )`,
+    `CREATE INDEX IF NOT EXISTS agenda_profissionais_ws_idx ON agenda_profissionais(workspace_id)`,
+    `CREATE TABLE IF NOT EXISTS agenda_servicos (
+      id SERIAL PRIMARY KEY,
+      workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+      nome TEXT NOT NULL,
+      duracao_min INTEGER NOT NULL DEFAULT 30,
+      preco_centavos INTEGER,
+      cor TEXT,
+      ativo BOOLEAN NOT NULL DEFAULT true,
+      ordem INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMP DEFAULT now()
+    )`,
+    `CREATE INDEX IF NOT EXISTS agenda_servicos_ws_idx ON agenda_servicos(workspace_id)`,
+    `CREATE TABLE IF NOT EXISTS agenda_servico_profissional (
+      id SERIAL PRIMARY KEY,
+      workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+      servico_id INTEGER NOT NULL REFERENCES agenda_servicos(id) ON DELETE CASCADE,
+      profissional_id INTEGER NOT NULL REFERENCES agenda_profissionais(id) ON DELETE CASCADE
+    )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS agenda_servico_prof_uniq ON agenda_servico_profissional(servico_id, profissional_id)`,
+    `CREATE TABLE IF NOT EXISTS agenda_disponibilidade (
+      id SERIAL PRIMARY KEY,
+      workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+      profissional_id INTEGER NOT NULL REFERENCES agenda_profissionais(id) ON DELETE CASCADE,
+      dia_semana INTEGER NOT NULL,
+      hora_inicio TEXT NOT NULL,
+      hora_fim TEXT NOT NULL,
+      ativo BOOLEAN NOT NULL DEFAULT true
+    )`,
+    `CREATE INDEX IF NOT EXISTS agenda_disp_ws_prof_idx ON agenda_disponibilidade(workspace_id, profissional_id)`,
+    `CREATE TABLE IF NOT EXISTS agenda_bloqueios (
+      id SERIAL PRIMARY KEY,
+      workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+      profissional_id INTEGER REFERENCES agenda_profissionais(id) ON DELETE CASCADE,
+      inicio TIMESTAMP NOT NULL,
+      fim TIMESTAMP NOT NULL,
+      motivo TEXT,
+      created_at TIMESTAMP DEFAULT now()
+    )`,
+    `CREATE INDEX IF NOT EXISTS agenda_bloqueios_ws_idx ON agenda_bloqueios(workspace_id, inicio)`,
+    `CREATE TABLE IF NOT EXISTS agenda_agendamentos (
+      id SERIAL PRIMARY KEY,
+      workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+      servico_id INTEGER NOT NULL REFERENCES agenda_servicos(id),
+      profissional_id INTEGER NOT NULL REFERENCES agenda_profissionais(id),
+      lead_id INTEGER REFERENCES leads(id) ON DELETE SET NULL,
+      cliente_nome TEXT NOT NULL,
+      cliente_telefone TEXT,
+      inicio TIMESTAMP NOT NULL,
+      fim TIMESTAMP NOT NULL,
+      status TEXT NOT NULL DEFAULT 'confirmado',
+      origem TEXT NOT NULL DEFAULT 'manual',
+      observacoes TEXT,
+      confirmacao_token TEXT,
+      lembrete_enviado_at TIMESTAMP,
+      created_at TIMESTAMP DEFAULT now()
+    )`,
+    `CREATE INDEX IF NOT EXISTS agenda_agend_ws_inicio_idx ON agenda_agendamentos(workspace_id, inicio)`,
+    `CREATE INDEX IF NOT EXISTS agenda_agend_prof_inicio_idx ON agenda_agendamentos(profissional_id, inicio)`,
   ];
 
   // ── Migration markers: skip de DDLs já aplicadas ─────────────────────────

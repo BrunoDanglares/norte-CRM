@@ -31,6 +31,7 @@ import {
   HeartPulse,
   ChevronsUpDown,
   ChevronDown,
+  CalendarDays,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { prefetchRoute } from "@/lib/prefetch";
@@ -51,6 +52,7 @@ function getNavGroups(isSuperAdmin = false) {
       items: [
         { title: "Início", url: "/inicio", icon: Home },
         { title: "CRM", url: "/crm", icon: Kanban },
+        { title: "Agenda", url: "/agenda", icon: CalendarDays },
       ],
     },
     {

@@ -104,6 +104,7 @@ const pi = {
   whatsappOficial: () => retryImport(() => import("@/pages/whatsapp-oficial")),
   instaProspect: () => retryImport(() => import("@/pages/InstaProspect")),
   instaflix: () => retryImport(() => import("@/pages/Instaflix")),
+  agenda: () => retryImport(() => import("@/pages/agenda")),
   aceitarConvite: () => retryImport(() => import("@/pages/aceitar-convite")),
   adminTenantSettings: () => retryImport(() => import("@/pages/admin-tenant-settings")),
   atendimentos: () => retryImport(() => import("@/pages/atendimentos")),
@@ -134,6 +135,7 @@ const SuperAdmin = lazy(pi.superAdmin);
 const WhatsAppOficial = lazy(pi.whatsappOficial);
 const InstaProspect = lazy(pi.instaProspect);
 const Instaflix = lazy(pi.instaflix);
+const Agenda = lazy(pi.agenda);
 const AceitarConvite = lazy(pi.aceitarConvite);
 const AdminTenantSettings = lazy(pi.adminTenantSettings);
 const Atendimentos = lazy(pi.atendimentos);
@@ -323,6 +325,7 @@ function AnimatedRoutes() {
           <Route path="/dashboard"><Redirect to={defaultLandingForRole()} /></Route>
           <Route path="/inicio" component={Inicio} />
           <Route path="/crm" component={Leads} />
+          <Route path="/agenda" component={Agenda} />
           {/* Central de Atendimentos foi removida: contatos vivem em Atendimento
               e protocolos compõem Relatórios. Redireciona pra não orfanizar links. */}
           <Route path="/central">{() => { window.location.replace("/atendimentos"); return null; }}</Route>

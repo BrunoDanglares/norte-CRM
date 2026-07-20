@@ -28,6 +28,7 @@ import { registerTenantSettingsRoutes } from "./routes/tenant-settings";
 import { registerAdminTenantSettingsRoutes } from "./routes/admin-tenant-settings";
 import { registerHealthRoutes } from "./routes/health";
 import { registerLinkPreviewRoutes } from "./routes/link-preview";
+import { registerAgendaRoutes } from "./routes/agenda";
 
 
 export async function registerRoutes(
@@ -88,6 +89,30 @@ export async function registerRoutes(
     res.json({ ok: true, url: publicUrl, filename: req.file.filename });
   });
 
+  // Fase 4 (RAG) do nó Agente / Resposta IA: extrai o TEXTO de um PDF já enviado pra
+  // virar base de conhecimento do agente. O client chama logo após o upload e guarda
+  // o texto no próprio objeto do arquivo (aiFiles[].extractedText) — sem migração.
+  app.post("/api/ai-files/extract", requireAuth, async (req, res) => {
+    try {
+      const url = String((req.body as any)?.url || "");
+      // Aceita URL pública (…/uploads/arquivo.pdf) ou caminho relativo /uploads/arquivo.pdf.
+      const m = url.match(/\/uploads\/([^/?#]+)/i);
+      if (!m) return res.status(400).json({ error: "URL de upload inválida" });
+      const { resolveUploadPath } = await import("./utils/uploadsDir");
+      const fs = await import("fs");
+      const abs = resolveUploadPath(`/uploads/${m[1]}`); // anti-traversal
+      if (!fs.existsSync(abs)) return res.status(404).json({ error: "Arquivo não encontrado" });
+      const buffer = fs.readFileSync(abs);
+      const { extractTextFromPdfBuffer } = await import("./services/tenantContractModelParser");
+      let text = await extractTextFromPdfBuffer(buffer);
+      text = (text || "").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim().slice(0, 12000);
+      res.json({ ok: true, text, chars: text.length });
+    } catch (err: any) {
+      console.error("[ai-files/extract] erro:", err?.message);
+      res.status(500).json({ error: "Falha ao extrair texto do arquivo" });
+    }
+  });
+
   registerAuthRoutes(app);
   registerPartnerRoutes(app);
   registerPerfilRoutes(app);
@@ -111,6 +136,7 @@ export async function registerRoutes(
   registerAdminTenantSettingsRoutes(app);
   registerHealthRoutes(app);
   registerLinkPreviewRoutes(app);
+  registerAgendaRoutes(app);
 
   app.get("/api/media-proxy", requireAuth, async (req, res) => {
     const url = req.query.url as string;
