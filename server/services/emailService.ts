@@ -7,9 +7,9 @@ const SMTP_PASS = process.env.SMTP_PASS || "";
 const SMTP_FROM = process.env.SMTP_FROM || SMTP_USER || "noreply@chatbanana.com.br";
 const APP_URL = process.env.APP_URL || "https://app.chatbanana.com.br";
 
-let transporter: nodemailer.Transporter | null = null;
+let transporter: ReturnType<typeof nodemailer.createTransport> | null = null;
 
-function getTransporter(): nodemailer.Transporter | null {
+function getTransporter(): ReturnType<typeof nodemailer.createTransport> | null {
   if (!SMTP_USER || !SMTP_PASS) return null;
   if (!transporter) {
     transporter = nodemailer.createTransport({
@@ -35,7 +35,7 @@ export async function sendLoginCodeEmail(params: {
   if (!t) {
     // Sem SMTP configurado: loga o código (dev) e devolve false. O fluxo de login
     // sempre responde genérico ao cliente, então isto nunca vaza nada pra fora.
-    console.log(`[Email] SMTP nao configurado. Codigo de login p/ ${params.to}: ${params.code}`);
+    console.warn("[Email] SMTP não configurado; código de login não enviado.");
     return false;
   }
 
